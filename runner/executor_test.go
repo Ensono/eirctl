@@ -93,7 +93,8 @@ func Test_ContainerExecutor(t *testing.T) {
 		se := &bytes.Buffer{}
 		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `env
 ls -lat .
-pwd`,
+pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
 			Stdout: output.NewSafeWriter(so),

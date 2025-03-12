@@ -130,31 +130,47 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	statusCh, errCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
-		}
-	case <-statusCh:
-	}
-
-	out, err := e.cc.ContainerLogs(ctx, resp.ID, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+	out, err := e.cc.ContainerLogs(ctx, resp.ID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		// Tail:       "40",
+		Timestamps: false,
+		Follow:     true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
-	// capture stderr separately
-	stderr := &bytes.Buffer{}
-	if _, err := stdcopy.StdCopy(job.Stdout, stderr, out); err != nil {
-		return []byte{}, err
-	}
 
-	if len(stderr.Bytes()) > 0 {
-		errStr := &bytes.Buffer{}
-		if _, err = io.Copy(io.MultiWriter(job.Stderr, errStr), stderr); err != nil {
+	defer out.Close()
+	errExecCh := make(chan error)
+	go func(errCh chan error) {
+		doLoop := true
+		for doLoop {
+			// multiplex stderr so that
+			// we can error and store the multiplexed stream
+			stderr := &bytes.Buffer{}
+			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
+				doLoop = false
+				errCh <- err
+			}
+			if len(stderr.Bytes()) > 0 {
+				doLoop = false
+				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
+			}
+		}
+	}(errExecCh)
+
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errWaitCh:
+		if err != nil {
+			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
+		}
+	case err := <-errExecCh:
+		if err != nil {
 			return nil, err
 		}
-		return []byte{}, fmt.Errorf("%s\n%w", errStr.String(), ErrContainerExecCmd)
+	case <-statusWaitCh:
 	}
 	return []byte{}, nil
 }
