@@ -15,5 +15,6 @@ local/
 # Generated outputs
 .coverage/
 .taskctl/
+.eirctl/
 # local env files
 *.env
