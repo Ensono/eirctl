@@ -89,7 +89,7 @@ jobs:
         report_paths: '.coverage/report-junit.xml'
         commit: ${{ github.sha }}
         fail_on_failure: true
-        check_name: Taskctl Unit Tests
+        check_name: Eirctl Unit Tests
 
     - name: Analyze with SonarCloud         
       uses: SonarSource/sonarcloud-github-action@v3
