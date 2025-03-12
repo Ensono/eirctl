@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
-    - name: Install taskctl
-      id: install-taskctl
+    - name: Install eirctl
+      id: install-eirctl
       run: |-
         rm -rf /tmp/taskctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234
         wget https://github.com/Ensono/taskctl/releases/download/v1.8.0-alpha-aaaabbbb1234/taskctl-linux-amd64 -O /tmp/taskctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234

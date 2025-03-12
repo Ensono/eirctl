@@ -57,7 +57,7 @@ pipelines:
         - clean
       variables:
         RepoOwner: Ensono
-        BinName: taskctl
+        BinName: eirctl
 
 tasks:
   clean: 
