@@ -134,7 +134,10 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	defer closeFn()
+
+	defer func() {
+		_ = closeFn()
+	}()
 
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 	select {
