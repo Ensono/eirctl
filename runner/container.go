@@ -83,7 +83,6 @@ func (e *ContainerExecutor) WithReset(doReset bool) {}
 // Returns job output
 func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, error) {
 	defer e.cc.Close()
-
 	containerContext := e.execContext.Container()
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
@@ -115,12 +114,11 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		// will append any job specified paths to the default working
 		WorkingDir: wd,
 	}
-	logrus.Debugf("entrypoint: %v", containerConfig.Entrypoint)
-	logrus.Debugf("command: %v", containerConfig.Cmd)
 	if err := e.PullImage(ctx, containerContext.Name, job.Stdout); err != nil {
 		return nil, err
 	}
-	logrus.Debugf("%+v", containerConfig.Volumes)
+
+	logrus.Debugf("%+v", containerConfig)
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, nil, nil, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
@@ -130,35 +128,13 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	out, err := e.cc.ContainerLogs(ctx, resp.ID, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		// Tail:       "40",
-		Timestamps: false,
-		Follow:     true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%v\n%w", err, ErrContainerLogs)
-	}
-
-	defer out.Close()
+	// streamLogs
 	errExecCh := make(chan error)
-	go func(errCh chan error) {
-		doLoop := true
-		for doLoop {
-			// multiplex stderr so that
-			// we can error and store the multiplexed stream
-			stderr := &bytes.Buffer{}
-			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
-				doLoop = false
-				errCh <- err
-			}
-			if len(stderr.Bytes()) > 0 {
-				doLoop = false
-				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
-			}
-		}
-	}(errExecCh)
+	closeFn, err := e.streamLogs(ctx, resp.ID, errExecCh, job)
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
 
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 	select {
@@ -192,6 +168,37 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	_, _ = io.Copy(b, reader)
 	logrus.Debug(b.String())
 	return nil
+}
+
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errExecCh chan error, job *Job) (func() error, error) {
+	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		// Tail:       "40",
+		Timestamps: false,
+		Follow:     true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%v\n%w", err, ErrContainerLogs)
+	}
+
+	go func(errCh chan error) {
+		doLoop := true
+		for doLoop {
+			// multiplex stderr so that
+			// we can error and store the multiplexed stream
+			stderr := &bytes.Buffer{}
+			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
+				doLoop = false
+				errCh <- err
+			}
+			if len(stderr.Bytes()) > 0 {
+				doLoop = false
+				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
+			}
+		}
+	}(errExecCh)
+	return out.Close, nil
 }
 
 // container attach stdin - via task or context
