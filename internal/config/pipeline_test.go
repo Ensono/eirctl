@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/scheduler"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/scheduler"
 )
 
 func TestBuildPipeline_Cyclical(t *testing.T) {
@@ -161,11 +161,11 @@ ANOTHER_VAR=moo`))
 		file, cleanUp := configLoaderTestHelper(t, yamlTasks)
 		defer cleanUp()
 		cl := config.NewConfigLoader(config.NewConfig())
-		taskctlCfg, err := cl.Load(file)
+		eirctlCfg, err := cl.Load(file)
 		if err != nil {
 			t.Error()
 		}
-		val, ok := taskctlCfg.Tasks["task-p2:1"]
+		val, ok := eirctlCfg.Tasks["task-p2:1"]
 		if !ok {
 			t.Error("failed to add task to config")
 		}

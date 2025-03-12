@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	taskctlCmd "github.com/Ensono/taskctl/cmd/taskctl"
-	"github.com/Ensono/taskctl/output"
+	eirctlCmd "github.com/Ensono/eirctl/cmd/eirctl"
+	"github.com/Ensono/eirctl/output"
 )
 
 type cmdRunTestInput struct {
@@ -30,7 +30,7 @@ func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 	logOut := output.NewSafeWriter(&bytes.Buffer{})
 	logErr := output.NewSafeWriter(&bytes.Buffer{})
 
-	cmd := taskctlCmd.NewTaskCtlCmd(ctx, logOut, logErr)
+	cmd := eirctlCmd.NewEirCtlCmd(ctx, logOut, logErr)
 	os.Args = append([]string{os.Args[0]}, testInput.args...)
 
 	cmd.Cmd.SetArgs(testInput.args)

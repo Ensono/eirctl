@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ensono/taskctl/internal/config"
-	outputpkg "github.com/Ensono/taskctl/output"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/config"
+	outputpkg "github.com/Ensono/eirctl/output"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -38,7 +38,7 @@ type rootCmdFlags struct {
 	NoSummary bool
 }
 
-type TaskCtlCmd struct {
+type EirCtlCmd struct {
 	ctx        context.Context
 	Cmd        *cobra.Command
 	ChannelOut io.Writer
@@ -47,13 +47,13 @@ type TaskCtlCmd struct {
 	rootFlags  *rootCmdFlags
 }
 
-func NewTaskCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *TaskCtlCmd {
-	tc := &TaskCtlCmd{
+func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtlCmd {
+	tc := &EirCtlCmd{
 		ctx:        ctx,
 		ChannelOut: channelOut,
 		ChannelErr: channelErr,
 		Cmd: &cobra.Command{
-			Use:     "taskctl",
+			Use:     "eirctl",
 			Version: fmt.Sprintf("%s-%s", Version, Revision),
 			Args:    cobra.ExactArgs(0),
 			Short:   "modern task runner",
@@ -65,16 +65,16 @@ func NewTaskCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *TaskC
 
 	tc.rootFlags = &rootCmdFlags{}
 	tc.viperConf = viper.NewWithOptions()
-	tc.viperConf.SetEnvPrefix("TASKCTL")
-	tc.viperConf.SetConfigName("taskctl_conf")
+	tc.viperConf.SetEnvPrefix("EIRCTL")
+	tc.viperConf.SetConfigName("eirctl_conf")
 
-	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "taskctl.yaml", "config file to use") // tasks.yaml or taskctl.yaml
-	_ = tc.viperConf.BindEnv("config", "TASKCTL_CONFIG_FILE")
+	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "eirctl.yaml", "config file to use") // tasks.yaml or eirctl.yaml
+	_ = tc.viperConf.BindEnv("config", "EIRCTL_CONFIG_FILE")
 	_ = tc.viperConf.BindPFlag("config", tc.Cmd.PersistentFlags().Lookup("config"))
 
 	// flag toggles
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Debug, "debug", "d", false, "enable debug")
-	_ = tc.viperConf.BindPFlag("debug", tc.Cmd.PersistentFlags().Lookup("debug")) // TASKCTL_DEBUG
+	_ = tc.viperConf.BindPFlag("debug", tc.Cmd.PersistentFlags().Lookup("debug")) // EIRCTL_DEBUG
 
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.DryRun, "dry-run", "", false, "dry run")
 	_ = tc.viperConf.BindPFlag("dry-run", tc.Cmd.PersistentFlags().Lookup("dry-run"))
@@ -88,7 +88,7 @@ func NewTaskCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *TaskC
 	return tc
 }
 
-func (tc *TaskCtlCmd) InitCommand() error {
+func (tc *EirCtlCmd) InitCommand() error {
 	// add all sub commands
 	// TODO: perhaps think about a better way of doing this
 	newRunCmd(tc)
@@ -102,7 +102,7 @@ func (tc *TaskCtlCmd) InitCommand() error {
 	return nil
 }
 
-func (tc *TaskCtlCmd) Execute() error {
+func (tc *EirCtlCmd) Execute() error {
 	// NOTE: do we need logrus ???
 	// latest Go has structured logging...
 	logrus.SetFormatter(&logrus.TextFormatter{
@@ -119,7 +119,7 @@ var (
 	ErrIncompleteConfig = errors.New("config key is missing")
 )
 
-func (tc *TaskCtlCmd) initConfig() (*config.Config, error) {
+func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 	// Viper magic here
 	tc.viperConf.AutomaticEnv()
 	configFilePath := tc.viperConf.GetString("config")
@@ -195,7 +195,7 @@ func (tc *TaskCtlCmd) initConfig() (*config.Config, error) {
 //
 // assigns to the global var to the package
 // args are the stdin inputs of strings following the `--` parameter
-func (tc *TaskCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runner.TaskRunner, *argsToStringsMapper, error) {
+func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runner.TaskRunner, *argsToStringsMapper, error) {
 	argsStringer, err := argsValidator(args, conf)
 	if err != nil {
 		return nil, nil, err

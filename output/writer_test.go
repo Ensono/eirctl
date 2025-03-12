@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Ensono/taskctl/output"
+	"github.com/Ensono/eirctl/output"
 )
 
 type errorWriter struct {

@@ -15,8 +15,8 @@ func Test_validateCommand(t *testing.T) {
 	})
 
 	t.Run("succeeds with correct config", func(t *testing.T) {
-		os.Setenv("TASKCTL_CONFIG_FILE", "testdata/graph.yaml")
-		defer os.Unsetenv("TASKCTL_CONFIG_FILE")
+		os.Setenv("EIRCTL_CONFIG_FILE", "testdata/graph.yaml")
+		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"validate", "testdata/graph.yaml"},
 			output: []string{"file is valid"},

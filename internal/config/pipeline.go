@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/variables"
 
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
 )
 
 var ErrStageBuildFailure = errors.New("stage build failed")

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 
@@ -62,7 +62,7 @@ type Envfile struct {
 	// the inputs are validated at task/pipeline build time and will fail if the
 	// <keyword> and <varname> sub expressions are not present in the `pattern`
 	Modify []ModifyEnv `mapstructure:"modify" yaml:"modify,omitempty" json:"modify,omitempty"`
-	// defaults to .taskctl in the current directory
+	// defaults to .eirctl in the current directory
 	// again this should be hidden from the user...
 	GeneratedDir string `mapstructure:"generated_dir" yaml:"generated_dir,omitempty" json:"generated_dir,omitempty"`
 	// mutex is not copieable - during denormalization we create a new instance
@@ -102,7 +102,7 @@ func NewEnvFile(opts ...EnvFileOpts) *Envfile {
 	e := &Envfile{}
 	e.ReplaceChar = REPLACE_CHAR_DEFAULT
 	// can be overridden by Opts
-	e.GeneratedDir = ".taskctl"
+	e.GeneratedDir = ".eirctl"
 	for _, o := range opts {
 		o(e)
 	}
@@ -300,26 +300,26 @@ func ReadEnvFile(r io.ReadCloser) (map[string]string, error) {
 	return envs, nil
 }
 
-// TASKCTL_ENV_FILE is the default location of env file ingested by taskctl for every run.
-const TASKCTL_ENV_FILE string = "taskctl.env"
+// EIRCTL_ENV_FILE is the default location of env file ingested by eirctl for every run.
+const EIRCTL_ENV_FILE string = "eirctl.env"
 
-// DefaultTaskctlEnv checks if there is a file in the current directory `taskctl.env`
+// DefaultTaskctlEnv checks if there is a file in the current directory `eirctl.env`
 // if we ingest it into the Env variable
-// giving preference to the `taskctl.env` specified K/V.
+// giving preference to the `eirctl.env` specified K/V.
 //
 // Or should this be done once on start up?
 func DefaultTaskctlEnv() *variables.Variables {
 	defaultVars := variables.NewVariables()
-	if fi, err := os.Stat(TASKCTL_ENV_FILE); fi != nil && err == nil {
+	if fi, err := os.Stat(EIRCTL_ENV_FILE); fi != nil && err == nil {
 		f, err := os.Open(fi.Name()) // this will always be relative to the executable
 		if err != nil {
-			logrus.Debug("unable to open default taskctl.env")
+			logrus.Debug("unable to open default eirctl.env")
 			return defaultVars
 		}
 
 		m, err := ReadEnvFile(f)
 		if err != nil {
-			logrus.Debug("unable to read default taskctl.env")
+			logrus.Debug("unable to read default eirctl.env")
 			return defaultVars
 		}
 		return defaultVars.Merge(variables.FromMap(m))

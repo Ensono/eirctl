@@ -15,8 +15,8 @@ func Test_listCommand(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			os.Setenv("TASKCTL_CONFIG_FILE", "testdata/graph.yaml")
-			defer os.Unsetenv("TASKCTL_CONFIG_FILE")
+			os.Setenv("EIRCTL_CONFIG_FILE", "testdata/graph.yaml")
+			defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 			cmdRunTestHelper(t, tt)
 		})
 	}

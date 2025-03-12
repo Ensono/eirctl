@@ -7,31 +7,31 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/internal/schema"
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/variables"
 	"gopkg.in/yaml.v2"
 )
 
 var ErrInvalidCiMeta = errors.New("CI meta is invalid")
 
-// githubCiImpl is the implementation of GHA pipeline generation from TaskCtl ExecutionGraph
+// githubCiImpl is the implementation of GHA pipeline generation from EirCtl ExecutionGraph
 // The graph has to be denormalized to ensure that all env variables are correctly cascaded to the tasks
 type githubCiImpl struct {
-	taskctlVersion string
-	conf           *config.Config
-	pipeline       *scheduler.ExecutionGraph
+	eirctlVersion string
+	conf          *config.Config
+	pipeline      *scheduler.ExecutionGraph
 }
 
 func newGithubCiImpl(conf *config.Config) (*githubCiImpl, error) {
 	impl := &githubCiImpl{
-		taskctlVersion: "v2.0.0",
-		conf:           conf,
+		eirctlVersion: "v2.0.0",
+		conf:          conf,
 	}
 	if conf.Generate != nil && conf.Generate.Version != "" {
-		impl.taskctlVersion = conf.Generate.Version
+		impl.eirctlVersion = conf.Generate.Version
 	}
 	return impl, nil
 }
@@ -88,19 +88,19 @@ func (impl *githubCiImpl) Convert(pipeline *scheduler.ExecutionGraph) ([]byte, e
 // addDefaultStepsToJob should be included at the top of each stage
 // it injects the required steps for the runner to successfully execute the job.
 //
-// Checkout step and install taskctl step which will run all subsequent steps.
+// Checkout step and install eirctl step which will run all subsequent steps.
 func addDefaultStepsToJob(job *schema.GithubJob) {
 	// toggle if checkout or not
 	_ = job.AddStep(&schema.GithubStep{
 		Uses: "actions/checkout@v4",
 	})
 	_ = job.AddStep(&schema.GithubStep{
-		Name: "Install taskctl",
-		ID:   "install-taskctl",
-		Run: `rm -rf /tmp/taskctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234
-wget https://github.com/Ensono/taskctl/releases/download/v1.8.0-alpha-aaaabbbb1234/taskctl-linux-amd64 -O /tmp/taskctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234
-cp /tmp/taskctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234 /usr/local/bin/taskctl
-chmod u+x /usr/local/bin/taskctl`,
+		Name: "Install eirctl",
+		ID:   "install-eirctl",
+		Run: `rm -rf /tmp/eirctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234
+wget https://github.com/Ensono/eirctl/releases/download/v1.8.0-alpha-aaaabbbb1234/eirctl-linux-amd64 -O /tmp/eirctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234
+cp /tmp/eirctl-linux-amd64-v1.8.0-alpha-aaaabbbb1234 /usr/local/bin/eirctl
+chmod u+x /usr/local/bin/eirctl`,
 		Shell: "bash",
 	})
 }
@@ -153,7 +153,7 @@ func convertTaskToStep(node *scheduler.Stage) *schema.GithubStep {
 	step := &schema.GithubStep{
 		Name: ghaNameConverter(node.Name),
 		ID:   ghaNameConverter(node.Name),
-		Run:  fmt.Sprintf("taskctl run task %s", utils.TailExtract(node.Task.Name)),
+		Run:  fmt.Sprintf("eirctl run task %s", utils.TailExtract(node.Task.Name)),
 		Env:  node.Env().Merge(node.Task.Env).Map(),
 	}
 	if gh, err := extractGeneratorMetadata[schema.GithubStep](GitHubCITarget, node.Generator); err == nil {

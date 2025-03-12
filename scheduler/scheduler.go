@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/runner"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/runner"
 	"github.com/sirupsen/logrus"
 )
 

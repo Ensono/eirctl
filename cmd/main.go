@@ -7,7 +7,7 @@ import (
 	"slices"
 	"syscall"
 
-	taskctlcmd "github.com/Ensono/taskctl/cmd/taskctl"
+	eirctlcmd "github.com/Ensono/eirctl/cmd/eirctl"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +41,7 @@ func setDefaultCommandIfNonePresent(cmd *cobra.Command) {
 	}
 
 	if len(os.Args) > 1 {
-		// This will turn `taskctl [pipeline task]` => `taskctl run [pipeline task]`
+		// This will turn `eirctl [pipeline task]` => `eirctl run [pipeline task]`
 		potentialCommand := os.Args[1]
 		if slices.Contains(subCommands(cmd), potentialCommand) {
 			return
@@ -50,24 +50,24 @@ func setDefaultCommandIfNonePresent(cmd *cobra.Command) {
 	}
 }
 
-func cmdSetUp() (*taskctlcmd.TaskCtlCmd, context.CancelFunc) {
+func cmdSetUp() (*eirctlcmd.EirCtlCmd, context.CancelFunc) {
 	ctx, stop := signal.NotifyContext(context.Background(), []os.Signal{os.Interrupt, syscall.SIGTERM, os.Kill}...)
 
-	taskctlRootCmd := taskctlcmd.NewTaskCtlCmd(ctx, os.Stdout, os.Stderr)
+	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(ctx, os.Stdout, os.Stderr)
 
-	if err := taskctlRootCmd.InitCommand(); err != nil {
+	if err := eirctlRootCmd.InitCommand(); err != nil {
 		logrus.Fatal(err)
 	}
 
-	setDefaultCommandIfNonePresent(taskctlRootCmd.Cmd)
+	setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
 
-	return taskctlRootCmd, stop
+	return eirctlRootCmd, stop
 }
 
 func main() {
-	taskctlRootCmd, stop := cmdSetUp()
+	eirctlRootCmd, stop := cmdSetUp()
 	defer stop()
-	if err := taskctlRootCmd.Execute(); err != nil {
+	if err := eirctlRootCmd.Execute(); err != nil {
 		logrus.Fatal(err)
 	}
 }

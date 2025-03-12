@@ -58,7 +58,7 @@ type Container struct {
 	EnableDinD bool `mapstructure:"enable_dind" yaml:"enable_dind,omitempty" json:"enable_dind,omitempty"`
 	// ContainerArgs are additional args used for the container supplied by the user
 	//
-	// e.g. dcoker run (TASKCTL_ARGS...) (CONTAINER_ARGS...) image (command)
+	// e.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)
 	// The internals will strip out any unwanted/forbidden args
 	//
 	// Args like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock
@@ -73,7 +73,7 @@ type Container struct {
 	//
 	// Default Shell and ShellArgs are `sh -c`
 	//
-	// e.g. docker run (TASKCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)
+	// e.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)
 	//
 	// Example: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`
 	ShellArgs []string `mapstructure:"shell_args" yaml:"shell_args,omitempty" json:"shell_args,omitempty"`

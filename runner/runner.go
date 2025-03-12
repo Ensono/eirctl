@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/output"
-	"github.com/Ensono/taskctl/task"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/output"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 
@@ -298,7 +298,7 @@ func (r *TaskRunner) after(ctx context.Context, t *task.Task, env, vars *variabl
 
 // contextForTask initializes a default or returns an initialized context from config.
 //
-// It checks whether there is a `taskctl.env` in the cwd if so it ingests it
+// It checks whether there is a `eirctl.env` in the cwd if so it ingests it
 // and merges with the specified env.
 func (r *TaskRunner) contextForTask(t *task.Task) (*ExecutionContext, error) {
 

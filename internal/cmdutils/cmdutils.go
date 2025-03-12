@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/scheduler"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/scheduler"
 	"github.com/charmbracelet/huh"
 )
 

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	cmd "github.com/Ensono/taskctl/cmd/taskctl"
-	"github.com/Ensono/taskctl/internal/utils"
+	cmd "github.com/Ensono/eirctl/cmd/eirctl"
+	"github.com/Ensono/eirctl/internal/utils"
 )
 
 func Test_generateCommand(t *testing.T) {
@@ -58,7 +58,7 @@ func Test_generateCommand(t *testing.T) {
 			errored: true,
 		})
 	})
-	
+
 	t.Run("errors with incorrect target specified", func(t *testing.T) {
 		pn := "graph:pipeline1"
 

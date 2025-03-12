@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/output"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/output"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 
-	taskpkg "github.com/Ensono/taskctl/task"
+	taskpkg "github.com/Ensono/eirctl/task"
 )
 
 func TestTaskRunner(t *testing.T) {
@@ -43,7 +43,7 @@ func TestTaskRunner(t *testing.T) {
 	task1 := taskpkg.NewTask("t1")
 	task1.Context = "local"
 
-	task1.Commands = []string{"echo 'taskctl'"}
+	task1.Commands = []string{"echo 'eirctl'"}
 	task1.Name = "some test task"
 	task1.Dir = "{{.Root}}"
 	task1.After = []string{"echo 'after task1'"}
@@ -70,7 +70,7 @@ func TestTaskRunner(t *testing.T) {
 		status           int16
 		output           string
 	}{
-		{t: task1, output: "taskctl"},
+		{t: task1, output: "eirctl"},
 		{t: task2, status: 1, errored: true},
 		{t: task3, status: -1, skipped: true},
 		{t: task4, output: "BBB"},
@@ -137,7 +137,7 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		task1 := taskpkg.NewTask("default:docker")
 		task1.Context = "default_docker"
 
-		task1.Commands = []string{"echo 'taskctl'"}
+		task1.Commands = []string{"echo 'eirctl'"}
 		task1.Name = "some test task"
 		task1.Dir = "{{.Root}}"
 		task1.After = []string{"echo 'after task1'"}
@@ -220,7 +220,7 @@ QUX=looopar`))
 }
 
 func ExampleTaskRunner_Run() {
-	t := taskpkg.FromCommands("t1", "go doc github.com/Ensono/taskctl/runner.Runner")
+	t := taskpkg.FromCommands("t1", "go doc github.com/Ensono/eirctl/runner.Runner")
 	ob := output.NewSafeWriter(&bytes.Buffer{})
 	r, err := runner.NewTaskRunner(func(tr *runner.TaskRunner) {
 		tr.Stdout = ob
@@ -234,7 +234,7 @@ func ExampleTaskRunner_Run() {
 	}
 	fmt.Println(ob.String())
 	// indentation is important with the matched output here
-	// Output: package runner // import "github.com/Ensono/taskctl/runner"
+	// Output: package runner // import "github.com/Ensono/eirctl/runner"
 	//
 	// type Runner interface {
 	// 	Run(t *task.Task) error

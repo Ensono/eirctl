@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/output"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/output"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 )
 
 func TestDefaultExecutor_Execute(t *testing.T) {

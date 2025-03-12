@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/cmdutils"
-	"github.com/Ensono/taskctl/scheduler"
+	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/scheduler"
 )
 
 func TestPrintSummary(t *testing.T) {
@@ -31,4 +31,3 @@ func TestPrintSummary(t *testing.T) {
 		}
 	})
 }
-

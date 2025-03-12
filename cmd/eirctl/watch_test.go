@@ -9,7 +9,7 @@ import (
 
 func Test_watchCommand(t *testing.T) {
 	t.Run("cancelled by user", func(t *testing.T) {
-		defer os.Unsetenv("TASKCTL_CONFIG_FILE")
+		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() {
 			time.Sleep(100 * time.Millisecond)

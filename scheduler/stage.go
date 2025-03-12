@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/task"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 

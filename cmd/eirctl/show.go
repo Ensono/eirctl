@@ -26,7 +26,7 @@ var showTmpl = `
   AllowFailure: {{ .AllowFailure }}
 `
 
-func newShowCmd(rootCmd *TaskCtlCmd) {
+func newShowCmd(rootCmd *EirCtlCmd) {
 
 	showCmd := &cobra.Command{
 		Use:     "show",

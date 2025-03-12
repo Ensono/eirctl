@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/config"
+	"github.com/Ensono/eirctl/internal/config"
 )
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
@@ -203,18 +203,18 @@ func TestLoader_LoadGlobalConfig(t *testing.T) {
 	os.Setenv("USERPROFILE", h)
 
 	defer func() {
-		_ = os.RemoveAll(filepath.Join(h, ".taskctl"))
+		_ = os.RemoveAll(filepath.Join(h, ".eirctl"))
 		os.Setenv("HOME", originalHomeNix)
 		// windows...
 		os.Setenv("USERPROFILE", originalHomeWin)
 	}()
 
-	err := os.Mkdir(filepath.Join(h, ".taskctl"), 0744)
+	err := os.Mkdir(filepath.Join(h, ".eirctl"), 0744)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = os.WriteFile(filepath.Join(h, ".taskctl", "config.yaml"), []byte(sampleCfg), 0644)
+	err = os.WriteFile(filepath.Join(h, ".eirctl", "config.yaml"), []byte(sampleCfg), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,14 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Ensono/taskctl/internal/cmdutils"
-	"github.com/Ensono/taskctl/internal/config"
+	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/internal/config"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
-var configTmpl = `# This is an example of taskctl tasks configuration file.
-# More information at https://github.com/taskctl/taskctl
+var configTmpl = `# This is an example of eirctl tasks configuration file.
+# More information at https://github.com/eirctl/eirctl
 pipelines:
   pipeline1:
     - task: task1
@@ -46,7 +46,7 @@ type runnerInit struct {
 	channelOut, channelErr io.Writer
 }
 
-func newInitCmd(rootCmd *TaskCtlCmd) {
+func newInitCmd(rootCmd *EirCtlCmd) {
 	f := initFlags{}
 	ri := &runnerInit{
 		channelOut: rootCmd.ChannelOut,
@@ -128,6 +128,6 @@ func (r *runnerInit) writeConfig(file string) error {
 	}
 
 	fmt.Fprintf(r.channelOut, "%s %s\n", fmt.Sprintf(cmdutils.GREEN_TERMINAL, file), fmt.Sprintf(cmdutils.MAGENTA_TERMINAL, "was created. Edit it accordingly to your needs"))
-	fmt.Fprintf(r.channelOut, cmdutils.CYAN_TERMINAL, "To run example pipeline - taskctl run pipeline1")
+	fmt.Fprintf(r.channelOut, cmdutils.CYAN_TERMINAL, "To run example pipeline - eirctl run pipeline1")
 	return nil
 }

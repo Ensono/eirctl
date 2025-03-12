@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/variables"
 )
 
 func TestConvertEnv(t *testing.T) {
@@ -230,7 +230,7 @@ func TestUtils_Envfile(t *testing.T) {
 		t.Error("failed to validate")
 	}
 
-	if envfile.GeneratedDir != ".taskctl" {
+	if envfile.GeneratedDir != ".eirctl" {
 		t.Error("generated dir not set correctly")
 	}
 }
@@ -402,11 +402,11 @@ func TestUtils_DefaultTaskctlEnv(t *testing.T) {
 		}
 	})
 	t.Run("path exists and is correctly ingested", func(t *testing.T) {
-		err := os.WriteFile(utils.TASKCTL_ENV_FILE, []byte(`FOO=bar`), 0o777)
+		err := os.WriteFile(utils.EIRCTL_ENV_FILE, []byte(`FOO=bar`), 0o777)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(utils.TASKCTL_ENV_FILE)
+		defer os.Remove(utils.EIRCTL_ENV_FILE)
 		got := utils.DefaultTaskctlEnv()
 		if got == nil {
 			t.Errorf("got nil, wanted %T", &variables.Variables{})

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/config"
+	"github.com/Ensono/eirctl/internal/config"
 )
 
 func TestConfig_decode(t *testing.T) {
@@ -42,9 +42,9 @@ func TestNewConfig(t *testing.T) {
 }
 
 func TestConfig_Errors_onContainer(t *testing.T) {
-	_ = os.MkdirAll(".taskctl-tester", 0777)
-	defer os.RemoveAll(".taskctl-tester")
-	os.WriteFile(filepath.Join(".taskctl-tester", "incorrect-container.yaml"), []byte(`
+	_ = os.MkdirAll(".eirctl-tester", 0777)
+	defer os.RemoveAll(".eirctl-tester")
+	os.WriteFile(filepath.Join(".eirctl-tester", "incorrect-container.yaml"), []byte(`
 contexts:
   test:
     container:
@@ -60,7 +60,7 @@ contexts:
 	loader := config.NewConfigLoader(config.NewConfig())
 	loader.WithStrictDecoder()
 	cwd, _ := os.Getwd()
-	_, err := loader.Load(filepath.Join(cwd, filepath.Join(".taskctl-tester", "incorrect-container.yaml")))
+	_, err := loader.Load(filepath.Join(cwd, filepath.Join(".eirctl-tester", "incorrect-container.yaml")))
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -71,9 +71,9 @@ contexts:
 }
 
 func TestConfig_Errors_onExecutable(t *testing.T) {
-	_ = os.MkdirAll(".taskctl-tester", 0777)
-	defer os.RemoveAll(".taskctl-tester")
-	os.WriteFile(filepath.Join(".taskctl-tester", "incorrect-exec.yaml"), []byte(`
+	_ = os.MkdirAll(".eirctl-tester", 0777)
+	defer os.RemoveAll(".eirctl-tester")
+	os.WriteFile(filepath.Join(".eirctl-tester", "incorrect-exec.yaml"), []byte(`
 contexts:
   test:
     executable:
@@ -89,7 +89,7 @@ contexts:
 	loader := config.NewConfigLoader(config.NewConfig())
 	loader.WithStrictDecoder()
 	cwd, _ := os.Getwd()
-	_, err := loader.Load(filepath.Join(cwd, filepath.Join(".taskctl-tester", "incorrect-exec.yaml")))
+	_, err := loader.Load(filepath.Join(cwd, filepath.Join(".eirctl-tester", "incorrect-exec.yaml")))
 	if err == nil {
 		t.Fatal(err)
 	}

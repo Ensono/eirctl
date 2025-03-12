@@ -3,13 +3,13 @@ package cmd
 import (
 	"sync"
 
-	"github.com/Ensono/taskctl/internal/watch"
+	"github.com/Ensono/eirctl/internal/watch"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-func newWatchCmd(rootCmd *TaskCtlCmd) {
+func newWatchCmd(rootCmd *EirCtlCmd) {
 	rc := &cobra.Command{
 		Use:   "watch",
 		Short: `watch [WATCHERS...]`,

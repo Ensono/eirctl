@@ -10,7 +10,7 @@ import (
 
 	"github.com/briandowns/spinner"
 
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/task"
 )
 
 var frame = 100 * time.Millisecond

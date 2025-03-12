@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Ensono/taskctl/internal/cmdutils"
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,7 @@ type runCmd struct {
 	ctx                    context.Context
 }
 
-func newRunCmd(rootCmd *TaskCtlCmd) {
+func newRunCmd(rootCmd *EirCtlCmd) {
 	f := &runFlags{}
 	runner := &runCmd{
 		channelOut: rootCmd.ChannelOut,
@@ -39,8 +39,8 @@ func newRunCmd(rootCmd *TaskCtlCmd) {
 		Use:     "run",
 		Aliases: []string{},
 		Short:   `runs <pipeline or task>`,
-		Example: `taskctl run pipeline1
-		taskctl run task1`,
+		Example: `eirctl run pipeline1
+		eirctl run task1`,
 		Args:         cobra.MinimumNArgs(0),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,7 +68,7 @@ func newRunCmd(rootCmd *TaskCtlCmd) {
 	rc.AddCommand(&cobra.Command{
 		Use:          "pipeline",
 		Short:        `runs pipeline <task>`,
-		Example:      `taskctl run pipeline pipeline:name`,
+		Example:      `eirctl run pipeline pipeline:name`,
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -88,7 +88,7 @@ func newRunCmd(rootCmd *TaskCtlCmd) {
 		Use:          "task",
 		Aliases:      []string{},
 		Short:        `runs task <task>`,
-		Example:      `taskctl run task1`,
+		Example:      `eirctl run task1`,
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -106,7 +106,7 @@ func newRunCmd(rootCmd *TaskCtlCmd) {
 	})
 
 	rc.PersistentFlags().StringVarP(&rootCmd.rootFlags.Output, "output", "o", "", "output format (raw, prefixed or cockpit)")
-	_ = rootCmd.viperConf.BindEnv("output", "TASKCTL_OUTPUT_FORMAT")
+	_ = rootCmd.viperConf.BindEnv("output", "EIRCTL_OUTPUT_FORMAT")
 	_ = rootCmd.viperConf.BindPFlag("output", rc.PersistentFlags().Lookup("output"))
 
 	// Shortcut flags

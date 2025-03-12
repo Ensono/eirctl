@@ -6,10 +6,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 )
 
 func TestStageFrom_originalToNew(t *testing.T) {

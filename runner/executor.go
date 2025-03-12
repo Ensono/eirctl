@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/internal/cmdutils"
 )
 
 func setupCleanUp() (dir string, deferFn func()) {

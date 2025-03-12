@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/task"
 	"github.com/sirupsen/logrus"
 )
 

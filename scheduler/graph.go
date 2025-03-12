@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/utils"
 )
 
 var (

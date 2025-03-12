@@ -4,7 +4,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/variables"
 )
 
 // Job is a linked list of jobs to execute by Executor

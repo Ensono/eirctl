@@ -5,7 +5,7 @@ import (
 	"io"
 	"slices"
 
-	"github.com/Ensono/taskctl/scheduler"
+	"github.com/Ensono/eirctl/scheduler"
 	"github.com/emicklei/dot"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +16,7 @@ type graphFlags struct {
 	embedLegend bool
 }
 
-func newGraphCmd(rootCmd *TaskCtlCmd) {
+func newGraphCmd(rootCmd *EirCtlCmd) {
 	f := &graphFlags{}
 	graphCmd := &cobra.Command{
 		Use:     "graph",

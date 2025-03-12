@@ -1,6 +1,6 @@
-module github.com/Ensono/taskctl
+module github.com/Ensono/eirctl
 
-go 1.23.1
+go 1.23.7
 
 require (
 	dario.cat/mergo v1.0.1

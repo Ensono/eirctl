@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Ensono/taskctl/internal/cmdutils"
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/internal/genci"
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/genci"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -17,13 +17,13 @@ type generateFlags struct {
 	outputDir string
 }
 
-func newGenerateCmd(rootCmd *TaskCtlCmd) {
+func newGenerateCmd(rootCmd *EirCtlCmd) {
 	f := &generateFlags{}
 	c := &cobra.Command{
 		Use:          "generate",
 		Aliases:      []string{"ci", "gen-ci"},
 		Short:        `generate <pipeline>`,
-		Example:      `taskctl generate pipeline1`,
+		Example:      `eirctl generate pipeline1`,
 		Args:         cobra.MinimumNArgs(0),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

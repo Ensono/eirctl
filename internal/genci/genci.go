@@ -1,8 +1,8 @@
 // Package genci generates CI yaml definitions based on the
-// taskctl pipeline nodes.
+// eirctl pipeline nodes.
 //
-// This is a translation layer between taskctl concepts of tasks, pipelines and contexts into the world of CI tools yaml syntax.
-// See a list of supported tools and overview [here](https://github.com/Ensono/taskctl/blob/master/docs/ci-generator.md).
+// This is a translation layer between eirctl concepts of tasks, pipelines and contexts into the world of CI tools yaml syntax.
+// See a list of supported tools and overview [here](https://github.com/Ensono/eirctl/blob/master/docs/ci-generator.md).
 //
 //	Sample output in github
 //	```yaml
@@ -16,8 +16,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/scheduler"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/scheduler"
 	"gopkg.in/yaml.v2"
 )
 
@@ -44,7 +44,7 @@ type GenCi struct {
 	// The default is amd64
 	CITargetArch string
 	// conf            *config.Config
-	// taskctlPipeline *scheduler.ExecutionGraph
+	// eirctlPipeline *scheduler.ExecutionGraph
 }
 
 type GenCiIface interface {
@@ -75,8 +75,8 @@ func New(implTyp CITarget, conf *config.Config, opts ...Opts) (*GenCi, error) {
 	return gci, nil
 }
 
-func (g *GenCi) Convert(taskctlPipeline *scheduler.ExecutionGraph) ([]byte, error) {
-	return g.implementation.Convert(taskctlPipeline)
+func (g *GenCi) Convert(eirctlPipeline *scheduler.ExecutionGraph) ([]byte, error) {
+	return g.implementation.Convert(eirctlPipeline)
 }
 
 type DefualtCiImpl struct{}

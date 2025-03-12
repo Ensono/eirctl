@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newValidateCmd(rootCmd *TaskCtlCmd) {
+func newValidateCmd(rootCmd *EirCtlCmd) {
 	c := &cobra.Command{
 		Use:   "validate",
 		Short: `validates config file`,

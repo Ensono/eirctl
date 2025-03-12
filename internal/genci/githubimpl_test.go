@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ensono/taskctl/internal/config"
-	"github.com/Ensono/taskctl/internal/genci"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/genci"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
 )
 
 func TestGenCi_GithubImpl(t *testing.T) {
@@ -74,30 +74,30 @@ func TestGenCi_GithubImpl_ordering(t *testing.T) {
 		// ensure ordering is done correctly
 		wantFirstOneTwo := `    - name: foo-_first-_one
       id: foo-_first-_one
-      run: taskctl run task one
+      run: eirctl run task one
     - name: foo-_first-_two
       id: foo-_first-_two
-      run: taskctl run task two`
+      run: eirctl run task two`
 		if !strings.Contains(string(b), wantFirstOneTwo) {
 			t.Errorf("first order not correct\n\tgot:\n\n%s\n\twant:\n\n%s\n", string(b), wantFirstOneTwo)
 		}
 
 		wantSecond34onetwo := `    - name: foo-_second-_task3
       id: foo-_second-_task3
-      run: taskctl run task task3
+      run: eirctl run task task3
       env:
         FOO: bar
     - name: foo-_second-_task4
       id: foo-_second-_task4
-      run: taskctl run task task4
+      run: eirctl run task task4
       env:
         FOO: bar
     - name: foo-_second-_one
       id: foo-_second-_one
-      run: taskctl run task one
+      run: eirctl run task one
     - name: foo-_second-_two
       id: foo-_second-_two
-      run: taskctl run task two`
+      run: eirctl run task two`
 		if !strings.Contains(string(b), wantSecond34onetwo) {
 			t.Errorf("second order not correct\n\tgot:\n\n%s\n\twant:\n\n%s\n", string(b), wantSecond34onetwo)
 		}
@@ -189,7 +189,7 @@ tasks:
       FOO: task1
       GLOBAL_VAR: overwritteninTask
     envfile:
-      path: ./cmd/taskctl/testdata/dev.env
+      path: ./cmd/eirctl/testdata/dev.env
 
   task6:
     command:

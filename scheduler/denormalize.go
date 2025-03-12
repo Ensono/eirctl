@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/utils"
 )
 
 // StageTable is a simple hash table of denormalized stages into a flat hash table (map)

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/mitchellh/mapstructure"
 	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
@@ -112,13 +112,13 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	return cl.dst, nil
 }
 
-// LoadGlobalConfig load global config file  - ~/.taskctl/config.yaml
+// LoadGlobalConfig load global config file  - ~/.eirctl/config.yaml
 func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 	if cl.homeDir == "" {
 		return nil, nil
 	}
 
-	file := path.Join(cl.homeDir, ".taskctl", "config.yaml")
+	file := path.Join(cl.homeDir, ".eirctl", "config.yaml")
 	if !utils.FileExists(file) {
 		return cl.dst, nil
 	}
@@ -331,7 +331,7 @@ func (cl *Loader) unmarshalDataStream(data io.Reader, ext string) (map[string]in
 
 func (cl *Loader) decode(cm map[string]interface{}) (*ConfigDefinition, error) {
 	c := &ConfigDefinition{}
-	// TODO: think about removing this 
+	// TODO: think about removing this
 	md, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),

@@ -5,19 +5,19 @@ import (
 	"os"
 
 	"dario.cat/mergo"
-	"github.com/Ensono/taskctl/internal/watch"
-	"github.com/Ensono/taskctl/output"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/watch"
+	"github.com/Ensono/eirctl/output"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 
 // DefaultFileNames is default names for tasks' files
-var DefaultFileNames = []string{"taskctl.yaml", "tasks.yaml"}
+var DefaultFileNames = []string{"eirctl.yaml", "tasks.yaml"}
 
-// Config is a taskctl internal config structure
+// Config is a eirctl internal config structure
 type Config struct {
 	Import    []string
 	Contexts  map[string]*runner.ExecutionContext

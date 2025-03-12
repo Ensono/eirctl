@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 

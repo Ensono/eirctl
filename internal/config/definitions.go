@@ -3,8 +3,8 @@ package config
 import (
 	"time"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/task"
 	"github.com/invopop/jsonschema"
 )
 
@@ -26,7 +26,7 @@ type ConfigDefinition struct {
 	// Pipelines are a set of tasks wrapped in additional run conditions
 	// e.g. depends on or allow failure
 	Pipelines map[string][]*PipelineDefinition `mapstructure:"pipelines" yaml:"pipelines" json:"pipelines,omitempty" jsonschema:"anyOf_required=pipelines"`
-	// Tasks are the most basic building blocks of taskctl
+	// Tasks are the most basic building blocks of eirctl
 	Tasks    map[string]*TaskDefinition    `mapstructure:"tasks" yaml:"tasks" json:"tasks,omitempty" jsonschema:"anyOf_required=tasks"`
 	Watchers map[string]*WatcherDefinition `mapstructure:"watchers" yaml:"watchers" json:"watchers,omitempty"`
 	Debug    bool                          `json:"debug,omitempty"`
@@ -124,7 +124,7 @@ type PipelineDefinition struct {
 }
 
 type Generator struct {
-	// Version sets the version of taskctl to use for generation of default tasks, defaults to the current version of the binary
+	// Version sets the version of eirctl to use for generation of default tasks, defaults to the current version of the binary
 	Version       string         `mapstructure:"version" yaml:"version,omitempty" json:"version,omitempty"`
 	TargetOptions map[string]any `mapstructure:"targetOpts" yaml:"targetOpts,omitempty" json:"targetOpts,omitempty"`
 }

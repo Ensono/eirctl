@@ -8,8 +8,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/task"
 )
 
 func TestNewWatcher(t *testing.T) {

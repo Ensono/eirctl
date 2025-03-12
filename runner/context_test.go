@@ -11,10 +11,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/Ensono/taskctl/internal/utils"
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/task"
-	"github.com/Ensono/taskctl/variables"
+	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 )
 
 func TestContext(t *testing.T) {

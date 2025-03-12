@@ -13,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Ensono/taskctl/internal/config"
+	"github.com/Ensono/eirctl/internal/config"
 	"github.com/invopop/jsonschema"
 )
 
@@ -21,13 +21,13 @@ func main() {
 	var dir string
 	flag.StringVar(&dir, "dir", ".", "Directory to use as base")
 	flag.Parse()
-	generateSchemaForTaskCtl(dir)
+	generateSchemaForEirCtl(dir)
 }
 
-func generateSchemaForTaskCtl(dir string) {
+func generateSchemaForEirCtl(dir string) {
 
 	r := new(jsonschema.Reflector)
-	if err := r.AddGoComments("github.com/Ensono/taskctl", "./"); err != nil {
+	if err := r.AddGoComments("github.com/Ensono/eirctl", "./"); err != nil {
 		log.Fatal(err.Error())
 	}
 	s := r.Reflect(&config.ConfigDefinition{})

@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"slices"
 
-	"github.com/Ensono/taskctl/internal/utils"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ Watchers:
 {{end}}
 `
 
-func newListCmd(rootCmd *TaskCtlCmd) {
+func newListCmd(rootCmd *EirCtlCmd) {
 	listAllCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{},

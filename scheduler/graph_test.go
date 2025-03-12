@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ensono/taskctl/runner"
-	"github.com/Ensono/taskctl/scheduler"
-	"github.com/Ensono/taskctl/task"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
 )
 
 func TestExecutionGraph_AddStage(t *testing.T) {
