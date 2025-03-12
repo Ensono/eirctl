@@ -45,8 +45,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    # container:
-    #   image: golang:1.23-bullseye
     needs: 
       - set-version-tag
       - lint
@@ -56,7 +54,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.23.x
+        go-version: 1.24.x
 
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
