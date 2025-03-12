@@ -240,7 +240,6 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		// Add the name and the value to the string builder
 		envstr := fmt.Sprintf("%s=%s", varName, varValue)
 		builder = append(builder, envstr)
-		logrus.Debug(envstr)
 	}
 	c.Env = variables.FromMap(utils.ConvertFromEnv(builder))
 	return nil
