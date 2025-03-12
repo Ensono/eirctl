@@ -209,4 +209,4 @@ jobs:
       ENV_NAME: prod
 env:
   GLOBAL_VAR1: globVar1_foo
-  TASKCTL_CONFIG_FILE: cmd/taskctl/testdata/gha.sample.yml
+  TASKCTL_CONFIG_FILE: cmd/eirctl/testdata/gha.sample.yml
