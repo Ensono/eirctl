@@ -51,7 +51,7 @@ jobs:
       - set-version-tag
       - lint
     env:
-      TASKCTL_CONFIG_FILE: tasks.yaml
+      EIRCTL_CONFIG_FILE: tasks.yaml
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
     - name: Set up Go

@@ -29,7 +29,7 @@ To illustrate the point we can see the differences below across the same "pipeli
 
 The generated tree can be viewed in both the normalized form using the graph command.
 
-`taskctl graph gha:infra:sample -c ./cmd/taskctl/testdata/gha.sample.yml | dot -Tsvg -o normalized.svg`
+`taskctl graph gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml | dot -Tsvg -o normalized.svg`
 
 ![](./svg/normalized.svg)
 
@@ -37,7 +37,7 @@ The generated tree can be viewed in both the normalized form using the graph com
 
 When running the run command with the `--graph-only` it would generate the denormalized tree graph.
 
-`taskctl run gha:infra:sample -c ./cmd/taskctl/testdata/gha.sample.yml --graph-only | dot -Tsvg -o docs/svg/denormalized.svg`
+`taskctl run gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml --graph-only | dot -Tsvg -o docs/svg/denormalized.svg`
 
 ![](./svg/denormalized.svg)
 

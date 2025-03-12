@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Ensono/taskctl/internal/config/config-definition",
+  "$id": "https://github.com/Ensono/eirctl/internal/config/config-definition",
   "$ref": "#/$defs/ConfigDefinition",
   "$defs": {
     "Artifact": {
@@ -82,7 +82,7 @@
             "$ref": "#/$defs/TaskDefinition"
           },
           "type": "object",
-          "description": "Tasks are the most basic building blocks of taskctl"
+          "description": "Tasks are the most basic building blocks of eirctl"
         },
         "watchers": {
           "additionalProperties": {
@@ -143,7 +143,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (TASKCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed."
+          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed."
         },
         "shell": {
           "type": "string",
@@ -154,7 +154,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (TASKCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
+          "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
         }
       },
       "additionalProperties": false,
@@ -271,7 +271,7 @@
         },
         "generated_dir": {
           "type": "string",
-          "description": "defaults to .taskctl in the current directory\nagain this should be hidden from the user..."
+          "description": "defaults to .eirctl in the current directory\nagain this should be hidden from the user..."
         }
       },
       "additionalProperties": false,
@@ -282,7 +282,7 @@
       "properties": {
         "version": {
           "type": "string",
-          "description": "Version sets the version of taskctl to use for generation of default tasks, defaults to the current version of the binary"
+          "description": "Version sets the version of eirctl to use for generation of default tasks, defaults to the current version of the binary"
         },
         "targetOpts": {
           "type": "object"
