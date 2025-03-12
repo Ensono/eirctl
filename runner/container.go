@@ -9,6 +9,7 @@ import (
 	"path"
 
 	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -177,7 +178,6 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		// Tail:       "40",
 		Timestamps: false,
 		Follow:     true,
 	})
@@ -190,12 +190,12 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		for doLoop {
 			// multiplex stderr so that
 			// we can error and store the multiplexed stream
-			stderr := &bytes.Buffer{}
+			stderr := output.NewSafeWriter(&bytes.Buffer{})
 			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
 				doLoop = false
 				errCh <- err
 			}
-			if len(stderr.Bytes()) > 0 {
+			if len(stderr.String()) > 0 {
 				doLoop = false
 				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
 			}
