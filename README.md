@@ -4,12 +4,12 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ensono/eirctl)](https://goreportcard.com/report/github.com/Ensono/eirctl)
 
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=bugs)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=bugs&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=sqale_index&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=reliability_rating&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=vulnerabilities&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 
 Yet another build tool alternative to GNU Make. 
 

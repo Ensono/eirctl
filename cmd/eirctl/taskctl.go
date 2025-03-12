@@ -68,7 +68,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	tc.viperConf.SetEnvPrefix("EIRCTL")
 	tc.viperConf.SetConfigName("eirctl_conf")
 
-	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "eirctl.yaml", "config file to use") // tasks.yaml or eirctl.yaml
+	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "eirctl.yaml", "config file to use. For backwards compatibility it also accepts `taskctl.yaml` and `tasks.yaml`")
 	_ = tc.viperConf.BindEnv("config", "EIRCTL_CONFIG_FILE")
 	_ = tc.viperConf.BindPFlag("config", tc.Cmd.PersistentFlags().Lookup("config"))
 
@@ -119,16 +119,16 @@ var (
 	ErrIncompleteConfig = errors.New("config key is missing")
 )
 
+// initConfig constructs the config on execute
 func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
-	// Viper magic here
+	// consume env and build options via Viper
 	tc.viperConf.AutomaticEnv()
-	configFilePath := tc.viperConf.GetString("config")
-	if _, err := os.Stat(configFilePath); err != nil {
-		return nil, fmt.Errorf("%w\nincorrect config file (%s) does not exist", ErrIncompleteConfig, configFilePath)
+	configFilePath, err := configFileFinder(tc)
+	if err != nil {
+		return nil, err
 	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
-
 	conf, err := cl.Load(configFilePath)
 	if err != nil {
 		return nil, err
@@ -231,4 +231,28 @@ func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runne
 	}()
 
 	return tr, argsStringer, nil
+}
+
+// configFileFinder loops through the possible options
+func configFileFinder(tc *EirCtlCmd) (string, error) {
+	configFilePath := tc.viperConf.GetString("config")
+	// creates a slice of all possible options for the file name
+	// taskctl|tasks.yaml are a backwards compatible options
+	configOpts := []string{configFilePath, "tasks.yaml", "taskctl.yaml"}
+	found, confFile := false, ""
+	for _, co := range configOpts {
+		if _, err := os.Stat(co); err != nil {
+			logrus.Debugf("%s config file not present", co)
+			continue
+		}
+		confFile = co
+		found = true
+		// exit loop on first occurence of file found
+		logrus.Debugf("config file found: %s", co)
+		break
+	}
+	if found && confFile != "" {
+		return confFile, nil
+	}
+	return "", fmt.Errorf("%w\nincorrect config file (%s) does not exist", ErrIncompleteConfig, configFilePath)
 }
