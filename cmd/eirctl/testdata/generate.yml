@@ -104,7 +104,7 @@ tasks:
       FOO: task1
       GLOBAL_VAR: overwritteninTask
     envfile:
-      path: ./cmd/taskctl/testdata/dev.env
+      path: ./cmd/eirctl/testdata/dev.env
 
   task-p2:2:
     command:
