@@ -20,11 +20,12 @@ import (
 )
 
 var (
-	ErrImagePull       = errors.New("failed to pull container image")
-	ErrContainerCreate = errors.New("failed to create container")
-	ErrContainerStart  = errors.New("failed to start container")
-	ErrContainerWait   = errors.New("failed to wait for container")
-	ErrContainerLogs   = errors.New("failed to get container logs")
+	ErrImagePull        = errors.New("failed to pull container image")
+	ErrContainerCreate  = errors.New("failed to create container")
+	ErrContainerStart   = errors.New("failed to start container")
+	ErrContainerWait    = errors.New("failed to wait for container")
+	ErrContainerLogs    = errors.New("failed to get container logs")
+	ErrContainerExecCmd = errors.New("failed to run cmd in container")
 )
 
 // ContainerExecutorIface interface used by this implementation
@@ -153,7 +154,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		if _, err = io.Copy(io.MultiWriter(job.Stderr, errStr), stderr); err != nil {
 			return nil, err
 		}
-		return []byte{}, fmt.Errorf(errStr.String())
+		return []byte{}, fmt.Errorf("%s\n%w", errStr.String(), ErrContainerExecCmd)
 	}
 	return []byte{}, nil
 }

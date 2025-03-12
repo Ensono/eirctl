@@ -25,11 +25,11 @@ var (
 )
 
 type ContainerContext struct {
-	Name         string
-	Entrypoint   []string
-	ShellArgs    []string
-	volumes      map[string]struct{}
-	isPrivileged bool
+	Name       string
+	Entrypoint []string
+	ShellArgs  []string
+	volumes    map[string]struct{}
+	// isPrivileged bool
 }
 
 func NewContainerContext(name string) *ContainerContext {
