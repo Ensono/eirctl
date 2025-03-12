@@ -1,8 +1,6 @@
 ![](./docs/eirctl-logo.webp)
 # eirctl - concurrent task and container runner
 
-> modified ensono/eirctl
-
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ensono/eirctl)](https://goreportcard.com/report/github.com/Ensono/eirctl)
 
