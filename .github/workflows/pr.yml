@@ -74,10 +74,6 @@ jobs:
       run: |
         CI=true go run cmd/main.go generate_own_schema
 
-    - name: go vet
-      run: |
-        go run cmd/main.go run task govet
-    
     - name: Test
       run: |
         DOCKER_HOST=unix:///var/run/docker.sock go run cmd/main.go run pipeline test:unit

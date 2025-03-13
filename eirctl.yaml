@@ -15,6 +15,18 @@ contexts:
         - GO
         - CXX
         - CGO
+  golint:
+    container:
+      name: golangci/golangci-lint:v1.64.7-alpine
+      entrypoint:
+        - /usr/bin/env
+    envfile:
+      exclude:
+        - GO
+        - CXX
+        - CGO
+        - PATH
+        - HOME
 
 pipelines:
   fixcs:
@@ -35,7 +47,8 @@ pipelines:
 
   lints:
     - task: golint
-    - task: govet
+    # govet is run as part of golint
+    # - task: govet
   
   test:unit:
     - task: clean
@@ -126,10 +139,11 @@ tasks:
       BinName: taskctl
 
   golint:
-  # in CI it is run 
+   # in CI it is run 
+    context: golint
+    description: Runs the linter and go vet and other default static checks
     command:
-      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-      - golangci-lint run
+      - golangci-lint run --verbose
 
   govet:
     command:
