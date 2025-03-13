@@ -149,7 +149,7 @@ hello, iteration 10
 		}
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
-		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `ls -alt .`,
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `ls -l .`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
 			Stdout: so,
@@ -159,7 +159,8 @@ hello, iteration 10
 		if err != nil {
 			t.Fatalf("got %v, wanted nil", err)
 		}
-		if strings.HasPrefix(so.String(), `total 0`) {
+		fmt.Println(so.String())
+		if !strings.Contains(so.String(), `compiler.go`) {
 			t.Errorf("got (%v), expected error\n\n", so.String())
 		}
 	})
