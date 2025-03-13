@@ -144,7 +144,9 @@ tasks:
     context: golint
     description: Runs the linter and go vet and other default static checks
     command:
-      - golangci-lint run
+      - |
+        pwd && ls -lat .
+        golangci-lint run
 
   goimports:
     command:
