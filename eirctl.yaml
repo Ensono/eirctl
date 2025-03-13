@@ -55,13 +55,13 @@ pipelines:
   
   test:unit:
     - task: clean
-    # - task: test_prereqs
+    - task: test_prereqs
     - task: test
       # env:
       #   DOCKER_HOST: unix:///var/run/docker.sock
       depends_on: 
         - clean
-        # - test_prereqs
+        - test_prereqs
 
   show:coverage:
     - pipeline: test:unit
@@ -97,14 +97,10 @@ tasks:
         go install github.com/AlekSi/gocov-xml@v1.0.0
 
   test:
-    context: go:container
     command:
       - |
         mkdir -p .coverage 
         export GOFLAGS=-buildvcs=false
-        go install github.com/jstemmer/go-junit-report@v0.9.1
-        go install github.com/axw/gocov/gocov@v1.0.0
-        go install github.com/AlekSi/gocov-xml@v1.0.0
         go test $(go list ./... | grep -v /local/) -v -race -mod=readonly -shuffle=on -coverprofile=.coverage/out | tee .coverage/test.out
         cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
         gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
