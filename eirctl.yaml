@@ -105,6 +105,11 @@ tasks:
     after:
       - cat .coverage/test.out
     allow_failure: true
+  
+  mount:tester:
+    context: go:container
+    command:
+      - pwd && ls -lat .
 
   build:
     # context: go:container
