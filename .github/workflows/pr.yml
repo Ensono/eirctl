@@ -45,8 +45,8 @@ jobs:
           go-version: 1.24.x
       - name: Linters
         run: |
-          docker run -v $PWD:/eirctl -w /eirctl golangci/golangci-lint:v1.64.7-alpine sh -c 'golangci-lint run --verbose'
-      # go run -race cmd/main.go run lints --debug
+          go run -race cmd/main.go run lints --debug
+      # docker run -v $PWD:/eirctl -w /eirctl golangci/golangci-lint:v1.64.7-alpine sh -c 'golangci-lint run --verbose'
 
   test:
     name: Test
