@@ -105,11 +105,6 @@ tasks:
     after:
       - cat .coverage/test.out
     allow_failure: true
-  
-  mount:tester:
-    context: go:container
-    command:
-      - pwd && ls -lat .
 
   build:
     # context: go:container
@@ -150,8 +145,8 @@ tasks:
     context: golint
     description: Runs the linter and go vet and other default static checks
     command:
-    # pwd && ls -lat . 
       - |
+        pwd && ls -lat . 
         golangci-lint run --verbose
 
   goimports:
