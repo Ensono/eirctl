@@ -1,7 +1,6 @@
 package scheduler_test
 
 import (
-	"fmt"
 	"os"
 	"slices"
 	"testing"
@@ -24,12 +23,12 @@ func TestStageFrom_originalToNew(t *testing.T) {
 	g.Env = map[string]string{"global": "global-stuff"}
 	newStage := scheduler.NewStage("new-stage")
 	newStage.FromStage(oldStage, g, []string{"test-merge"})
+	newStage.WithEnv(variables.FromMap(map[string]string{"original": "newVal"}))
 
-	if len(newStage.Env().Map()) == 0 {
-		t.Fatal("not merged env")
-	}
-	for k, v := range newStage.Env().Map() {
-		fmt.Printf("%s = %v\n", k, v)
+	for _, v := range [][]string{{"original", "newVal"}, {"foo", "bar"}, {"global", "global-stuff"}} {
+		if newStage.Env().Get(v[0]) != v[1] {
+			t.Errorf("got %s, wanted %s\n", newStage.Env().Get(v[0]), v[1])
+		}
 	}
 }
 

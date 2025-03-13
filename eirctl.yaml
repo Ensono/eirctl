@@ -9,8 +9,27 @@ output: prefixed
 contexts:
   go:container:
     container:
-      name: golang:1.23.7
+      name: golang:1.24.1-bookworm
       enable_dind: true
+    envfile:
+      exclude:
+        - GO
+        - CXX
+        - CGO
+
+  golint:
+    container:
+      name: golangci/golangci-lint:v1.64.7-alpine
+      # entrypoint:
+      #   - /usr/bin/env
+      enable_dind: true
+    envfile:
+      exclude:
+        - GO
+        - CXX
+        - CGO
+        - PATH
+        - HOME
 
 pipelines:
   fixcs:
@@ -31,8 +50,8 @@ pipelines:
 
   lints:
     - task: golint
-    - task: govet
-      depends_on: golint
+    # govet is run as part of golint
+    # - task: govet
   
   test:unit:
     - task: clean
@@ -67,6 +86,7 @@ tasks:
         rm -rf bin/*
         rm -rf dist/*
         rm -rf vendor/*
+        rm -rf .coverage
   test_prereqs: 
     command: 
       - echo "running test pre-requisites"
@@ -78,32 +98,19 @@ tasks:
 
   test:
     command:
-      - echo "running tests..."
-      - go test $(go list ./... | grep -v /local/) -v -race -mod=readonly -shuffle=on -coverprofile=.coverage/out > .coverage/test.out
-      - cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
-      - gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
-    after:
-      - cat .coverage/test.out
-    allow_failure: true
-
-  test:in:container:
-    context: go:container
-    # dir: runner
-    command:
       - |
-        echo 'starting go test...'
-        echo "docker sock: $(ls -lat /var/run/docker.sock)"
-        echo "docker_HOST: $DOCKER_HOST"
-        echo 'finished go test...'
-      - aws sts get-caller-identity
-  # > .coverage/test.out
-  # cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
-  # gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
-    # after:
-    #   - cat .coverage/test.out
+        mkdir -p .coverage 
+        export GOFLAGS=-buildvcs=false
+        go test $(go list ./... | grep -v /local/) -v -race -mod=readonly -shuffle=on -coverprofile=.coverage/out | tee .coverage/test.out
+        cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
+        gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
+    env:
+      # TODO: bug when exclude is set up on the context it should allow task level overwrites
+      GOFLAGS: -buildvcs=false
     allow_failure: true
 
   build:
+    # context: go:container
     description: Builds the binary
     command:
       - |
@@ -137,14 +144,11 @@ tasks:
       BinName: taskctl
 
   golint:
-  # in CI it is run 
+   # in CI it is run 
+    context: golint
+    description: Runs the linter and go vet and other default static checks
     command:
-      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
       - golangci-lint run
-
-  govet:
-    command:
-      - go vet ./...
 
   goimports:
     command:

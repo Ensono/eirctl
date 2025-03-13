@@ -129,7 +129,7 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		}
 		defer rnr.Finish()
 
-		testOut, testErr := &bytes.Buffer{}, &bytes.Buffer{}
+		testOut, testErr := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		rnr.Stdout, rnr.Stderr = testOut, testErr
 		rnr.SetVariables(variables.FromMap(map[string]string{"Root": "/tmp"}))
 		rnr.WithVariable("Root", "/")
@@ -178,7 +178,7 @@ QUX=looopar`))
 		}
 		defer rnr.Finish()
 
-		testOut, testErr := &bytes.Buffer{}, &bytes.Buffer{}
+		testOut, testErr := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		rnr.Stdout, rnr.Stderr = testOut, testErr
 
 		task1 := taskpkg.NewTask("default:docker:with:env")
@@ -197,7 +197,7 @@ QUX=looopar`))
 		if len(testErr.String()) > 0 {
 			t.Fatalf("got: %s, wanted nil", testErr.String())
 		}
-		rCloser := &tCloser{bytes.NewReader(testOut.Bytes())}
+		rCloser := &tCloser{strings.NewReader(testOut.String())}
 		got, _ := utils.ReadEnvFile(rCloser)
 
 		if _, ok := got["ADDED"]; ok {

@@ -20,8 +20,7 @@ type ExecutorIface interface {
 	Execute(ctx context.Context, job *Job) ([]byte, error)
 }
 
-// type StreamAttachment struct {}
-
+// GetExecutorFactory returns a factory instance of the executor
 func GetExecutorFactory(execContext *ExecutionContext, job *Job) (ExecutorIface, error) {
 
 	switch execContext.GetExecutorType() {
@@ -32,10 +31,6 @@ func GetExecutorFactory(execContext *ExecutionContext, job *Job) (ExecutorIface,
 	default:
 		return nil, fmt.Errorf("wrong executor type")
 	}
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return de
 }
 
 // DefaultExecutor is a default executor used for jobs

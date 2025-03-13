@@ -13,6 +13,7 @@ import (
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -103,11 +104,11 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).Map()))
 
 	containerConfig := &container.Config{
-		Image:       containerContext.Name,
-		Entrypoint:  containerContext.Entrypoint,
-		Env:         cEnv,
-		Cmd:         cmd,
-		Volumes:     containerContext.Volumes(),
+		Image:      containerContext.Name,
+		Entrypoint: containerContext.Entrypoint,
+		Env:        cEnv,
+		Cmd:        cmd,
+		// Volumes:     containerContext.Volumes(),
 		Tty:         tty,
 		AttachStdin: attachStdin,
 		// OpenStdin: ,
@@ -118,9 +119,21 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	if err := e.PullImage(ctx, containerContext.Name, job.Stdout); err != nil {
 		return nil, err
 	}
-
 	logrus.Debugf("%+v", containerConfig)
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, nil, nil, nil, "")
+
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
+	for _, volume := range containerContext.BindMounts() {
+		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: volume.SourcePath,
+			Target: volume.TargetPath,
+			BindOptions: &mount.BindOptions{
+				Propagation: mount.PropagationShared,
+			},
+		})
+	}
+
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
@@ -185,12 +198,12 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
 
-	go func(errCh chan error) {
+	// multiplex stderr so that
+	// we can error and store the multiplexed stream
+	stderr := output.NewSafeWriter(&bytes.Buffer{})
+	go func(errCh chan error, stderr *output.SafeWriter) {
 		doLoop := true
 		for doLoop {
-			// multiplex stderr so that
-			// we can error and store the multiplexed stream
-			stderr := output.NewSafeWriter(&bytes.Buffer{})
 			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
 				doLoop = false
 				errCh <- err
@@ -200,7 +213,8 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
 			}
 		}
-	}(errExecCh)
+	}(errExecCh, stderr)
+
 	return out.Close, nil
 }
 

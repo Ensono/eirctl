@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -68,7 +69,7 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 }
 
 func Test_ContainerExecutor(t *testing.T) {
-
+	t.Parallel()
 	t.Run("check client does not start with DOCKER_HOST removed", func(t *testing.T) {
 
 	})
@@ -89,28 +90,76 @@ func Test_ContainerExecutor(t *testing.T) {
 			t.Error(err)
 		}
 
-		so := &bytes.Buffer{}
-		se := &bytes.Buffer{}
-		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `env
-ls -lat .
-pwd
-for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
-			Stdout: output.NewSafeWriter(so),
-			Stderr: output.NewSafeWriter(se),
+			Stdout: so,
+			Stderr: se,
 		})
 
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if len(se.Bytes()) > 0 {
+		if len(se.String()) > 0 {
 			t.Errorf("got error %v, expected nil\n\n", se.String())
 		}
+		if len(so.String()) == 0 {
+			t.Errorf("got (%s) no output, expected stdout\n\n", so.String())
+		}
+		want := `/eirctl
+hello, iteration 1
+hello, iteration 2
+hello, iteration 3
+hello, iteration 4
+hello, iteration 5
+hello, iteration 6
+hello, iteration 7
+hello, iteration 8
+hello, iteration 9
+hello, iteration 10
+`
+		if so.String() != want {
+			t.Errorf("outputs do not match\n\tgot: %s\n\twanted:  %s", so.String(), want)
+		}
+	})
 
-		if len(so.Bytes()) == 0 {
-			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
+	t.Run("correctly mounts host dir", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3")
+		cc.ShellArgs = []string{"sh", "-c"}
+		pwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		if dh := os.Getenv("DOCKER_HOST"); dh == "" {
+			t.Fatal("ensure your DOCKER_HOST is set correctly")
+		}
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `ls -l .`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err != nil {
+			t.Fatalf("got %v, wanted nil", err)
+		}
+		if !strings.Contains(so.String(), `compiler.go`) {
+			t.Errorf("got (%v), expected error\n\n", so.String())
 		}
 	})
 
@@ -130,24 +179,23 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
 			t.Error(err)
 		}
 
-		so := &bytes.Buffer{}
-		se := &bytes.Buffer{}
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
-			Stdout: output.NewSafeWriter(so),
-			Stderr: output.NewSafeWriter(se),
+			Stdout: so,
+			Stderr: se,
 		})
 
 		if err == nil {
-			t.Errorf("got %v, wanted error", err)
+			t.Fatalf("got %v, wanted error", err)
 		}
 
-		if len(se.Bytes()) == 0 {
+		if len(se.String()) == 0 {
 			t.Errorf("got error (%v), expected error\n\n", se.String())
 		}
 
-		if len(so.Bytes()) > 0 {
+		if len(so.String()) > 0 {
 			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
 		}
 	})
