@@ -147,7 +147,7 @@ tasks:
     command:
       - |
         pwd && ls -lat . 
-        golangci-lint run --verbose
+        golangci-lint run
 
   goimports:
     command:
