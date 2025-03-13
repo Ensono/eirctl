@@ -72,7 +72,7 @@ type BindVolume struct {
 // BindMounts returns the volumes in a bind mount format
 func (c *ContainerContext) BindMounts() []BindVolume {
 	bv := []BindVolume{}
-	for vol, _ := range c.volumes {
+	for vol := range c.volumes {
 		splitVol := strings.Split(vol, ":")
 		if len(splitVol) == 2 {
 			bv = append(bv, BindVolume{SourcePath: splitVol[0], TargetPath: splitVol[1]})
