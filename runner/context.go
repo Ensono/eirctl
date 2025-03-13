@@ -61,6 +61,26 @@ func (c *ContainerContext) Volumes() map[string]struct{} {
 	return c.volumes
 }
 
+// BindVolume formatted for bindmount
+type BindVolume struct {
+	// SourcePath is the path on the host
+	SourcePath string
+	// TargetPath is the path in the container
+	TargetPath string
+}
+
+// BindMounts returns the volumes in a bind mount format
+func (c *ContainerContext) BindMounts() []BindVolume {
+	bv := []BindVolume{}
+	for vol, _ := range c.volumes {
+		splitVol := strings.Split(vol, ":")
+		if len(splitVol) == 2 {
+			bv = append(bv, BindVolume{SourcePath: splitVol[0], TargetPath: splitVol[1]})
+		}
+	}
+	return bv
+}
+
 // ExecutionContext allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 type ExecutionContext struct {
 	Executable *utils.Binary

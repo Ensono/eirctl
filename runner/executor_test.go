@@ -127,7 +127,7 @@ hello, iteration 10
 		}
 	})
 
-	t.Run("correctly mounts host dir alpine:latest", func(t *testing.T) {
+	t.Run("correctly mounts host dir", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3")
 		cc.ShellArgs = []string{"sh", "-c"}
 		pwd, err := os.Getwd()
