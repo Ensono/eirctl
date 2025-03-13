@@ -36,7 +36,6 @@ pipelines:
   lints:
     - task: golint
     - task: govet
-      depends_on: golint
   
   test:unit:
     - task: clean
