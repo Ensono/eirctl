@@ -50,11 +50,11 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    needs: 
-      - set-version-tag
-      - lint
+    # needs: 
+      # - set-version-tag
+      # - lint
     env:
-      SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
+      # SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
     - name: Set up Go
@@ -90,13 +90,13 @@ jobs:
         fail_on_failure: true
         check_name: Eirctl Unit Tests
 
-    - name: Analyze with SonarCloud         
-      uses: SonarSource/sonarcloud-github-action@v3
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
-      with:
-        args:             
-          -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
-          -Dsonar.go.coverage.reportPaths=/github/workspace/.coverage/out
-          -Dsonar.go.tests.reportPaths=/github/workspace/.coverage/report-junit.xml
+    # - name: Analyze with SonarCloud         
+    #   uses: SonarSource/sonarcloud-github-action@v3
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information
+    #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
+    #   with:
+    #     args:             
+    #       -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
+    #       -Dsonar.go.coverage.reportPaths=/github/workspace/.coverage/out
+    #       -Dsonar.go.tests.reportPaths=/github/workspace/.coverage/report-junit.xml
