@@ -90,25 +90,24 @@ func Test_ContainerExecutor(t *testing.T) {
 			t.Error(err)
 		}
 
-		so := &bytes.Buffer{}
-		se := &bytes.Buffer{}
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `pwd
 for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
-			Stdout: output.NewSafeWriter(so),
-			Stderr: output.NewSafeWriter(se),
+			Stdout: so,
+			Stderr: se,
 		})
 
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		if len(se.Bytes()) > 0 {
+		if len(se.String()) > 0 {
 			t.Errorf("got error %v, expected nil\n\n", se.String())
 		}
-		if len(so.Bytes()) == 0 {
-			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
+		if len(so.String()) == 0 {
+			t.Errorf("got (%s) no output, expected stdout\n\n", so.String())
 		}
 		want := `/eirctl
 hello, iteration 1
@@ -159,7 +158,6 @@ hello, iteration 10
 		if err != nil {
 			t.Fatalf("got %v, wanted nil", err)
 		}
-		fmt.Println(so.String())
 		if !strings.Contains(so.String(), `compiler.go`) {
 			t.Errorf("got (%v), expected error\n\n", so.String())
 		}
