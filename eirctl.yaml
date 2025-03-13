@@ -19,8 +19,8 @@ contexts:
   golint:
     container:
       name: golangci/golangci-lint:v1.64.7-alpine
-      entrypoint:
-        - /usr/bin/env
+      # entrypoint:
+      #   - /usr/bin/env
       enable_dind: true
     envfile:
       exclude:
