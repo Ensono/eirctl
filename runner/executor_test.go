@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -126,6 +127,43 @@ hello, iteration 10
 		}
 	})
 
+	t.Run("correctly mounts host dir alpine:latest", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3")
+		cc.ShellArgs = []string{"sh", "-c"}
+		pwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		if dh := os.Getenv("DOCKER_HOST"); dh == "" {
+			t.Fatal("ensure your DOCKER_HOST is set correctly")
+		}
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `ls -alt .`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err != nil {
+			t.Fatalf("got %v, wanted nil", err)
+		}
+		if strings.HasPrefix(so.String(), `total 0`) {
+			t.Errorf("got (%v), expected error\n\n", so.String())
+		}
+	})
+
 	t.Run("error docker with alpine:latest", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3")
 		cc.ShellArgs = []string{"sh", "-c"}
@@ -142,24 +180,23 @@ hello, iteration 10
 			t.Error(err)
 		}
 
-		so := &bytes.Buffer{}
-		se := &bytes.Buffer{}
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
-			Stdout: output.NewSafeWriter(so),
-			Stderr: output.NewSafeWriter(se),
+			Stdout: so,
+			Stderr: se,
 		})
 
 		if err == nil {
 			t.Fatalf("got %v, wanted error", err)
 		}
 
-		if len(se.Bytes()) == 0 {
+		if len(se.String()) == 0 {
 			t.Errorf("got error (%v), expected error\n\n", se.String())
 		}
 
-		if len(so.Bytes()) > 0 {
+		if len(so.String()) > 0 {
 			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
 		}
 	})
