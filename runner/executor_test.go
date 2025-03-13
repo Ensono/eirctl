@@ -68,7 +68,7 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 }
 
 func Test_ContainerExecutor(t *testing.T) {
-
+	t.Parallel()
 	t.Run("check client does not start with DOCKER_HOST removed", func(t *testing.T) {
 
 	})
@@ -91,10 +91,8 @@ func Test_ContainerExecutor(t *testing.T) {
 
 		so := &bytes.Buffer{}
 		se := &bytes.Buffer{}
-		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `env
-ls -lat .
-pwd
-for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
 			Stdout: output.NewSafeWriter(so),
@@ -108,9 +106,23 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
 		if len(se.Bytes()) > 0 {
 			t.Errorf("got error %v, expected nil\n\n", se.String())
 		}
-
 		if len(so.Bytes()) == 0 {
 			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
+		}
+		want := `/eirctl
+hello, iteration 1
+hello, iteration 2
+hello, iteration 3
+hello, iteration 4
+hello, iteration 5
+hello, iteration 6
+hello, iteration 7
+hello, iteration 8
+hello, iteration 9
+hello, iteration 10
+`
+		if so.String() != want {
+			t.Errorf("outputs do not match\n\tgot: %s\n\twanted:  %s", so.String(), want)
 		}
 	})
 
@@ -140,7 +152,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; sleep 0.1; done`,
 		})
 
 		if err == nil {
-			t.Errorf("got %v, wanted error", err)
+			t.Fatalf("got %v, wanted error", err)
 		}
 
 		if len(se.Bytes()) == 0 {
