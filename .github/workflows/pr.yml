@@ -47,7 +47,7 @@ jobs:
         run: |
           pwd && ls -lat .
           go run -race cmd/main.go run lints --debug
-      # docker run -v $PWD:/eirctl -w /eirctl golangci/golangci-lint:v1.64.7-alpine sh -c ls -lat .
+          docker run -v $PWD:/eirctl -w /eirctl golangci/golangci-lint:v1.64.7-alpine sh -c pwd && ls -lat . && golangci-lint run
 
   test:
     name: Test
