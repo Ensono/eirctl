@@ -18,3 +18,5 @@ local/
 .eirctl/
 # local env files
 *.env
+# prof outputs
+.pprof

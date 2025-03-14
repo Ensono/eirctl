@@ -15,6 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	ErrSpecifiedObjectIsNotFound = errors.New("unknown")
+)
+
 type runFlags struct {
 	showGraphOnly, detailedSummary bool
 }
@@ -61,6 +65,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
+
 			return runner.runTarget(taskRunner, conf, argsStringer)
 		},
 	}
@@ -79,6 +84,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			taskRunner, argsStringer, err := rootCmd.buildTaskRunner(args, conf)
 			if err != nil {
 				return err
+			}
+			if argsStringer.pipelineName == nil {
+				return fmt.Errorf("pipeline: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
 			}
 			return runner.runPipeline(argsStringer.pipelineName, taskRunner, conf.Summary)
 		},
@@ -100,6 +108,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			taskRunner, argsStringer, err := rootCmd.buildTaskRunner(args, conf)
 			if err != nil {
 				return err
+			}
+			if argsStringer.taskName == nil {
+				return fmt.Errorf("task: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
 			}
 			return runner.runTask(argsStringer.taskName, taskRunner)
 		},

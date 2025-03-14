@@ -76,11 +76,15 @@ func (tw *SafeWriter) Write(p []byte) (n int, err error) {
 // String returns the stringified version of bytes written
 // Currently only used in tests
 func (tw *SafeWriter) String() string {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 	return string(tw.bytesWritten)
 }
 
 // Len returns the currently written bytes length
 // Currently only used in tests
 func (tw *SafeWriter) Len() int {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
 	return len(tw.bytesWritten)
 }

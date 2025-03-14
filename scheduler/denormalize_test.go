@@ -184,7 +184,7 @@ output: prefixed
 contexts:
   podman:
     container:
-      name: alpine:latest
+      name: alpine:3.21.3
     env: 
       GLOBAL_VAR: this is it
     envfile:

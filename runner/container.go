@@ -144,14 +144,9 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 
 	// streamLogs
 	errExecCh := make(chan error)
-	closeFn, err := e.streamLogs(ctx, resp.ID, errExecCh, job)
-	if err != nil {
+	if err := e.streamLogs(ctx, resp.ID, errExecCh, job); err != nil {
 		return nil, err
 	}
-
-	defer func() {
-		_ = closeFn()
-	}()
 
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 	select {
@@ -187,7 +182,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	return nil
 }
 
-func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errExecCh chan error, job *Job) (func() error, error) {
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errExecCh chan error, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -195,27 +190,25 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		Follow:     true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%v\n%w", err, ErrContainerLogs)
+		return fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
 
-	// multiplex stderr so that
-	// we can error and store the multiplexed stream
 	stderr := output.NewSafeWriter(&bytes.Buffer{})
-	go func(errCh chan error, stderr *output.SafeWriter) {
-		doLoop := true
-		for doLoop {
-			if _, err := stdcopy.StdCopy(job.Stdout, io.MultiWriter(job.Stderr, stderr), out); err != nil {
-				doLoop = false
-				errCh <- err
-			}
-			if len(stderr.String()) > 0 {
-				doLoop = false
-				errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
-			}
-		}
-	}(errExecCh, stderr)
 
-	return out.Close, nil
+	go func(errCh chan error) {
+		defer out.Close()
+		// multiplex stderr so that
+		// we can error and store the multiplexed stream
+		multiStdErr := io.MultiWriter(job.Stderr, stderr)
+		if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, out); err != nil {
+			errCh <- err
+		}
+		if stderr.Len() > 0 {
+			errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
+		}
+	}(errExecCh)
+
+	return nil
 }
 
 // container attach stdin - via task or context
