@@ -193,16 +193,17 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		return fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
 
-	go func(errCh chan error) { //, stderr *output.SafeWriter
+	stderr := output.NewSafeWriter(&bytes.Buffer{})
+
+	go func(errCh chan error) {
 		defer out.Close()
 		// multiplex stderr so that
 		// we can error and store the multiplexed stream
-		stderr := output.NewSafeWriter(&bytes.Buffer{})
 		multiStdErr := io.MultiWriter(job.Stderr, stderr)
 		if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, out); err != nil {
 			errCh <- err
 		}
-		if len(stderr.String()) > 0 {
+		if stderr.Len() > 0 {
 			errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
 		}
 	}(errExecCh)

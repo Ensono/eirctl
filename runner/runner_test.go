@@ -184,9 +184,9 @@ QUX=looopar`))
 		task1 := taskpkg.NewTask("default:docker:with:env")
 		task1.Context = "default_docker"
 
-		task1.Commands = []string{"env"}
+		task1.Commands = []string{"env", "pwd"}
 		task1.Name = "env test"
-		task1.After = []string{"echo 'after env'"}
+		task1.After = []string{"echo 'after env from host'"}
 
 		// Act
 		if err := rnr.Run(task1); err != nil {
