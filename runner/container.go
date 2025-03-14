@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -22,12 +23,13 @@ import (
 )
 
 var (
-	ErrImagePull        = errors.New("failed to pull container image")
-	ErrContainerCreate  = errors.New("failed to create container")
-	ErrContainerStart   = errors.New("failed to start container")
-	ErrContainerWait    = errors.New("failed to wait for container")
-	ErrContainerLogs    = errors.New("failed to get container logs")
-	ErrContainerExecCmd = errors.New("failed to run cmd in container")
+	ErrImagePull                        = errors.New("failed to pull container image")
+	ErrContainerCreate                  = errors.New("failed to create container")
+	ErrContainerStart                   = errors.New("failed to start container")
+	ErrContainerWait                    = errors.New("failed to wait for container")
+	ErrContainerLogs                    = errors.New("failed to get container logs")
+	ErrContainerExecCmd                 = errors.New("failed to run cmd in container")
+	ErrContainerMultiplexedStdoutStream = errors.New("failed to de-muiltiplex the stream")
 )
 
 // ContainerExecutorIface interface used by this implementation
@@ -197,11 +199,35 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 
 	go func(errCh chan error) {
 		defer out.Close()
+
+		// Wrap `out` in a buffered reader to prevent partial reads
+		reader := bufio.NewReader(out)
 		// multiplex stderr so that
 		// we can error and store the multiplexed stream
 		multiStdErr := io.MultiWriter(job.Stderr, stderr)
-		if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, out); err != nil {
-			errCh <- err
+
+		// Loop to continuously read from the log stream
+		for {
+			// Read one chunk of data
+			buf := make([]byte, 1024) // Read in chunks of 1KB
+			n, err := reader.Read(buf)
+			if n > 0 {
+				if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, bytes.NewReader(buf[:n])); err != nil {
+					errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
+					return
+				}
+			}
+
+			// Handle EOF (when logs stop)
+			if err == io.EOF {
+				// Stop reading once EOF is reached
+				// will go to check the stderr stream
+				break
+			}
+			if err != nil {
+				errExecCh <- fmt.Errorf("error reading logs: %w", err)
+				return
+			}
 		}
 		if stderr.Len() > 0 {
 			errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
