@@ -225,7 +225,7 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 				break
 			}
 			if err != nil {
-				errExecCh <- fmt.Errorf("error reading logs: %w", err)
+				errExecCh <- fmt.Errorf("error reading logs: %v", err)
 				return
 			}
 		}
