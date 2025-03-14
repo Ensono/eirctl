@@ -115,6 +115,7 @@ func (t *tCloser) Close() error {
 }
 
 func Test_DockerExec_Cmd(t *testing.T) {
+	t.Parallel()
 	t.Run("runs with default env file using v1 containers", func(t *testing.T) {
 		dockerCtx := runner.NewExecutionContext(&utils.Binary{Bin: "docker", Args: []string{
 			"run",

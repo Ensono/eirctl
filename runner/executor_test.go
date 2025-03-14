@@ -69,6 +69,7 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 }
 
 func Test_ContainerExecutor(t *testing.T) {
+	t.Parallel()
 	t.Run("docker with alpine:latest", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3")
 		cc.ShellArgs = []string{"sh", "-c"}

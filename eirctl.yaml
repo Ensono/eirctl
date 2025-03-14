@@ -7,7 +7,7 @@ output: prefixed
 #   foo: 1
 
 contexts:
-  go:container:
+  go1x:
     container:
       name: golang:1.24.1-bookworm
       enable_dind: true
@@ -32,20 +32,11 @@ contexts:
         - HOME
 
 pipelines:
-  fixcs:
-    - task: goimports
-      dir: "{{.Root}}"
-    - task: gofmt
-      dir: "{{.Root}}"
-      depends_on: goimports
-
   prepare:
     - task: tidy
     - task: test
-    - task: goimports
-      depends_on: test
     - task: gofmt
-      depends_on: goimports
+    - task: golint
     - pipeline: lints
 
   lints:
@@ -110,7 +101,7 @@ tasks:
     allow_failure: true
 
   build:
-    # context: go:container
+    # context: go1x
     description: Builds the binary
     command:
       - |
@@ -150,22 +141,16 @@ tasks:
     command:
       - golangci-lint run
 
-  goimports:
-    command:
-      - goimports -v -local github.com/Ensono/taskctl -w -format-only $(ls -d internal/**/*.go)
-      - goimports -v -local github.com/Ensono/taskctl -w -format-only $(ls -d pkg/**/*.go)
-      - goimports -v -local github.com/Ensono/taskctl -w -format-only $(ls -d cmd/**/*.go)
-
   goreleaser:
     command:
       - goreleaser --debug --rm-dist
 
   gofmt:
+    context: go1x
     command:
-      - go fmt -x ./...
-      - gofmt -s -w cmd/**/*.go
-      - gofmt -s -w internal/**/*.go
-      - gofmt -s -w pkg/**/*.go
+      - go fmt ./...
+      - gofmt -l **/*.go
+      # - gofmt -l -cpuprofile .pprof  **/*.go
 
   schema_gen_deps:
     description: |
