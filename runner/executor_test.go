@@ -39,9 +39,6 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 		t.Error()
 	}
 
-	// b2 := &bytes.Buffer{}
-	// o2 := output.NewSafeWriter(b2)
-
 	job1 = runner.NewJobFromCommand("exit 1")
 	job1.Stdout = io.Discard
 	job1.Stderr = io.Discard
@@ -70,8 +67,8 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 
 func Test_ContainerExecutor(t *testing.T) {
 	t.Parallel()
-	t.Run("docker with alpine:latest", func(t *testing.T) {
-		cc := runner.NewContainerContext("alpine:3")
+	t.Run("docker with alpine", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
 
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
@@ -123,7 +120,7 @@ hello, iteration 10
 	})
 
 	t.Run("correctly mounts host dir", func(t *testing.T) {
-		cc := runner.NewContainerContext("alpine:3")
+		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
 		pwd, err := os.Getwd()
 		if err != nil {
@@ -160,7 +157,7 @@ hello, iteration 10
 	})
 
 	t.Run("error docker with alpine:latest", func(t *testing.T) {
-		cc := runner.NewContainerContext("alpine:3")
+		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
 
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},

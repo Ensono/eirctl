@@ -120,7 +120,7 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		dockerCtx := runner.NewExecutionContext(&utils.Binary{Bin: "docker", Args: []string{
 			"run",
 			"--rm",
-			"alpine", "sh", "-c"}}, "/", variables.NewVariables(), utils.NewEnvFile(func(e *utils.Envfile) {}),
+			"alpine:3.21.3", "sh", "-c"}}, "/", variables.NewVariables(), utils.NewEnvFile(func(e *utils.Envfile) {}),
 			[]string{""}, []string{""}, []string{""}, []string{""})
 
 		rnr, err := runner.NewTaskRunner(runner.WithContexts(map[string]*runner.ExecutionContext{"default_docker": dockerCtx}))
@@ -304,10 +304,8 @@ func TestRunner_Run_with_Artifacts(t *testing.T) {
 	dir, _ := os.MkdirTemp(os.TempDir(), "artifacts*")
 	defer os.RemoveAll(dir)
 
-	stdoutBytes := &bytes.Buffer{}
-
 	tr, err := runner.NewTaskRunner(func(tr *runner.TaskRunner) {
-		tr.Stdout = output.NewSafeWriter(stdoutBytes)
+		tr.Stdout = output.NewSafeWriter(&bytes.Buffer{})
 	})
 
 	if err != nil {
