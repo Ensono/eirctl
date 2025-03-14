@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,6 +64,15 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 	if err != nil {
 		t.Error()
 	}
+}
+
+type errWriter struct {
+	resp int
+	err  error
+}
+
+func (ew *errWriter) Write(p []byte) (int, error) {
+	return ew.resp, ew.err
 }
 
 func Test_ContainerExecutor(t *testing.T) {
@@ -190,6 +200,36 @@ hello, iteration 10
 
 		if len(so.String()) > 0 {
 			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
+		}
+	})
+	t.Run("incorrect writer", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
+		cc.ShellArgs = []string{"sh", "-c"}
+
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		ew := &errWriter{
+			err:  fmt.Errorf("throw here"),
+			resp: 10,
+		}
+
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: io.Discard,
+			Stderr: ew, //output.NewSafeWriter(io.Discard),
+		})
+
+		if err == nil {
+			t.Fatalf("got %v, wanted error", err)
+		}
+		if !errors.Is(err, runner.ErrContainerMultiplexedStdoutStream) {
+			t.Fatal("incorrect type of error ")
 		}
 	})
 }
