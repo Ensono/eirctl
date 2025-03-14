@@ -270,7 +270,7 @@ func TestTaskRunner_ResetContext_WithVariations(t *testing.T) {
 	}
 
 	for name, tt := range ttests {
-		t.Run(name, func(t *testing.T) {
+		t.Run("using default shell "+name, func(t *testing.T) {
 			task := taskpkg.NewTask(name)
 			task.Commands = []string{"echo $Var1"}
 			task.ResetContext = tt.resetContext // this is set by default but setting here for clarity
@@ -298,6 +298,46 @@ func TestTaskRunner_ResetContext_WithVariations(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("using container v2", func(t *testing.T) {
+		executable := runner.NewContainerContext("alpine:3.21.3")
+
+		dockerCtx := runner.NewExecutionContext(nil, "/", variables.FromMap(map[string]string{"ADDED": "/old/foo", "NEW_STUFF": "/old/bar"}),
+			utils.NewEnvFile(func(e *utils.Envfile) {
+				e.Exclude = append(config.DefaultContainerExcludes, "ADDED")
+			}), []string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(executable))
+
+		ob, eb := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		r, err := runner.NewTaskRunner(func(tr *runner.TaskRunner) {
+			tr.Stdout = ob
+			tr.Stderr = eb
+		}, runner.WithContexts(map[string]*runner.ExecutionContext{"alpine": dockerCtx}))
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := taskpkg.NewTask("container")
+		task.Commands = []string{"echo ${FOO}"}
+		task.ResetContext = true
+		task.Variations = []map[string]string{{"FOO": "one"}, {"FOO": "two"}, {"FOO": "three"}, {"FOO": "four"}}
+
+		if err := r.Run(task); err != nil {
+			t.Fatal(err)
+		}
+		got := ob.String()
+		if len(got) < 1 {
+			t.Error("nothing written")
+		}
+		want := `one
+two
+three
+four
+`
+		if got != want {
+			t.Errorf("\ngot:\n%s\nwant:\n%s", got, want)
+		}
+	})
+
 }
 
 func TestRunner_Run_with_Artifacts(t *testing.T) {
