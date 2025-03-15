@@ -105,7 +105,7 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 
 		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
 		if container.EnableDinD {
-			var dockerHostPath, envFound = "", false
+			dockerHostPath, envFound := "", false
 			if dockerHostPath, envFound = os.LookupEnv("DOCKER_HOST"); !envFound {
 				// fallback on the hardcoded
 				dockerHostPath = "/var/run/docker.sock"
