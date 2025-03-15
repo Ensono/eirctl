@@ -282,6 +282,8 @@ func TestLoader_contexts(t *testing.T) {
         - GO
         - HOMEBREW
 `))
+	_ = os.Unsetenv("DOCKER_HOST")
+
 	loader := config.NewConfigLoader(config.NewConfig())
 	loader.WithStrictDecoder()
 	def, err := loader.Load(fname)
