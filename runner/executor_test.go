@@ -80,6 +80,7 @@ func Test_ContainerExecutor(t *testing.T) {
 	t.Run("docker with alpine", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
+		cc.MountVolume = true
 
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
 			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
@@ -169,7 +170,7 @@ hello, iteration 10
 	t.Run("error docker with alpine:latest", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
-
+		cc.WithEnvOverride(map[string]string{"FOO": "bar"})
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
 			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
 

@@ -105,7 +105,7 @@ tasks:
     description: Builds the binary
     command:
       - |
-        ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/taskctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/taskctl.Revision={{.Revision}}\" -extldflags -static"
+        ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Revision={{.Revision}}\" -extldflags -static"
         GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${GOOS}-${GOARCH}${BINARY_SUFFIX} cmd/main.go
     variations:
       - GOOS: windows
@@ -132,7 +132,7 @@ tasks:
     reset_context: true
     variables:
       RepoOwner: Ensono
-      BinName: taskctl
+      BinName: eirctl
 
   golint:
    # in CI it is run 

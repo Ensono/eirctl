@@ -10,7 +10,6 @@ import (
 	"path"
 
 	"github.com/Ensono/eirctl/internal/utils"
-	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -40,6 +39,7 @@ type ContainerExecutorIface interface {
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
 }
 
 type ContainerExecutor struct {
@@ -91,10 +91,10 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
 	tty, attachStdin := false, false
-	if job.Stdin != nil {
-		tty = true
-		attachStdin = true
-	}
+	// if job.Stdin != nil {
+	// 	tty = true
+	// 	attachStdin = true
+	// }
 	remoteDir := ""
 	if e.execContext.Dir != job.Dir {
 		remoteDir = job.Dir
@@ -103,36 +103,42 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	// everything in the container is relative to the `/eirctl` directory
 	wd := path.Join("/eirctl", remoteDir)
 	// adding the opiniated PWD into the Container Env as per the wd variable
-	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).Map()))
+	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(
+		job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).
+			Merge(variables.FromMap(containerContext.envOverride)).
+			Map()))
 
 	containerConfig := &container.Config{
-		Image:      containerContext.Name,
-		Entrypoint: containerContext.Entrypoint,
-		Env:        cEnv,
-		Cmd:        cmd,
-		// Volumes:     containerContext.Volumes(),
-		Tty:         tty,
+		Image:       containerContext.Image,
+		Entrypoint:  containerContext.Entrypoint,
+		Env:         cEnv,
+		Cmd:         cmd,
+		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
 		AttachStdin: attachStdin,
 		// OpenStdin: ,
 		// WorkingDir in a container will always be /eirctl
 		// will append any job specified paths to the default working
 		WorkingDir: wd,
 	}
-	if err := e.PullImage(ctx, containerContext.Name, job.Stdout); err != nil {
+	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
 	logrus.Debugf("%+v", containerConfig)
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	for _, volume := range containerContext.BindMounts() {
-		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-			Type:   mount.TypeBind,
-			Source: volume.SourcePath,
-			Target: volume.TargetPath,
-			BindOptions: &mount.BindOptions{
-				Propagation: mount.PropagationShared,
-			},
-		})
+	if containerContext.MountVolume {
+		containerConfig.Volumes = containerContext.Volumes()
+	} else {
+		for _, volume := range containerContext.BindMounts() {
+			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+				Type:   mount.TypeBind,
+				Source: volume.SourcePath,
+				Target: volume.TargetPath,
+				BindOptions: &mount.BindOptions{
+					Propagation: mount.PropagationShared,
+				},
+			})
+		}
 	}
 
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
@@ -162,7 +168,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		}
 	case <-statusWaitCh:
 	}
-	return []byte{}, nil
+	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
 // Container pull images - all contexts that have a container property
@@ -184,7 +190,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	return nil
 }
 
-func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errExecCh chan error, job *Job) error {
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan error, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -195,24 +201,18 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		return fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
 
-	stderr := output.NewSafeWriter(&bytes.Buffer{})
-
-	go func(errCh chan error) {
+	go func() {
 		defer out.Close()
 
 		// Wrap `out` in a buffered reader to prevent partial reads
 		reader := bufio.NewReader(out)
-		// multiplex stderr so that
-		// we can error and store the multiplexed stream
-		multiStdErr := io.MultiWriter(job.Stderr, stderr)
-
 		// Loop to continuously read from the log stream
 		for {
 			// Read one chunk of data
-			buf := make([]byte, 1024) // Read in chunks of 1KB
+			buf := make([]byte, 4096) // Read in chunks of 4KB
 			n, err := reader.Read(buf)
 			if n > 0 {
-				if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, bytes.NewReader(buf[:n])); err != nil {
+				if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, bytes.NewReader(buf[:n])); err != nil {
 					errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 					return
 				}
@@ -225,15 +225,22 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 				break
 			}
 			if err != nil {
-				errExecCh <- fmt.Errorf("error reading logs: %v", err)
+				errCh <- fmt.Errorf("error reading logs: %v", err)
 				return
 			}
 		}
-		if stderr.Len() > 0 {
-			errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
-		}
-	}(errExecCh)
+	}()
 
+	return nil
+}
+func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
+	resp, err := e.cc.ContainerInspect(ctx, containerId)
+	if err != nil {
+		return fmt.Errorf("%w, %v", ErrContainerLogs, err)
+	}
+	if resp.State.ExitCode != 0 {
+		return fmt.Errorf("container image (%s) command %v failed with non-zero exit code, %w", resp.Image, resp.Config.Cmd, ErrContainerExecCmd)
+	}
 	return nil
 }
 
