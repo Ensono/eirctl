@@ -103,7 +103,10 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	// everything in the container is relative to the `/eirctl` directory
 	wd := path.Join("/eirctl", remoteDir)
 	// adding the opiniated PWD into the Container Env as per the wd variable
-	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).Map()))
+	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(
+		job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).
+			Merge(variables.FromMap(containerContext.envOverride)).
+			Map()))
 
 	containerConfig := &container.Config{
 		Image:       containerContext.Image,
@@ -203,10 +206,6 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 
 		// Wrap `out` in a buffered reader to prevent partial reads
 		reader := bufio.NewReader(out)
-		// multiplex stderr so that
-		// we can error and store the multiplexed stream
-		// multiStdErr := io.MultiWriter(job.Stderr, stderr)
-
 		// Loop to continuously read from the log stream
 		for {
 			// Read one chunk of data
@@ -239,9 +238,6 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 	if err != nil {
 		return fmt.Errorf("%w, %v", ErrContainerLogs, err)
 	}
-	// if resp.State.Status != "exited" || resp.State.Status != "stopped" {
-	// 	return fmt.Errorf("container image (%s) hasn't finished correctly in state %s", resp.Image, resp.State.Status)
-	// }
 	if resp.State.ExitCode != 0 {
 		return fmt.Errorf("container image (%s) command %v failed with non-zero exit code, %w", resp.Image, resp.Config.Cmd, ErrContainerExecCmd)
 	}

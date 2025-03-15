@@ -32,13 +32,15 @@ type ContainerContext struct {
 	MountVolume bool
 	volumes     map[string]struct{}
 	// isPrivileged bool
+	envOverride map[string]string
 }
 
 // NewContainerContext accepts name of the image
 func NewContainerContext(name string) *ContainerContext {
 	return &ContainerContext{
-		Image:   name,
-		volumes: make(map[string]struct{}),
+		Image:       name,
+		volumes:     make(map[string]struct{}),
+		envOverride: make(map[string]string),
 	}
 }
 
@@ -99,6 +101,13 @@ func (c *ContainerContext) BindMounts() []BindVolume {
 		}
 	}
 	return bv
+}
+
+func (c *ContainerContext) WithEnvOverride(env map[string]string) *ContainerContext {
+	for k, v := range env {
+		c.envOverride[k] = v
+	}
+	return c
 }
 
 // ExecutionContext allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
