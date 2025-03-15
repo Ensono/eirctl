@@ -254,3 +254,43 @@ func ExampleExecutionContext_ProcessEnvfile() {
 	//Output:
 	// TF_VAR_capped_by_msft=some value
 }
+
+func Test_ContainerContext_Volumes(t *testing.T) {
+	t.Parallel()
+	pwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	ttests := map[string]struct {
+		containerArgs []string
+		want          []string
+	}{
+		"all volumes no expansion": {
+			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two"},
+			want:          []string{"/foo/bar:/in", "/foo/baz:/two"},
+		},
+		"PWD": {
+			containerArgs: []string{"-v $PWD/bar:/in", "-v /foo/baz:/two"},
+			want:          []string{pwd + "/bar:/in", "/foo/baz:/two"},
+		},
+		"HOME": {
+			containerArgs: []string{"-v $HOME/bar:/in", "-v ${HOME}/baz:/two"},
+			want:          []string{home + "/bar:/in", home + "/baz:/two"},
+		},
+		"~": {
+			containerArgs: []string{"-v ~/bar:/in", "-v ${HOME}/baz:/two"},
+			want:          []string{home + "/bar:/in", home + "/baz:/two"},
+		},
+		// home
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			cc := runner.NewContainerContext("image:latest")
+			cc.VolumesFromArgs(tt.containerArgs)
+			got := cc.Volumes()
+			for vol := range got {
+				if !slices.Contains(tt.want, vol) {
+					t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
+				}
+			}
+		})
+	}
+}

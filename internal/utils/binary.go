@@ -56,6 +56,9 @@ type Container struct {
 	//
 	// >highly discouraged
 	EnableDinD bool `mapstructure:"enable_dind" yaml:"enable_dind,omitempty" json:"enable_dind,omitempty"`
+	// UseVolumeDef signifies wheterh to use the --volume or --mount specification.
+	// Default false.
+	UseVolumeDef bool `mapstructure:"use_volume" yaml:"use_volume,omitempty" json:"use_volume,omitempty"`
 	// ContainerArgs are additional args used for the container supplied by the user
 	//
 	// e.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)

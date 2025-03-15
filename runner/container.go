@@ -91,10 +91,10 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
 	tty, attachStdin := false, false
-	if job.Stdin != nil {
-		tty = true
-		attachStdin = true
-	}
+	// if job.Stdin != nil {
+	// 	tty = true
+	// 	attachStdin = true
+	// }
 	remoteDir := ""
 	if e.execContext.Dir != job.Dir {
 		remoteDir = job.Dir
@@ -106,33 +106,36 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).Map()))
 
 	containerConfig := &container.Config{
-		Image:      containerContext.Name,
-		Entrypoint: containerContext.Entrypoint,
-		Env:        cEnv,
-		Cmd:        cmd,
-		// Volumes:     containerContext.Volumes(),
-		Tty:         tty,
+		Image:       containerContext.Image,
+		Entrypoint:  containerContext.Entrypoint,
+		Env:         cEnv,
+		Cmd:         cmd,
+		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
 		AttachStdin: attachStdin,
 		// OpenStdin: ,
 		// WorkingDir in a container will always be /eirctl
 		// will append any job specified paths to the default working
 		WorkingDir: wd,
 	}
-	if err := e.PullImage(ctx, containerContext.Name, job.Stdout); err != nil {
+	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
 	logrus.Debugf("%+v", containerConfig)
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	for _, volume := range containerContext.BindMounts() {
-		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-			Type:   mount.TypeBind,
-			Source: volume.SourcePath,
-			Target: volume.TargetPath,
-			BindOptions: &mount.BindOptions{
-				Propagation: mount.PropagationShared,
-			},
-		})
+	if containerContext.MountVolume {
+		containerConfig.Volumes = containerContext.Volumes()
+	} else {
+		for _, volume := range containerContext.BindMounts() {
+			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+				Type:   mount.TypeBind,
+				Source: volume.SourcePath,
+				Target: volume.TargetPath,
+				BindOptions: &mount.BindOptions{
+					Propagation: mount.PropagationShared,
+				},
+			})
+		}
 	}
 
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")

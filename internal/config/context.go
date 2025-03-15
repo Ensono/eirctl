@@ -101,8 +101,12 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 			return nil, err
 		}
 
+		cc.MountVolume = container.UseVolumeDef
+
 		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
 		if container.EnableDinD {
+			// TODO: check the DOCKER_HOST var as well and fallback on the hardcoded
+			//
 			cc.WithVolumes("/var/run/docker.sock:/var/run/docker.sock")
 		}
 		// CONTAINER ARGS these are best left to be tightly controlled

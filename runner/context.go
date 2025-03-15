@@ -25,16 +25,19 @@ var (
 )
 
 type ContainerContext struct {
-	Name       string
+	Image      string
 	Entrypoint []string
 	ShellArgs  []string
-	volumes    map[string]struct{}
+	// MountVolume uses -v instead of --mount
+	MountVolume bool
+	volumes     map[string]struct{}
 	// isPrivileged bool
 }
 
+// NewContainerContext accepts name of the image
 func NewContainerContext(name string) *ContainerContext {
 	return &ContainerContext{
-		Name:    name,
+		Image:   name,
 		volumes: make(map[string]struct{}),
 	}
 }
@@ -50,11 +53,25 @@ func (c *ContainerContext) VolumesFromArgs(cargs []string) *ContainerContext {
 	vols := []string{}
 	for _, v := range cargs {
 		if strings.HasPrefix(v, "-v") {
-			vols = append(vols, strings.TrimSpace(strings.TrimPrefix(v, "-v")))
+			vols = append(vols, expandVolumeString(v))
 		}
 	}
 	c.WithVolumes(vols...)
 	return c
+}
+
+// expandVolumeString accepts a string in the form of:
+//
+//	`-v /path/on/host:/path/in/container`
+//
+// converts any env into full string, for example:
+//
+//	`-v ${HOME}/foo:/app/foo` => `/Users/me/foo:/app/foo`
+//
+// Special consideration will be put on `~` and replaced by HOME variable
+func expandVolumeString(vol string) string {
+	v := strings.TrimSpace(strings.TrimPrefix(vol, "-v"))
+	return os.ExpandEnv(strings.Replace(v, `~`, `${HOME}`, 1))
 }
 
 func (c *ContainerContext) Volumes() map[string]struct{} {
@@ -73,9 +90,12 @@ type BindVolume struct {
 func (c *ContainerContext) BindMounts() []BindVolume {
 	bv := []BindVolume{}
 	for vol := range c.volumes {
-		splitVol := strings.Split(vol, ":")
+		// NOTE: to avoid potential windows issues with `C:\`
+		// we split on the `:/`
+		// The target mount path MUST always be an absolute path i.e. `/path/in/container`
+		splitVol := strings.Split(vol, ":/")
 		if len(splitVol) == 2 {
-			bv = append(bv, BindVolume{SourcePath: splitVol[0], TargetPath: splitVol[1]})
+			bv = append(bv, BindVolume{SourcePath: splitVol[0], TargetPath: "/" + splitVol[1]})
 		}
 	}
 	return bv
