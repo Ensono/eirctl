@@ -212,7 +212,7 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		// Loop to continuously read from the log stream
 		for {
 			// Read one chunk of data
-			buf := make([]byte, 1024) // Read in chunks of 1KB
+			buf := make([]byte, 4096) // Read in chunks of 4KB
 			n, err := reader.Read(buf)
 			if n > 0 {
 				if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, bytes.NewReader(buf[:n])); err != nil {
