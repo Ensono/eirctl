@@ -10,7 +10,6 @@ import (
 	"path"
 
 	"github.com/Ensono/eirctl/internal/utils"
-	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -40,6 +39,7 @@ type ContainerExecutorIface interface {
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
 }
 
 type ContainerExecutor struct {
@@ -165,7 +165,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		}
 	case <-statusWaitCh:
 	}
-	return []byte{}, nil
+	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
 // Container pull images - all contexts that have a container property
@@ -187,7 +187,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	return nil
 }
 
-func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errExecCh chan error, job *Job) error {
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan error, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -198,16 +198,14 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		return fmt.Errorf("%v\n%w", err, ErrContainerLogs)
 	}
 
-	stderr := output.NewSafeWriter(&bytes.Buffer{})
-
-	go func(errCh chan error) {
+	go func() {
 		defer out.Close()
 
 		// Wrap `out` in a buffered reader to prevent partial reads
 		reader := bufio.NewReader(out)
 		// multiplex stderr so that
 		// we can error and store the multiplexed stream
-		multiStdErr := io.MultiWriter(job.Stderr, stderr)
+		// multiStdErr := io.MultiWriter(job.Stderr, stderr)
 
 		// Loop to continuously read from the log stream
 		for {
@@ -215,7 +213,7 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 			buf := make([]byte, 4096) // Read in chunks of 4KB
 			n, err := reader.Read(buf)
 			if n > 0 {
-				if _, err := stdcopy.StdCopy(job.Stdout, multiStdErr, bytes.NewReader(buf[:n])); err != nil {
+				if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, bytes.NewReader(buf[:n])); err != nil {
 					errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 					return
 				}
@@ -228,15 +226,25 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 				break
 			}
 			if err != nil {
-				errExecCh <- fmt.Errorf("error reading logs: %v", err)
+				errCh <- fmt.Errorf("error reading logs: %v", err)
 				return
 			}
 		}
-		if stderr.Len() > 0 {
-			errCh <- fmt.Errorf("%s\n%w", stderr.String(), ErrContainerExecCmd)
-		}
-	}(errExecCh)
+	}()
 
+	return nil
+}
+func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
+	resp, err := e.cc.ContainerInspect(ctx, containerId)
+	if err != nil {
+		return fmt.Errorf("%w, %v", ErrContainerLogs, err)
+	}
+	// if resp.State.Status != "exited" || resp.State.Status != "stopped" {
+	// 	return fmt.Errorf("container image (%s) hasn't finished correctly in state %s", resp.Image, resp.State.Status)
+	// }
+	if resp.State.ExitCode != 0 {
+		return fmt.Errorf("container image (%s) command %v failed with non-zero exit code, %w", resp.Image, resp.Config.Cmd, ErrContainerExecCmd)
+	}
 	return nil
 }
 
