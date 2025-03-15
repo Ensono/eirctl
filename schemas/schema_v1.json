@@ -138,6 +138,10 @@
           "type": "boolean",
           "description": "EnableDinD mounts the docker sock...\n\n\u003ehighly discouraged"
         },
+        "use_volume": {
+          "type": "boolean",
+          "description": "UseVolumeDef signifies wheterh to use the --volume or --mount specification.\nDefault false."
+        },
         "container_args": {
           "items": {
             "type": "string"
