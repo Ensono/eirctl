@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
+	"strings"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
@@ -75,7 +79,7 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 	return ce, nil
 }
 
-func WithClient(client ContainerExecutorIface) ContainerOpts {
+func WithContainerClient(client ContainerExecutorIface) ContainerOpts {
 	return func(ce *ContainerExecutor) {
 		ce.cc = client
 	}
@@ -123,6 +127,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
+
 	logrus.Debugf("%+v", containerConfig)
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
@@ -171,10 +176,53 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
+const REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
+
+type AuthFile struct {
+	//
+	Auths map[string]struct {
+		Auth string `json:"auth"`
+	} `json:"auths"`
+}
+
+func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		// extract auth from registry from `REGISTRY_AUTH_FILE`
+		regContainer := strings.Split(name, "/")
+		if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
+			b, err := os.ReadFile(authFile)
+			if err != nil {
+				return "", err
+			}
+			af := &AuthFile{}
+			if err := json.Unmarshal(b, af); err != nil {
+				return "", err
+			}
+			for registry, auth := range af.Auths {
+				if registry == regContainer[0] {
+					decodedToken, err := base64.StdEncoding.DecodeString(auth.Auth)
+					if err != nil {
+						return "", err
+					}
+					authToken := strings.Split(string(decodedToken), ":")
+					if len(authToken) != 2 {
+						return "", fmt.Errorf("the registry token is not valid")
+					}
+					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, `{"username":"%s","password":"%s"}`, authToken[0], authToken[1])), nil
+				}
+			}
+		}
+		return "", nil
+	}
+}
+
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutput io.Writer) error {
 	logrus.Debug(name)
-	reader, err := e.cc.ImagePull(ctx, name, image.PullOptions{})
+	reader, err := e.cc.ImagePull(ctx, name, image.PullOptions{
+		PrivilegeFunc: AuthLookupFunc(name),
+	})
+
 	if err != nil {
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
 	}
@@ -185,7 +233,9 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	// If stdout is not required, consider using io.Discard instead of os.Stdout.
 	// Debug log pull image output
 	b := &bytes.Buffer{}
-	_, _ = io.Copy(b, reader)
+	if _, err := io.Copy(b, reader); err != nil {
+		return err
+	}
 	logrus.Debug(b.String())
 	return nil
 }

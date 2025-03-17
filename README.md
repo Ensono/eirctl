@@ -29,9 +29,6 @@ Key concepts
 - execution graph
 - task => jobs
 
-
-
-
 ## Tasks
 
 ### Tasks variables
