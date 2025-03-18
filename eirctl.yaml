@@ -141,8 +141,7 @@ tasks:
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
-      - pwd && ls -lat . 
-      # - golangci-lint run
+      - golangci-lint run
 
   goreleaser:
     command:
