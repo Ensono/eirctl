@@ -261,10 +261,9 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	// If stdout is not required, consider using io.Discard instead of os.Stdout.
 	// Debug log pull image output
 	b := &bytes.Buffer{}
-	io.Copy(b, reader)
-	// if _, err := io.Copy(b, reader); err != nil {
-	// 	return err
-	// }
+	if _, err := io.Copy(b, reader); err != nil {
+		return err
+	}
 	logrus.Debug(b.String())
 	return nil
 }
