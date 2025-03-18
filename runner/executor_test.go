@@ -80,8 +80,13 @@ func Test_ContainerExecutor(t *testing.T) {
 	t.Run("docker with alpine", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
-		cc.VolumesFromArgs([]string{"-v /foo:/bar"})
 		cc.BindMount = true
+		pwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
 
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
 			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
@@ -134,12 +139,14 @@ hello, iteration 10
 	t.Run("correctly mounts host dir", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
+		cc.BindMount = true
 		pwd, err := os.Getwd()
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
+
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
 			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
 

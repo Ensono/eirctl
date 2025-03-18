@@ -23,6 +23,7 @@ contexts:
       # entrypoint:
       #   - /usr/bin/env
       # enable_dind: true
+      enable_mount: true
     envfile:
       exclude:
         - GO
