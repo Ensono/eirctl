@@ -23,6 +23,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
+	"mvdan.cc/sh/v3/interp"
 )
 
 var (
@@ -116,6 +117,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		Image:       containerContext.Image,
 		Entrypoint:  containerContext.Entrypoint,
 		Env:         cEnv,
+		Volumes:     containerContext.Volumes(),
 		Cmd:         cmd,
 		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
 		AttachStdin: attachStdin,
@@ -124,6 +126,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		// will append any job specified paths to the default working
 		WorkingDir: wd,
 	}
+
 	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
@@ -131,9 +134,8 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	logrus.Debugf("%+v", containerConfig)
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	if containerContext.MountVolume {
-		containerConfig.Volumes = containerContext.Volumes()
-	} else {
+	if containerContext.BindMount {
+		containerConfig.Volumes = map[string]struct{}{}
 		for _, volume := range containerContext.BindMounts() {
 			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
 				Type:   mount.TypeBind,
@@ -176,7 +178,19 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
+// REGISTRY_AUTH_FILE is the environment variable name
+// for the file to use with container registry authentication
 const REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
+
+// REGISTRY_AUTH_USER is the environment variable name for the user
+// to use for authenticating to a registry
+// when it is using a v2 style token, i.e. when the decoded token
+// does *NOT* include a `user:password` style text
+//
+// Defaults to AWS.
+const REGISTRY_AUTH_USER string = `REGISTRY_AUTH_USER`
+
+const container_registry_auth string = `{"username":"%s","password":"%s"}`
 
 type AuthFile struct {
 	//
@@ -188,7 +202,9 @@ type AuthFile struct {
 func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		// extract auth from registry from `REGISTRY_AUTH_FILE`
-		regContainer := strings.Split(name, "/")
+		rc := strings.Split(name, "/")
+		registryName := rc[0]
+		// containerName := strings.Join(rc[1:], "/")
 		if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
 			b, err := os.ReadFile(authFile)
 			if err != nil {
@@ -199,16 +215,28 @@ func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
 				return "", err
 			}
 			for registry, auth := range af.Auths {
-				if registry == regContainer[0] {
+				if registry == registryName {
 					decodedToken, err := base64.StdEncoding.DecodeString(auth.Auth)
 					if err != nil {
 						return "", err
 					}
 					authToken := strings.Split(string(decodedToken), ":")
-					if len(authToken) != 2 {
-						return "", fmt.Errorf("the registry token is not valid")
+					// The decoded token will include `UserName:Password`
+					if len(authToken) == 2 {
+						logrus.Debug("auth func - basic auth")
+						return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, authToken[0], authToken[1])), nil
 					}
-					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, `{"username":"%s","password":"%s"}`, authToken[0], authToken[1])), nil
+					// The decoded token will include a JSON like string `{"key":"",""...}`
+					// in which case it will still use username/password but the whole token is the password
+					if strings.Contains(string(decodedToken), "payload") {
+						logrus.Debug("auth func - uses a v2 style token")
+						user, found := os.LookupEnv(REGISTRY_AUTH_USER)
+						if !found {
+							user = "AWS"
+						}
+						return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, user, auth.Auth)), nil
+					}
+					return "", fmt.Errorf("the registry token is not valid")
 				}
 			}
 		}
@@ -286,10 +314,13 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
 	resp, err := e.cc.ContainerInspect(ctx, containerId)
 	if err != nil {
-		return fmt.Errorf("%w, %v", ErrContainerLogs, err)
+		logrus.Debugf("%v: %v", ErrContainerLogs, err)
+		return interp.NewExitStatus(125)
+
 	}
 	if resp.State.ExitCode != 0 {
-		return fmt.Errorf("container image (%s) command %v failed with non-zero exit code, %w", resp.Image, resp.Config.Cmd, ErrContainerExecCmd)
+		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Image, resp.Config.Cmd)
+		return interp.NewExitStatus(uint8(resp.State.ExitCode))
 	}
 	return nil
 }

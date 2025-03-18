@@ -138,6 +138,7 @@ tasks:
    # in CI it is run 
     context: golint
     description: Runs the linter and go vet and other default static checks
+    allow_failure: false
     command:
       - golangci-lint run
 

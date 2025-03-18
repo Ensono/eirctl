@@ -109,6 +109,28 @@ func Test_ImagePull(t *testing.T) {
 			t.Error("got '', wanted a token")
 		}
 	})
+
+	t.Run("use private registry idtoken - authFunc run", func(t *testing.T) {
+		// originalEnv := os.Environ()
+		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
+		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"eyJwYXlsb2FkIjoic29tZXRvaXViaGdmZHM/RERmZHN1amJmZy9kc2ZnZCIsInZlcnNpb24iOiIyIiwiZXhwaXJhdGlvbiI6MTc0MjI4MjE2Nn0K"}}}`), 0777); err != nil {
+			t.Fatal(err)
+		}
+		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
+
+		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		defer os.Remove(tmpRegFile.Name())
+
+		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		got, err := gotFn(context.TODO())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == "" {
+			t.Error("got '', wanted a token")
+		}
+	})
+
 	t.Run("REGISTRY_AUTH_FILE not set - authFunc run", func(t *testing.T) {
 		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`), 0777); err != nil {

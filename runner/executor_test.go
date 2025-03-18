@@ -80,7 +80,7 @@ func Test_ContainerExecutor(t *testing.T) {
 	t.Run("docker with alpine", func(t *testing.T) {
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
-		cc.MountVolume = true
+		cc.BindMount = true
 
 		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
 			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
