@@ -53,12 +53,11 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 		ChannelOut: channelOut,
 		ChannelErr: channelErr,
 		Cmd: &cobra.Command{
-			Use:     "eirctl",
-			Version: fmt.Sprintf("%s-%s", Version, Revision),
-			Args:    cobra.ExactArgs(0),
-			Short:   "modern task runner",
-			Long: `Concurrent task runner, developer's routine tasks automation toolkit.
-			Simple modern alternative to GNU Make 🧰`, // taken from original GH repo
+			Use:                        "eirctl",
+			Version:                    fmt.Sprintf("%s-%s", Version, Revision),
+			Args:                       cobra.ExactArgs(0),
+			Short:                      "EIR optimised task runner",
+			Long:                       ``,
 			SuggestionsMinimumDistance: 1,
 		},
 	}

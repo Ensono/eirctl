@@ -179,8 +179,7 @@ func (r *runCmd) runPipeline(g *scheduler.ExecutionGraph, taskRunner *runner.Tas
 	if summary {
 		cmdutils.PrintSummary(ng, r.channelOut, r.flags.detailedSummary)
 	}
-
-	return nil
+	return ng.Error()
 }
 
 func (r *runCmd) runTask(t *task.Task, taskRunner *runner.TaskRunner) error {

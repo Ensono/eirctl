@@ -379,7 +379,7 @@ func (r *TaskRunner) storeTaskOutput(t *task.Task) error {
 	return nil
 }
 
-// execute
+// execute 
 func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error {
 	execContext, err := r.contextForTask(t)
 	if err != nil {
@@ -400,7 +400,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 			if status, ok := IsExitStatus(err); ok {
 				t.WithExitCode(int16(status))
 				if t.AllowFailure {
-					t.WithError(err)
+					// t.WithError(err)
 					t.WithEnd(time.Now())
 					continue
 				}

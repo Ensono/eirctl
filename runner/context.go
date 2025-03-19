@@ -28,9 +28,9 @@ type ContainerContext struct {
 	Image      string
 	Entrypoint []string
 	ShellArgs  []string
-	// MountVolume uses -v instead of --mount
-	MountVolume bool
-	volumes     map[string]struct{}
+	// BindMount uses -v instead of --mount
+	BindMount bool
+	volumes   map[string]struct{}
 	// isPrivileged bool
 	envOverride map[string]string
 }

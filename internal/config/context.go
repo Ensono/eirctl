@@ -93,6 +93,10 @@ func newEnvFile(defEnvFile *utils.Envfile, isContainerContext bool) (*utils.Envf
 	return envFile, nil
 }
 
+// EIRCTL_DOCKER_HOST is the environment variable name to point to the docker.sock for DinD mounting
+// if not specified it will default to /var/run/docker.sock
+const EIRCTL_DOCKER_HOST string = `EIRCTL_DOCKER_HOST`
+
 func contextExecutable(container *utils.Container) (*runner.ContainerContext, error) {
 	if container != nil && container.Name != "" {
 		cc := runner.NewContainerContext(container.Name)
@@ -101,12 +105,12 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 			return nil, err
 		}
 
-		cc.MountVolume = container.UseVolumeDef
+		cc.BindMount = container.EnableBindMount
 
 		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
 		if container.EnableDinD {
 			dockerHostPath, envFound := "", false
-			if dockerHostPath, envFound = os.LookupEnv("DOCKER_HOST"); !envFound {
+			if dockerHostPath, envFound = os.LookupEnv(EIRCTL_DOCKER_HOST); !envFound {
 				// fallback on the hardcoded
 				dockerHostPath = "/var/run/docker.sock"
 			}
