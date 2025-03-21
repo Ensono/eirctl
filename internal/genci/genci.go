@@ -29,8 +29,9 @@ var (
 type CITarget string
 
 const (
-	GitlabCITarget CITarget = "gitlab"
-	GitHubCITarget CITarget = "github"
+	GitlabCITarget    CITarget = "gitlab"
+	GitHubCITarget    CITarget = "github"
+	BitbucketCITarget CITarget = "bitbucket"
 )
 
 // strategy - selector
@@ -69,6 +70,12 @@ func New(implTyp CITarget, conf *config.Config, opts ...Opts) (*GenCi, error) {
 	// Add new cases here with their implementation
 	// case GitlabCITarget:
 	// 	gci.implementation = &DefualtCiImpl{}
+	case BitbucketCITarget:
+		bb, err := newBitbucketCIImpl(conf)
+		if err != nil {
+			return nil, fmt.Errorf("%w, %v", ErrFailedImplementationInit, err)
+		}
+		gci.implementation = bb
 	default:
 		return nil, fmt.Errorf("%s, %w", implTyp, ErrImplementationNotExist)
 	}
