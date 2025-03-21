@@ -281,29 +281,14 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 
 	go func() {
 		defer out.Close()
-
-		// Wrap `out` in a buffered reader to prevent partial reads
 		reader := bufio.NewReader(out)
-		// Loop to continuously read from the log stream
 		for {
-			// Read one chunk of data
-			buf := make([]byte, 4096) // Read in chunks of 4KB
-			n, err := reader.Read(buf)
-			if n > 0 {
-				if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, bytes.NewReader(buf[:n])); err != nil {
-					errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
-					return
+			if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, reader); err != nil {
+				// Handle EOF (when logs stop)
+				if errors.Is(err, io.EOF) {
+					break
 				}
-			}
-
-			// Handle EOF (when logs stop)
-			if err == io.EOF {
-				// Stop reading once EOF is reached
-				// will go to check the stderr stream
-				break
-			}
-			if err != nil {
-				errCh <- fmt.Errorf("error reading logs: %v", err)
+				errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 				return
 			}
 		}
@@ -311,6 +296,7 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 
 	return nil
 }
+
 func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
 	resp, err := e.cc.ContainerInspect(ctx, containerId)
 	if err != nil {
