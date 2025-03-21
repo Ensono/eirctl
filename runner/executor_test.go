@@ -171,7 +171,7 @@ hello, iteration 10
 			t.Fatalf("got %v, wanted nil", err)
 		}
 		if !strings.Contains(so.String(), `compiler.go`) {
-			t.Errorf("got (%v), expected error\n\n", so.String())
+			t.Errorf("got (%v), expected at least compiler.go in the output\n\n", so.String())
 		}
 	})
 
