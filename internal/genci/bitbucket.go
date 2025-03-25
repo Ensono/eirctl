@@ -8,11 +8,8 @@ import (
 type bitbucketCIImpl struct {
 }
 
-func newBitbucketCIImpl(conf *config.Config) (*bitbucketCIImpl, error) {
+func newBitbucketCIImpl(_ *config.Config) (*bitbucketCIImpl, error) {
 	impl := &bitbucketCIImpl{}
-	if conf.Generate != nil && conf.Generate.Version != "" {
-		// impl.eirctlVersion = conf.Generate.Version
-	}
 	return impl, nil
 }
 

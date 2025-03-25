@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -146,6 +147,41 @@ func Test_ImagePull(t *testing.T) {
 		}
 		if got != "" {
 			t.Errorf("got '%s', wanted a `''`", got)
+		}
+	})
+
+	t.Run("no auth files present", func(t *testing.T) {
+		runner.DOCKER_CONFIG_FILE = "/unknown/config.json"
+		runner.PODMAN_CONFIG_FILE = "/unknown/auth.json"
+		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		_, err := gotFn(context.TODO())
+		if err == nil {
+			t.Fatalf("got %v, wanted err", err)
+		}
+		if !errors.Is(err, runner.ErrRegistryAuth) {
+			t.Errorf("got '%v', wanted a %v", err, runner.ErrRegistryAuth)
+		}
+	})
+
+	t.Run("read auth file error", func(t *testing.T) {
+		runner.DOCKER_CONFIG_FILE = "/unknown/config.json"
+		runner.PODMAN_CONFIG_FILE = "/unknown/auth.json"
+		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
+		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":function(){}?}}}`), 0777); err != nil {
+			t.Fatal(err)
+		}
+		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
+
+		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		defer os.Remove(tmpRegFile.Name())
+
+		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		_, err := gotFn(context.TODO())
+		if err == nil {
+			t.Fatalf("got %v, wanted err", err)
+		}
+		if !errors.Is(err, runner.ErrRegistryAuth) {
+			t.Errorf("got '%v', wanted a %v", err, runner.ErrRegistryAuth)
 		}
 	})
 }
