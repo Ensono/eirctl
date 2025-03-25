@@ -89,7 +89,10 @@ func Test_ImagePull(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
 
+func Test_ImagePull_AuthFunc(t *testing.T) {
+	t.Parallel()
 	t.Run("use private registry - authFunc run", func(t *testing.T) {
 		// originalEnv := os.Environ()
 		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")

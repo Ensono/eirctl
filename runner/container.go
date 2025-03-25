@@ -40,7 +40,6 @@ var (
 type ContainerExecutorIface interface {
 	Close() error
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
-	// ImageLoad(ctx context.Context, input io.Reader, loadOpts ...client.ImageLoadOption) (image.LoadResponse, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
