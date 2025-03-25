@@ -193,6 +193,8 @@ tasks:
       - quicktype --lang go --src-lang schema --src ./internal/z_generated/schema/sources/gitlab.json -o internal/z_generated/gitlab/schema.go --field-tags yaml \
         --just-types-and-package --omit-empty --package gitlab &2>1
       - go fmt ./internal/z_generated/gitlab
+      - quicktype --lang go --src-lang schema --src ./internal/schema/sources/bitbucket.json -o internal/schema/bitbucket.go --field-tags yaml --just-types-and-package --omit-empty --package schema
+      - go fmt internal/schema/bitbucket.go
     # variations:
     #   # - CI_TARGET: github
     #   #   SCHEMA: ./internal/z_generated/schema/sources/github.json

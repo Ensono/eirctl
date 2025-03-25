@@ -19,10 +19,10 @@ type GithubWorkflow struct {
 
 // TriggerEvents represents the trigger events for the GitHub workflow.
 type GithubTriggerEvents struct {
-	Push             GithubPushEvent             `json:"push,omitempty" yaml:"push,omitempty"`
-	PullRequest      GithubPullRequestEvent      `json:"pull_request,omitempty" yaml:"pull_request,omitempty"`
+	Push             GithubPushEvent             `json:"push" yaml:"push,omitempty"`
+	PullRequest      GithubPullRequestEvent      `json:"pull_request" yaml:"pull_request,omitempty"`
 	Schedule         []GithubScheduleEvent       `json:"schedule,omitempty" yaml:"schedule,omitempty"`
-	WorkflowDispatch GithubWorkflowDispatchEvent `json:"workflow_dispatch,omitempty" yaml:"workflow_dispatch,omitempty"`
+	WorkflowDispatch GithubWorkflowDispatchEvent `json:"workflow_dispatch" yaml:"workflow_dispatch,omitempty"`
 	// Other events can be added here as needed
 }
 

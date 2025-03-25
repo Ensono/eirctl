@@ -17,7 +17,6 @@ import (
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -28,6 +27,7 @@ import (
 
 var (
 	ErrImagePull                        = errors.New("failed to pull container image")
+	ErrRegistryAuth                     = errors.New("failed to auth to registry")
 	ErrContainerCreate                  = errors.New("failed to create container")
 	ErrContainerStart                   = errors.New("failed to start container")
 	ErrContainerWait                    = errors.New("failed to wait for container")
@@ -113,40 +113,13 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 			Merge(variables.FromMap(containerContext.envOverride)).
 			Map()))
 
-	containerConfig := &container.Config{
-		Image:       containerContext.Image,
-		Entrypoint:  containerContext.Entrypoint,
-		Env:         cEnv,
-		Volumes:     containerContext.Volumes(),
-		Cmd:         cmd,
-		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
-		AttachStdin: attachStdin,
-		// OpenStdin: ,
-		// WorkingDir in a container will always be /eirctl
-		// will append any job specified paths to the default working
-		WorkingDir: wd,
-	}
+	containerConfig, hostConfig := platformContainerConfig(containerContext, cEnv, cmd, wd, tty, attachStdin)
 
 	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
 
 	logrus.Debugf("%+v", containerConfig)
-
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	if containerContext.BindMount {
-		containerConfig.Volumes = map[string]struct{}{}
-		for _, volume := range containerContext.BindMounts() {
-			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-				Type:   mount.TypeBind,
-				Source: volume.SourcePath,
-				Target: volume.TargetPath,
-				BindOptions: &mount.BindOptions{
-					Propagation: mount.PropagationShared,
-				},
-			})
-		}
-	}
 
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
@@ -178,19 +151,24 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
-// REGISTRY_AUTH_FILE is the environment variable name
-// for the file to use with container registry authentication
-const REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
+const (
+	// REGISTRY_AUTH_FILE is the environment variable name
+	// for the file to use with container registry authentication
+	REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
+	// REGISTRY_AUTH_USER is the environment variable name for the user
+	// to use for authenticating to a registry
+	// when it is using a v2 style token, i.e. when the decoded token
+	// does *NOT* include a `user:password` style text, it can be something like `00000000-0000-0000-0000-000000000000` for ACR as an example, or another value
+	//
+	// Defaults to `AWS`.
+	REGISTRY_AUTH_USER      string = `REGISTRY_AUTH_USER`
+	container_registry_auth string = `{"username":"%s","password":"%s"}`
+)
 
-// REGISTRY_AUTH_USER is the environment variable name for the user
-// to use for authenticating to a registry
-// when it is using a v2 style token, i.e. when the decoded token
-// does *NOT* include a `user:password` style text
-//
-// Defaults to AWS.
-const REGISTRY_AUTH_USER string = `REGISTRY_AUTH_USER`
-
-const container_registry_auth string = `{"username":"%s","password":"%s"}`
+var (
+	DOCKER_CONFIG_FILE string = ".docker/config.json"
+	PODMAN_CONFIG_FILE string = ".config/containers/auth.json"
+)
 
 type AuthFile struct {
 	//
@@ -199,45 +177,74 @@ type AuthFile struct {
 	} `json:"auths"`
 }
 
+func registryAuthFile() (*AuthFile, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	defaultPaths := []string{path.Join(home, DOCKER_CONFIG_FILE), path.Join(home, PODMAN_CONFIG_FILE)}
+
+	if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
+		// If REGISTRY_AUTH_FILE has been supplied - check it first
+		defaultPaths = append([]string{authFile}, defaultPaths...)
+	}
+
+	af := &AuthFile{}
+
+	for _, authFile := range defaultPaths {
+		if _, err := os.Stat(authFile); err == nil {
+			logrus.Debugf("auth file: %s", authFile)
+			b, err := os.ReadFile(authFile)
+			if err != nil {
+				return nil, fmt.Errorf("%w, auth file read: %v", ErrRegistryAuth, err)
+			}
+			if err := json.Unmarshal(b, af); err != nil {
+				return nil, fmt.Errorf("%w, auth file unmarshal: %v", ErrRegistryAuth, err)
+			}
+			return af, nil
+		}
+	}
+	return nil, fmt.Errorf("%w, no auth file found", ErrRegistryAuth)
+}
+
 func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		// extract auth from registry from `REGISTRY_AUTH_FILE`
+		logrus.Debug("looking for REGISTRY_AUTH_FILE")
+
 		rc := strings.Split(name, "/")
 		registryName := rc[0]
-		// containerName := strings.Join(rc[1:], "/")
-		if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
-			b, err := os.ReadFile(authFile)
-			if err != nil {
-				return "", err
-			}
-			af := &AuthFile{}
-			if err := json.Unmarshal(b, af); err != nil {
-				return "", err
-			}
-			for registry, auth := range af.Auths {
-				if registry == registryName {
-					decodedToken, err := base64.StdEncoding.DecodeString(auth.Auth)
-					if err != nil {
-						return "", err
-					}
-					authToken := strings.Split(string(decodedToken), ":")
-					// The decoded token will include `UserName:Password`
-					if len(authToken) == 2 {
-						logrus.Debug("auth func - basic auth")
-						return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, authToken[0], authToken[1])), nil
-					}
-					// The decoded token will include a JSON like string `{"key":"",""...}`
-					// in which case it will still use username/password but the whole token is the password
-					if strings.Contains(string(decodedToken), "payload") {
-						logrus.Debug("auth func - uses a v2 style token")
-						user, found := os.LookupEnv(REGISTRY_AUTH_USER)
-						if !found {
-							user = "AWS"
-						}
-						return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, user, auth.Auth)), nil
-					}
-					return "", fmt.Errorf("the registry token is not valid")
+		af, err := registryAuthFile()
+		if err != nil {
+			return "", err
+		}
+		for registry, auth := range af.Auths {
+			logrus.Debug(registry)
+			if registry == registryName {
+				decodedToken, err := base64.StdEncoding.DecodeString(auth.Auth)
+				if err != nil {
+					return "", err
 				}
+
+				authToken := strings.Split(string(decodedToken), ":")
+
+				// The decoded token will include `UserName:Password`
+				if len(authToken) == 2 {
+					logrus.Debug("auth func - basic auth")
+					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, authToken[0], authToken[1])), nil
+				}
+				// The decoded token will include a JSON like string `{"key":""}`
+				// in which case it will still use username/password but the whole token is the password
+				if strings.Contains(string(decodedToken), "payload") {
+					logrus.Debug("auth func - uses a v2 style token")
+					user, found := os.LookupEnv(REGISTRY_AUTH_USER)
+					if !found {
+						user = "AWS"
+					}
+					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, user, auth.Auth)), nil
+				}
+				return "", fmt.Errorf("the registry token is not valid")
 			}
 		}
 		return "", nil
@@ -246,11 +253,14 @@ func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
 
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutput io.Writer) error {
-	logrus.Debug(name)
-	reader, err := e.cc.ImagePull(ctx, name, image.PullOptions{
-		PrivilegeFunc: AuthLookupFunc(name),
-	})
+	logrus.Debugf("pulling image: %s", name)
 
+	pullOpts, err := platformPullOptions(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	reader, err := e.cc.ImagePull(ctx, name, pullOpts)
 	if err != nil {
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
 	}

@@ -34,7 +34,7 @@ func (d *prefixedOutputDecorator) Write(p []byte) (int, error) {
 		if advance == 0 {
 			break
 		}
-		if _, err := d.w.Write([]byte(fmt.Sprintf("\x1b[36m%s\x1b[0m: %s\r\n", d.t.Name, line))); err != nil {
+		if _, err := d.w.Write(fmt.Appendf(nil, "\x1b[36m%s\x1b[0m: %s\r\n", d.t.Name, line)); err != nil {
 			return 0, err
 		}
 		p = p[advance:]
