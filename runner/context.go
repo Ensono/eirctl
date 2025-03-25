@@ -28,7 +28,9 @@ type ContainerContext struct {
 	Image      string
 	Entrypoint []string
 	ShellArgs  []string
-	// BindMount uses -v instead of --mount
+	// BindMount uses --mount instead of -v
+	//
+	// when running on Windows mount is default as volume mapping does not work.
 	BindMount bool
 	volumes   map[string]struct{}
 	// isPrivileged bool

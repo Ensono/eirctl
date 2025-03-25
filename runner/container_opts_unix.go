@@ -1,0 +1,56 @@
+//go:build !windows
+// +build !windows
+
+package runner
+
+import (
+	"context"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
+)
+
+func platformPullOptions(_ context.Context, imageName string) (image.PullOptions, error) {
+	return image.PullOptions{
+		PrivilegeFunc: AuthLookupFunc(imageName),
+	}, nil
+}
+
+func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
+	containerConfig := &container.Config{
+		Image:       containerContext.Image,
+		Entrypoint:  containerContext.Entrypoint,
+		Env:         cEnv,
+		Volumes:     containerContext.Volumes(),
+		Cmd:         cmd,
+		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
+		AttachStdin: attachStdin,
+		// OpenStdin: ,
+		// WorkingDir in a container will always be /eirctl
+		// will append any job specified paths to the default working
+		WorkingDir: wd,
+	}
+
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
+	if containerContext.BindMount {
+		containerConfig.Volumes = map[string]struct{}{}
+		for _, volume := range containerContext.BindMounts() {
+			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+				// TODO: enable additional mount types
+				// e.g. `image` for built container volume inspection
+				Type:   mount.TypeBind, // current default is bind
+				Source: volume.SourcePath,
+				Target: volume.TargetPath,
+				// FIXME: allow a more comprehensive list of options.
+				//
+				// Perhaps struct embedding from the docker/api/types package in the context definition.
+				// BindOptions:   &mount.BindOptions{},
+				// VolumeOptions: &mount.VolumeOptions{},
+				// Consistency:   mount.ConsistencyDefault,
+				// TmpfsOptions:  &mount.TmpfsOptions{},
+			})
+		}
+	}
+	return containerConfig, hostConfig
+}
