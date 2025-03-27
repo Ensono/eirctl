@@ -15,11 +15,13 @@ import (
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/interp"
@@ -45,6 +47,10 @@ type ContainerExecutorIface interface {
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
+	// Shell
+	ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error)
+	ContainerExecAttach(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error)
+	ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error)
 }
 
 type ContainerExecutor struct {
@@ -92,19 +98,15 @@ func (e *ContainerExecutor) WithReset(doReset bool) {}
 // Returns job output
 func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, error) {
 	defer e.cc.Close()
+
 	containerContext := e.execContext.Container()
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
 	tty, attachStdin := false, false
-	// if job.Stdin != nil {
-	// 	tty = true
-	// 	attachStdin = true
-	// }
 	remoteDir := ""
 	if e.execContext.Dir != job.Dir {
 		remoteDir = job.Dir
 	}
-
 	// everything in the container is relative to the `/eirctl` directory
 	wd := path.Join("/eirctl", remoteDir)
 	// adding the opiniated PWD into the Container Env as per the wd variable
@@ -118,6 +120,14 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
+
+	if job.IsShell && job.Stdin != nil {
+		return e.shell(ctx, containerConfig, hostConfig, job)
+	}
+	return e.execute(ctx, containerConfig, hostConfig, job)
+}
+
+func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	logrus.Debugf("%+v", containerConfig)
 
@@ -149,6 +159,108 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	case <-statusWaitCh:
 	}
 	return []byte{}, e.checkExitStatus(ctx, resp.ID)
+}
+
+func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
+
+	containerConfig.Tty = true
+	containerConfig.AttachStdin = true
+	containerConfig.AttachStdout = true
+	containerConfig.AttachStderr = true
+	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	hostConfig.AutoRemove = true
+
+	logrus.Debugf("creating with config %+v", containerConfig)
+
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+	}
+
+	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
+	}
+
+	inspect, err := e.cc.ContainerInspect(ctx, resp.ID)
+	if err != nil {
+		return nil, err
+	}
+	// block forever loop
+	counter := 0
+	for {
+		counter++
+		logrus.Debugf("checking status, current status: %v", inspect.State)
+		if counter == 100 {
+			return nil, fmt.Errorf("wrong state: %+v", inspect.State)
+		}
+		if inspect.State.Running {
+			break
+		}
+	}
+
+	respExecCreate, err := e.cc.ContainerExecCreate(ctx, resp.ID, container.ExecOptions{
+		Cmd:          containerConfig.Cmd,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+		Env:          containerConfig.Env,
+		WorkingDir:   containerConfig.WorkingDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("exec create %v\n%w", err, ErrContainerCreate)
+	}
+
+	logrus.Debugf("exec starting (%v) with config %+v", respExecCreate.ID, containerConfig)
+	// Attach to the container's stdio
+	attachedResp, err := e.cc.ContainerExecAttach(ctx, respExecCreate.ID, container.ExecStartOptions{
+		Tty: true,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	defer attachedResp.Close()
+
+	// Set terminal to raw mode
+	oldState, err := term.MakeRaw(os.Stdin.Fd())
+	if err != nil {
+		return nil, err
+	}
+
+	defer term.RestoreTerminal(os.Stdin.Fd(), oldState)
+
+	// Start copying stdin -> container and container -> stdout
+	go func() {
+		// logrus.Debug("copying stdin -> container and container -> stdout")
+		_, _ = io.Copy(attachedResp.Conn, os.Stdin)
+	}()
+
+	go func() {
+		// logrus.Debug("copying Stdout -> container and container -> stdout")
+		_, _ = io.Copy(os.Stdout, attachedResp.Conn)
+	}()
+
+	// // Handle signals from host (like Ctrl+C)
+	// sigCh := make(chan os.Signal, 1)
+	// signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, os.Interrupt)
+
+	// go func() {
+	// 	<-sigCh
+	// 	logrus.Debug("exiting...")
+	// }()
+
+	// Wait for exec to finish
+	for {
+		inspect, err := e.cc.ContainerExecInspect(ctx, respExecCreate.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !inspect.Running {
+			break
+		}
+	}
+	return []byte{}, nil //e.checkExitStatus(ctx, respExecCreate.ID)
 }
 
 const (

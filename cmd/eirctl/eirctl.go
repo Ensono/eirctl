@@ -87,17 +87,27 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	return tc
 }
 
-func (tc *EirCtlCmd) InitCommand() error {
+// WithSubCommands returns a manually maintained list of commands
+func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 	// add all sub commands
-	// TODO: perhaps think about a better way of doing this
-	newRunCmd(tc)
-	newGraphCmd(tc)
-	newShowCmd(tc)
-	newListCmd(tc)
-	newInitCmd(tc)
-	newValidateCmd(tc)
-	newWatchCmd(tc)
-	newGenerateCmd(tc)
+	return []func(rootCmd *EirCtlCmd){
+		newRunCmd,
+		newGraphCmd,
+		newShowCmd,
+		newListCmd,
+		newInitCmd,
+		newValidateCmd,
+		newWatchCmd,
+		newGenerateCmd,
+		newShellCmd,
+	}
+}
+
+// InitCommand ensures each subcommand is added to the root using an IoC injection pattern
+func (tc *EirCtlCmd) InitCommand(iocFuncs ...func(rootCmd *EirCtlCmd)) error {
+	for _, fn := range iocFuncs {
+		fn(tc)
+	}
 	return nil
 }
 

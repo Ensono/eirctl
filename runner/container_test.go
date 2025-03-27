@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Ensono/eirctl/runner"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -46,6 +47,18 @@ func (mc mockContainerClient) ContainerLogs(ctx context.Context, containerID str
 
 func (mc mockContainerClient) ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error) {
 	return container.InspectResponse{}, nil
+}
+
+func (mc mockContainerClient) ContainerExecAttach(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
+	return types.HijackedResponse{}, nil
+}
+
+func (mc mockContainerClient) ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
+	return container.ExecCreateResponse{}, nil
+}
+
+func (mc mockContainerClient) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+	return container.ExecInspect{}, nil
 }
 
 type mockReaderCloser struct {

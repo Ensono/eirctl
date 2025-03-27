@@ -39,7 +39,7 @@ func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 	cmd.Cmd.SetErr(errOut)
 	cmd.Cmd.SetOut(stdOut)
 
-	if err := cmd.InitCommand(); err != nil {
+	if err := cmd.InitCommand(eirctlCmd.WithSubCommands()...); err != nil {
 		t.Fatal(err)
 	}
 
