@@ -48,10 +48,26 @@ type ContainerExecutorIface interface {
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
 }
 
+type Terminal interface {
+	MakeRaw(fd uintptr) (*term.State, error)
+	Restore(fd uintptr, state *term.State) error
+}
+
+type realTerminal struct{}
+
+func (t realTerminal) MakeRaw(fd uintptr) (*term.State, error) {
+	return term.MakeRaw(fd)
+}
+
+func (t realTerminal) Restore(fd uintptr, state *term.State) error {
+	return term.RestoreTerminal(fd, state)
+}
+
 type ContainerExecutor struct {
 	// containerClient
 	cc          ContainerExecutorIface
 	execContext *ExecutionContext
+	Term        Terminal
 }
 
 type ContainerOpts func(*ContainerExecutor)
@@ -72,6 +88,7 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
+		Term:        realTerminal{},
 	}
 
 	for _, opt := range opts {
@@ -186,26 +203,30 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
-	oldState, err := term.MakeRaw(os.Stdin.Fd())
+	oldState, err := e.Term.MakeRaw(os.Stdin.Fd())
 	if err != nil {
 		return nil, err
 	}
 
-	defer term.RestoreTerminal(os.Stdin.Fd(), oldState)
+	defer e.Term.Restore(os.Stdin.Fd(), oldState)
 
 	// Start container with a defined shell
 	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	// Start copying stdin -> container and container -> stdout
+	// Start copying stdin -> container Connection
 	go func() {
-		_, _ = io.Copy(attachedResp.Conn, job.Stdin)
+		if _, err := io.Copy(attachedResp.Conn, job.Stdin); err != nil {
+			logrus.Debug(err)
+		}
 	}()
 
 	// container stdout and terminal/host -> stdout
 	go func() {
-		_, _ = io.Copy(job.Stdout, attachedResp.Conn)
+		if _, err := io.Copy(job.Stdout, attachedResp.Conn); err != nil {
+			logrus.Debug(err)
+		}
 	}()
 
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)

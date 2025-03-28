@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/spf13/cobra"
 )
@@ -23,35 +23,25 @@ func newShellCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-
-			configContext, ok := conf.Contexts[args[0]]
-			if !ok {
-				return fmt.Errorf("%s. %w", args[0], ErrIncorrectPipelineTaskArg)
+			contextName := args[0]
+			if _, ok := conf.Contexts[contextName]; !ok {
+				return fmt.Errorf("%s, %w", contextName, ErrIncorrectPipelineTaskArg)
 			}
 
 			tr, err := rootCmd.initTaskRunner(conf, &variables.Variables{})
 			if err != nil {
 				return err
 			}
-
-			execContext := runner.NewExecutionContext(nil, configContext.Dir, configContext.Env, configContext.Envfile,
-				[]string{}, []string{}, []string{}, []string{},
-				runner.WithContainerOpts(configContext.Container()))
-			ce, err := runner.NewContainerExecutor(execContext)
-			if err != nil {
-				return err
+			// create a sample task
+			interactiveTask := &task.Task{
+				Interactive: true,
+				Context:     contextName, //
+				Variables:   &variables.Variables{},
+				Commands:    []string{""},
+				Env:         &variables.Variables{},
+				EnvFile:     nil,
 			}
-			
-			if _, err := ce.Execute(rootCmd.ctx, &runner.Job{
-				Stdin:   tr.Stdin,
-				Stdout:  tr.Stdout,
-				Stderr:  tr.Stderr,
-				Dir:     configContext.Dir,
-				IsShell: true,
-			}); err != nil {
-				return err
-			}
-			return nil
+			return tr.Run(interactiveTask)
 		},
 	}
 	rootCmd.Cmd.AddCommand(showCmd)

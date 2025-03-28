@@ -6,13 +6,17 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -190,6 +194,67 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		}
 		if !errors.Is(err, runner.ErrRegistryAuth) {
 			t.Errorf("got '%v', wanted a %v", err, runner.ErrRegistryAuth)
+		}
+	})
+}
+
+type mockTerminal struct {
+	makeRawCalled    bool
+	restoreCalled    bool
+	returnMakeRaw    *term.State
+	returnMakeRawErr error
+}
+
+func (m *mockTerminal) MakeRaw(fd uintptr) (*term.State, error) {
+	m.makeRawCalled = true
+	return m.returnMakeRaw, m.returnMakeRawErr
+}
+
+func (m *mockTerminal) Restore(fd uintptr, state *term.State) error {
+	m.restoreCalled = true
+	return nil
+}
+
+func Test_Execute_shell(t *testing.T) {
+
+	t.Run("alpine succeeds", func(t *testing.T) {
+
+		configContext := &runner.ExecutionContext{
+			Env: variables.FromMap(map[string]string{"FOO": "bar"}),
+		}
+
+		containerOpt := runner.NewContainerContext("alpine:3.21.3")
+		containerOpt.ShellArgs = []string{"sh"}
+		containerOpt.VolumesFromArgs([]string{"-v ${PWD}:/testdir"})
+
+		// containerOpt
+		execContext := runner.NewExecutionContext(nil, configContext.Dir, configContext.Env, configContext.Envfile,
+			[]string{}, []string{}, []string{}, []string{},
+			runner.WithContainerOpts(containerOpt))
+		ce, err := runner.NewContainerExecutor(execContext)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		stdin := bytes.NewBufferString("echo hello\nexit\n")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+
+		ce.Term = &mockTerminal{returnMakeRawErr: nil}
+
+		if _, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		output := stdout.String()
+		if !strings.Contains(output, "hello") {
+			t.Errorf("expected output to contain 'hello', got: %q", output)
 		}
 	})
 }
