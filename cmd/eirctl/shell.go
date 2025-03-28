@@ -3,9 +3,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/spf13/cobra"
 )
 
@@ -24,18 +24,15 @@ func newShellCmd(rootCmd *EirCtlCmd) {
 				return err
 			}
 
-			// taskRunner, argsStringer, err := rootCmd.buildTaskRunner(args, conf)
-			// if err != nil {
-			// 	return err
-			// }
 			configContext, ok := conf.Contexts[args[0]]
 			if !ok {
 				return fmt.Errorf("%s. %w", args[0], ErrIncorrectPipelineTaskArg)
 			}
-			// logrus.Debug(argsStringer.argsList)
-			// args[0]
-			// taskRunner.Stdin
-			// runner.NewContainerContext(cc.Container().Image)
+
+			tr, err := rootCmd.initTaskRunner(conf, &variables.Variables{})
+			if err != nil {
+				return err
+			}
 
 			execContext := runner.NewExecutionContext(nil, configContext.Dir, configContext.Env, configContext.Envfile,
 				[]string{}, []string{}, []string{}, []string{},
@@ -44,18 +41,16 @@ func newShellCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-			_, err = ce.Execute(rootCmd.ctx, &runner.Job{
-				Stdin:   os.Stdin,
-				Stdout:  rootCmd.ChannelOut,
-				Stderr:  rootCmd.ChannelErr,
+			
+			if _, err := ce.Execute(rootCmd.ctx, &runner.Job{
+				Stdin:   tr.Stdin,
+				Stdout:  tr.Stdout,
+				Stderr:  tr.Stderr,
 				Dir:     configContext.Dir,
 				IsShell: true,
-			})
-
-			if err != nil {
+			}); err != nil {
 				return err
 			}
-
 			return nil
 		},
 	}

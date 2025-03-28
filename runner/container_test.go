@@ -49,16 +49,8 @@ func (mc mockContainerClient) ContainerInspect(ctx context.Context, containerID 
 	return container.InspectResponse{}, nil
 }
 
-func (mc mockContainerClient) ContainerExecAttach(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
+func (mc mockContainerClient) ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error) {
 	return types.HijackedResponse{}, nil
-}
-
-func (mc mockContainerClient) ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
-	return container.ExecCreateResponse{}, nil
-}
-
-func (mc mockContainerClient) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
-	return container.ExecInspect{}, nil
 }
 
 type mockReaderCloser struct {
