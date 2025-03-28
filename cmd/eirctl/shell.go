@@ -38,16 +38,17 @@ func newShellCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
+
 			// create an interactive task
-			interactiveTask := &task.Task{
-				Interactive: true,
-				Context:     contextName, //
-				Variables:   &variables.Variables{},
-				Commands:    []string{""},
-				Env:         &variables.Variables{},
-				EnvFile:     nil,
-			}
-			return tr.Run(interactiveTask)
+			it := task.NewTask("interactive")
+			it.Interactive = true
+			it.Context = contextName
+			it.Variables = &variables.Variables{}
+			it.Commands = []string{""}
+			it.Env = &variables.Variables{}
+			it.EnvFile = nil
+
+			return tr.Run(it)
 		},
 	}
 	rootCmd.Cmd.AddCommand(showCmd)

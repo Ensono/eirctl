@@ -1,16 +1,24 @@
 # yaml-language-server: $schema=../../../schemas/schema_v1.json
 
 contexts:
-  context:
-    container:
-      name: alpine:3
+  context:v1:
+    executable:
+      bin: foo
     env:
       FOO: bar
     envfile:
       exclude:
         - HOME
         - PATH
-      
+  context:v2:
+    container:
+      name: apline:3
+    env:
+      FOO: bar
+    envfile:
+      exclude:
+        - HOME
+        - PATH
 tasks:
   task:task1:
     command: "echo 'This is {{index .ArgsList 0}} argument'"

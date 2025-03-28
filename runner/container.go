@@ -178,7 +178,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	containerConfig.Tty = true
 	containerConfig.AttachStdin = true
 	containerConfig.AttachStdout = true
-	containerConfig.AttachStderr = true
+	containerConfig.AttachStderr = false
 	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
 	hostConfig.AutoRemove = true
 
@@ -194,7 +194,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
-		Stderr: true,
+		Stderr: false,
 		Logs:   false,
 	})
 	if err != nil {
@@ -208,7 +208,9 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		return nil, err
 	}
 
-	defer e.Term.Restore(os.Stdin.Fd(), oldState)
+	defer func() {
+		_ = e.Term.Restore(os.Stdin.Fd(), oldState)
+	}()
 
 	// Start container with a defined shell
 	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {

@@ -183,7 +183,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	if err != nil {
 		return err
 	}
-	// 
+	//
 	job, err := r.compiler.CompileTask(t, execContext, stdin, taskOutput.Stdout(), taskOutput.Stderr(), env, vars)
 	if err != nil {
 		return err
@@ -379,7 +379,7 @@ func (r *TaskRunner) storeTaskOutput(t *task.Task) error {
 	return nil
 }
 
-// execute 
+// execute
 func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error {
 	execContext, err := r.contextForTask(t)
 	if err != nil {
