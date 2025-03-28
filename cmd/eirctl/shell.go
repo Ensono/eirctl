@@ -10,6 +10,7 @@ import (
 )
 
 var ErrIncorrectContextName = errors.New("supplied argument does not match any container context")
+var ErrNotV2Context = errors.New("not a native container context")
 
 func newShellCmd(rootCmd *EirCtlCmd) {
 
@@ -24,15 +25,20 @@ func newShellCmd(rootCmd *EirCtlCmd) {
 				return err
 			}
 			contextName := args[0]
-			if _, ok := conf.Contexts[contextName]; !ok {
-				return fmt.Errorf("%s, %w", contextName, ErrIncorrectPipelineTaskArg)
+			configCtx, ok := conf.Contexts[contextName]
+			if !ok {
+				return fmt.Errorf("%w, %s", ErrIncorrectContextName, contextName)
+			}
+
+			if configCtx.Container() == nil {
+				return fmt.Errorf("%w, %s", ErrNotV2Context, contextName)
 			}
 
 			tr, err := rootCmd.initTaskRunner(conf, &variables.Variables{})
 			if err != nil {
 				return err
 			}
-			// create a sample task
+			// create an interactive task
 			interactiveTask := &task.Task{
 				Interactive: true,
 				Context:     contextName, //
