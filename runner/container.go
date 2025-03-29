@@ -4,22 +4,22 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
-	"strings"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/interp"
@@ -45,12 +45,30 @@ type ContainerExecutorIface interface {
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
+	// Shell
+	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+}
+
+type Terminal interface {
+	MakeRaw(fd uintptr) (*term.State, error)
+	Restore(fd uintptr, state *term.State) error
+}
+
+type realTerminal struct{}
+
+func (t realTerminal) MakeRaw(fd uintptr) (*term.State, error) {
+	return term.MakeRaw(fd)
+}
+
+func (t realTerminal) Restore(fd uintptr, state *term.State) error {
+	return term.RestoreTerminal(fd, state)
 }
 
 type ContainerExecutor struct {
 	// containerClient
 	cc          ContainerExecutorIface
 	execContext *ExecutionContext
+	Term        Terminal
 }
 
 type ContainerOpts func(*ContainerExecutor)
@@ -71,6 +89,7 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
+		Term:        realTerminal{},
 	}
 
 	for _, opt := range opts {
@@ -92,19 +111,15 @@ func (e *ContainerExecutor) WithReset(doReset bool) {}
 // Returns job output
 func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, error) {
 	defer e.cc.Close()
+
 	containerContext := e.execContext.Container()
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
 	tty, attachStdin := false, false
-	// if job.Stdin != nil {
-	// 	tty = true
-	// 	attachStdin = true
-	// }
 	remoteDir := ""
 	if e.execContext.Dir != job.Dir {
 		remoteDir = job.Dir
 	}
-
 	// everything in the container is relative to the `/eirctl` directory
 	wd := path.Join("/eirctl", remoteDir)
 	// adding the opiniated PWD into the Container Env as per the wd variable
@@ -118,6 +133,14 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
 		return nil, err
 	}
+
+	if job.IsShell && job.Stdin != nil {
+		return e.shell(ctx, containerConfig, hostConfig, job)
+	}
+	return e.execute(ctx, containerConfig, hostConfig, job)
+}
+
+func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	logrus.Debugf("%+v", containerConfig)
 
@@ -151,104 +174,74 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return []byte{}, e.checkExitStatus(ctx, resp.ID)
 }
 
-const (
-	// REGISTRY_AUTH_FILE is the environment variable name
-	// for the file to use with container registry authentication
-	REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
-	// REGISTRY_AUTH_USER is the environment variable name for the user
-	// to use for authenticating to a registry
-	// when it is using a v2 style token, i.e. when the decoded token
-	// does *NOT* include a `user:password` style text, it can be something like `00000000-0000-0000-0000-000000000000` for ACR as an example, or another value
-	//
-	// Defaults to `AWS`.
-	REGISTRY_AUTH_USER      string = `REGISTRY_AUTH_USER`
-	container_registry_auth string = `{"username":"%s","password":"%s"}`
-)
+func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
-var (
-	DOCKER_CONFIG_FILE string = ".docker/config.json"
-	PODMAN_CONFIG_FILE string = ".config/containers/auth.json"
-)
+	containerConfig.Tty = true
+	containerConfig.AttachStdin = true
+	containerConfig.AttachStdout = true
+	containerConfig.AttachStderr = true
+	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	hostConfig.AutoRemove = true
 
-type AuthFile struct {
-	//
-	Auths map[string]struct {
-		Auth string `json:"auth"`
-	} `json:"auths"`
-}
+	logrus.Debugf("creating with config %+v", containerConfig)
 
-func registryAuthFile() (*AuthFile, error) {
-	home, err := os.UserHomeDir()
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+	}
+
+	// Attach to container stdio
+	attachedResp, err := e.cc.ContainerAttach(ctx, resp.ID, container.AttachOptions{
+		Stream: true,
+		Stdin:  true,
+		Stdout: true,
+		Stderr: true,
+		Logs:   false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer attachedResp.Close()
+
+	// Set terminal to raw mode
+	oldState, err := e.Term.MakeRaw(os.Stdin.Fd())
 	if err != nil {
 		return nil, err
 	}
 
-	defaultPaths := []string{path.Join(home, DOCKER_CONFIG_FILE), path.Join(home, PODMAN_CONFIG_FILE)}
+	defer func() {
+		_ = e.Term.Restore(os.Stdin.Fd(), oldState)
+	}()
 
-	if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
-		// If REGISTRY_AUTH_FILE has been supplied - check it first
-		defaultPaths = append([]string{authFile}, defaultPaths...)
+	// Start container with a defined shell
+	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	af := &AuthFile{}
-
-	for _, authFile := range defaultPaths {
-		if _, err := os.Stat(authFile); err == nil {
-			logrus.Debugf("auth file: %s", authFile)
-			b, err := os.ReadFile(authFile)
-			if err != nil {
-				return nil, fmt.Errorf("%w, auth file read: %v", ErrRegistryAuth, err)
-			}
-			if err := json.Unmarshal(b, af); err != nil {
-				return nil, fmt.Errorf("%w, auth file unmarshal: %v", ErrRegistryAuth, err)
-			}
-			return af, nil
+	// Start copying stdin -> container Connection
+	go func() {
+		if _, err := io.Copy(attachedResp.Conn, job.Stdin); err != nil {
+			logrus.Debug(err)
 		}
-	}
-	return nil, fmt.Errorf("%w, no auth file found", ErrRegistryAuth)
-}
+	}()
 
-func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
-	return func(ctx context.Context) (string, error) {
-		// extract auth from registry from `REGISTRY_AUTH_FILE`
-		logrus.Debug("looking for REGISTRY_AUTH_FILE")
+	// container stdout and terminal/host -> stdout
+	go func() {
+		if _, err := io.Copy(job.Stdout, attachedResp.Conn); err != nil {
+			logrus.Debug(err)
+		}
+	}()
 
-		rc := strings.Split(name, "/")
-		registryName := rc[0]
-		af, err := registryAuthFile()
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errWaitCh:
 		if err != nil {
-			return "", err
+			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
-		for registry, auth := range af.Auths {
-			logrus.Debug(registry)
-			if registry == registryName {
-				decodedToken, err := base64.StdEncoding.DecodeString(auth.Auth)
-				if err != nil {
-					return "", err
-				}
-
-				authToken := strings.Split(string(decodedToken), ":")
-
-				// The decoded token will include `UserName:Password`
-				if len(authToken) == 2 {
-					logrus.Debug("auth func - basic auth")
-					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, authToken[0], authToken[1])), nil
-				}
-				// The decoded token will include a JSON like string `{"key":""}`
-				// in which case it will still use username/password but the whole token is the password
-				if strings.Contains(string(decodedToken), "payload") {
-					logrus.Debug("auth func - uses a v2 style token")
-					user, found := os.LookupEnv(REGISTRY_AUTH_USER)
-					if !found {
-						user = "AWS"
-					}
-					return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, container_registry_auth, user, auth.Auth)), nil
-				}
-				return "", fmt.Errorf("the registry token is not valid")
-			}
-		}
-		return "", nil
+	case <-statusWaitCh:
+		logrus.Debug("exiting container...")
 	}
+	return []byte{}, nil
 }
 
 // Container pull images - all contexts that have a container property
@@ -259,8 +252,9 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	if err != nil {
 		return err
 	}
-
-	reader, err := e.cc.ImagePull(ctx, name, pullOpts)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
 	if err != nil {
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
 	}
@@ -312,7 +306,6 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 	if err != nil {
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
 		return interp.NewExitStatus(125)
-
 	}
 	if resp.State.ExitCode != 0 {
 		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Image, resp.Config.Cmd)
@@ -320,5 +313,3 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 	}
 	return nil
 }
-
-// container attach stdin - via task or context

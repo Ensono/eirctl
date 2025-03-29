@@ -73,6 +73,9 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 			}
 		}
 	}
+	if t.Interactive {
+		job.IsShell = true
+	}
 
 	return job, nil
 }

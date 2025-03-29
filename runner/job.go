@@ -18,8 +18,8 @@ type Job struct {
 
 	Stdout, Stderr io.Writer
 	Stdin          io.Reader
-
-	Next *Job
+	IsShell        bool
+	Next           *Job
 }
 
 // NewJobFromCommand creates new Job instance from given command

@@ -87,17 +87,27 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	return tc
 }
 
-func (tc *EirCtlCmd) InitCommand() error {
+// WithSubCommands returns a manually maintained list of commands
+func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 	// add all sub commands
-	// TODO: perhaps think about a better way of doing this
-	newRunCmd(tc)
-	newGraphCmd(tc)
-	newShowCmd(tc)
-	newListCmd(tc)
-	newInitCmd(tc)
-	newValidateCmd(tc)
-	newWatchCmd(tc)
-	newGenerateCmd(tc)
+	return []func(rootCmd *EirCtlCmd){
+		newRunCmd,
+		newGraphCmd,
+		newShowCmd,
+		newListCmd,
+		newInitCmd,
+		newValidateCmd,
+		newWatchCmd,
+		newGenerateCmd,
+		newShellCmd,
+	}
+}
+
+// InitCommand ensures each subcommand is added to the root using an IoC injection pattern
+func (tc *EirCtlCmd) InitCommand(iocFuncs ...func(rootCmd *EirCtlCmd)) error {
+	for _, fn := range iocFuncs {
+		fn(tc)
+	}
 	return nil
 }
 
@@ -199,20 +209,12 @@ func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runne
 	if err != nil {
 		return nil, nil, err
 	}
-	// fmt.Println(viper.GetStringMapString("set"))
+
 	vars := variables.FromMap(tc.viperConf.GetStringMapString("set"))
 	// These are stdin args passed over `-- arg1 arg2`
 	vars.Set("ArgsList", argsStringer.argsList)
 	vars.Set("Args", strings.Join(argsStringer.argsList, " "))
-	tr, err := runner.NewTaskRunner(runner.WithContexts(conf.Contexts),
-		runner.WithVariables(vars),
-		func(runner *runner.TaskRunner) {
-			runner.Stdout = tc.ChannelOut
-			runner.Stderr = tc.ChannelErr
-			runner.Stdin = tc.Cmd.InOrStdin()
-		},
-		runner.WithGracefulCtx(tc.ctx))
-
+	tr, err := tc.initTaskRunner(conf, vars)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -230,6 +232,17 @@ func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runne
 	}()
 
 	return tr, argsStringer, nil
+}
+
+func (tc *EirCtlCmd) initTaskRunner(conf *config.Config, vars *variables.Variables) (*runner.TaskRunner, error) {
+	return runner.NewTaskRunner(runner.WithContexts(conf.Contexts),
+		runner.WithVariables(vars),
+		func(runner *runner.TaskRunner) {
+			runner.Stdout = tc.ChannelOut
+			runner.Stderr = tc.ChannelErr
+			runner.Stdin = tc.Cmd.InOrStdin()
+		},
+		runner.WithGracefulCtx(tc.ctx))
 }
 
 // configFileFinder loops through the possible options

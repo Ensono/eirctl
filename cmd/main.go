@@ -55,7 +55,7 @@ func cmdSetUp() (*eirctlcmd.EirCtlCmd, context.CancelFunc) {
 
 	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(ctx, os.Stdout, os.Stderr)
 
-	if err := eirctlRootCmd.InitCommand(); err != nil {
+	if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
 		logrus.Fatal(err)
 	}
 
