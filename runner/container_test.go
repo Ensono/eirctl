@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
@@ -21,8 +23,12 @@ import (
 )
 
 type mockContainerClient struct {
-	close func() error
-	pull  func() (io.ReadCloser, error)
+	close  func() error
+	pull   func() (io.ReadCloser, error)
+	create func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
+	start  func(ctx context.Context, containerID string, options container.StartOptions) error
+	attach func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+	wait   func(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 }
 
 func (mc mockContainerClient) Close() error {
@@ -34,15 +40,15 @@ func (mc mockContainerClient) ImagePull(ctx context.Context, refStr string, opti
 }
 
 func (mc mockContainerClient) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-	return container.CreateResponse{}, nil
+	return mc.create(ctx, config, hostConfig, networkingConfig, platform, containerName)
 }
 
 func (mc mockContainerClient) ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error {
-	return nil
+	return mc.start(ctx, containerID, options)
 }
 
 func (mc mockContainerClient) ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
-	return nil, nil
+	return mc.wait(ctx, containerID, condition)
 
 }
 func (mc mockContainerClient) ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
@@ -54,7 +60,7 @@ func (mc mockContainerClient) ContainerInspect(ctx context.Context, containerID 
 }
 
 func (mc mockContainerClient) ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error) {
-	return types.HijackedResponse{}, nil
+	return mc.attach(ctx, container, options)
 }
 
 type mockReaderCloser struct {
@@ -215,9 +221,55 @@ func (m *mockTerminal) Restore(fd uintptr, state *term.State) error {
 	return nil
 }
 
+type MockConn struct {
+	reader *io.PipeReader
+	writer *io.PipeWriter
+	logBuf *bytes.Buffer
+
+	Closed bool
+}
+
+func NewMockConn() *MockConn {
+	r, w := io.Pipe()
+	return &MockConn{
+		reader: r,
+		writer: w,
+		logBuf: new(bytes.Buffer),
+	}
+}
+
+func (m *MockConn) Read(b []byte) (int, error) {
+	return m.reader.Read(b)
+}
+
+func (m *MockConn) Write(b []byte) (int, error) {
+	n, err := m.writer.Write(b)
+	// Optionally log/write to buffer
+	m.logBuf.Write(b)
+	return n, err
+}
+
+func (m *MockConn) Close() error {
+	_ = m.reader.Close()
+	_ = m.writer.Close()
+	return nil
+}
+
+func (m *MockConn) LocalAddr() net.Addr {
+	return &net.IPAddr{IP: net.ParseIP("127.0.0.1")}
+}
+
+func (m *MockConn) RemoteAddr() net.Addr {
+	return &net.IPAddr{IP: net.ParseIP("127.0.0.2")}
+}
+
+func (m *MockConn) SetDeadline(t time.Time) error      { return nil }
+func (m *MockConn) SetReadDeadline(t time.Time) error  { return nil }
+func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
+
 func Test_Execute_shell(t *testing.T) {
 
-	t.Run("alpine succeeds", func(t *testing.T) {
+	t.Run("correctly gets output", func(t *testing.T) {
 
 		configContext := &runner.ExecutionContext{
 			Env: variables.FromMap(map[string]string{"FOO": "bar"}),
@@ -226,21 +278,55 @@ func Test_Execute_shell(t *testing.T) {
 		containerOpt := runner.NewContainerContext("alpine:3.21.3")
 		containerOpt.ShellArgs = []string{"sh"}
 		containerOpt.VolumesFromArgs([]string{"-v ${PWD}:/testdir"})
+		conn := NewMockConn()
+
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+
+		mcc := mockContainerClient{
+			pull: func() (io.ReadCloser, error) {
+				mr := mockReaderCloser{bytes.NewReader([]byte(`done`))}
+				return mr, nil
+			},
+			create: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+				return container.CreateResponse{ID: "12354"}, nil
+			},
+			attach: func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error) {
+				return types.NewHijackedResponse(conn, ""), nil
+			},
+			start: func(ctx context.Context, containerID string, options container.StartOptions) error {
+				return nil
+			},
+			wait: func(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+				return respCh, errCh
+
+			},
+			close: func() error {
+				return nil
+			},
+		}
 
 		// containerOpt
 		execContext := runner.NewExecutionContext(nil, configContext.Dir, configContext.Env, configContext.Envfile,
 			[]string{}, []string{}, []string{}, []string{},
 			runner.WithContainerOpts(containerOpt))
-		ce, err := runner.NewContainerExecutor(execContext)
+
+		ce, err := runner.NewContainerExecutor(execContext, runner.WithContainerClient(mcc))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		stdin := bytes.NewBufferString("echo hello\nexit\n")
-		stdout := output.NewSafeWriter(new(bytes.Buffer))
-		stderr := output.NewSafeWriter(&bytes.Buffer{})
-
 		ce.Term = &mockTerminal{returnMakeRawErr: nil}
+
+		go func() {
+			_, _ = conn.Write([]byte("hello\n"))
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
 
 		if _, err := ce.Execute(context.TODO(), &runner.Job{
 			Stdin:   io.NopCloser(stdin),
@@ -254,7 +340,7 @@ func Test_Execute_shell(t *testing.T) {
 
 		output := stdout.String()
 		if !strings.Contains(output, "hello") {
-			t.Errorf("expected output to contain 'hello', got: %q", output)
+			t.Errorf("got: %q, wanted output to contain 'hello'", output)
 		}
 	})
 }

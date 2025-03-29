@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
@@ -178,7 +179,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	containerConfig.Tty = true
 	containerConfig.AttachStdin = true
 	containerConfig.AttachStdout = true
-	containerConfig.AttachStderr = false
+	containerConfig.AttachStderr = true
 	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
 	hostConfig.AutoRemove = true
 
@@ -194,7 +195,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
-		Stderr: false,
+		Stderr: true,
 		Logs:   false,
 	})
 	if err != nil {
@@ -251,8 +252,9 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	if err != nil {
 		return err
 	}
-
-	reader, err := e.cc.ImagePull(ctx, name, pullOpts)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
 	if err != nil {
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
 	}
