@@ -149,22 +149,37 @@ func (s *Scheduler) runStage(stage *Stage) error {
 // when they are all completed or skipped
 // the task is marked as ready for execution
 func checkStatus(p *ExecutionGraph, stage *Stage) bool {
-	ready := false
-	for _, parentStage := range p.Parents(stage.Name) {
-		switch parentStage.ReadStatus() {
+	// Grab all the parent stages
+	// all must succeed or first failure
+	// with non failable to quit execution
+	pStages := p.Parents(stage.Name)
+	checkedStage := make(map[string]bool)
+	for pName, pStage := range pStages {
+		checkedStage[pName] = false
+		switch pStage.ReadStatus() {
 		case StatusDone, StatusSkipped:
-			// status remains as ready
-			ready = true
+			checkedStage[pName] = true
 			continue
 		case StatusError:
-			if !parentStage.AllowFailure {
+			if !pStage.AllowFailure {
 				stage.UpdateStatus(StatusCanceled)
+				continue
 			}
+			checkedStage[pName] = true
 		case StatusCanceled:
 			stage.UpdateStatus(StatusCanceled)
 		}
 	}
-	return ready
+	// loop through all the checked parent stages
+	for _, v := range checkedStage {
+		// First stage which is not ready
+		// return false
+		if !v {
+			return false
+		}
+	}
+	// all parent stages have passed
+	return true
 }
 
 func checkStageCondition(condition string) (bool, error) {
