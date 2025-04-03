@@ -59,7 +59,10 @@ func PrintSummary(g *scheduler.ExecutionGraph, chanOut io.Writer, detailedSummar
 		case scheduler.StatusSkipped:
 			fmt.Fprintf(chanOut, GREEN_TERMINAL, fmt.Sprintf("- Stage %s was skipped\n", stage.Name))
 		case scheduler.StatusError:
-			log := strings.TrimSpace(stage.Task.ErrorMessage())
+			log := ""
+			if stage.Task != nil {
+				log = strings.TrimSpace(stage.Task.ErrorMessage())
+			}
 			if log == "" {
 				log = stage.Pipeline.Error().Error()
 			}
