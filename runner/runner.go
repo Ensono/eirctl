@@ -41,11 +41,11 @@ type Executor interface {
 // TaskRunner struct holds the properties and methods
 // for running the tasks inside the given executor
 type TaskRunner struct {
-	Executor  Executor
-	DryRun    bool
-	contexts  map[string]*ExecutionContext
-	variables *variables.Variables
-	env       *variables.Variables
+	executorFactory func(execContext *ExecutionContext, job *Job) (ExecutorIface, error)
+	DryRun          bool
+	contexts        map[string]*ExecutionContext
+	variables       *variables.Variables
+	env             *variables.Variables
 
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
@@ -65,15 +65,16 @@ type TaskRunner struct {
 // NewTaskRunner creates new TaskRunner instance
 func NewTaskRunner(opts ...Opts) (*TaskRunner, error) {
 	r := &TaskRunner{
-		compiler:     NewTaskCompiler(),
-		OutputFormat: string(output.RawOutput),
-		Stdin:        os.Stdin,
-		Stdout:       os.Stdout,
-		Stderr:       os.Stderr,
-		variables:    variables.NewVariables(),
-		env:          variables.NewVariables(),
-		cancelMutex:  sync.RWMutex{},
-		doneCh:       make(chan struct{}, 1),
+		compiler:        NewTaskCompiler(),
+		OutputFormat:    string(output.RawOutput),
+		Stdin:           os.Stdin,
+		Stdout:          os.Stdout,
+		Stderr:          os.Stderr,
+		variables:       variables.NewVariables(),
+		env:             variables.NewVariables(),
+		cancelMutex:     sync.RWMutex{},
+		doneCh:          make(chan struct{}, 1),
+		executorFactory: GetExecutorFactory,
 	}
 
 	r.ctx, r.cancelFunc = context.WithCancel(context.Background())
@@ -341,7 +342,7 @@ func (r *TaskRunner) checkTaskCondition(t *task.Task) (bool, error) {
 		return false, err
 	}
 
-	exec, err := GetExecutorFactory(executionContext, job)
+	exec, err := r.executorFactory(executionContext, job)
 	if err != nil {
 		return false, err
 	}
@@ -386,7 +387,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 		return err
 	}
 
-	exec, err := GetExecutorFactory(execContext, job)
+	exec, err := r.executorFactory(execContext, job)
 	if err != nil {
 		return err
 	}
@@ -395,6 +396,11 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 	t.WithStart(time.Now())
 
 	for nextJob := job; nextJob != nil; nextJob = nextJob.Next {
+		cmd, err := utils.RenderString(nextJob.Command, nextJob.Vars.Map())
+		if err != nil {
+			return err
+		}
+		nextJob.Command = cmd
 		if _, err := exec.Execute(ctx, nextJob); err != nil {
 			logrus.Debug(err.Error())
 			if status, ok := IsExitStatus(err); ok {
@@ -438,5 +444,11 @@ func WithVariables(variables *variables.Variables) Opts {
 func WithGracefulCtx(ctx context.Context) Opts {
 	return func(tr *TaskRunner) {
 		tr.ctx, tr.cancelFunc = context.WithCancel(ctx)
+	}
+}
+
+func WithExecutorFactory(factory func(execContext *ExecutionContext, job *Job) (ExecutorIface, error)) Opts {
+	return func(tr *TaskRunner) {
+		tr.executorFactory = factory
 	}
 }

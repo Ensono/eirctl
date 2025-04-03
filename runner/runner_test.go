@@ -20,7 +20,21 @@ import (
 	taskpkg "github.com/Ensono/eirctl/task"
 )
 
-func TestTaskRunner(t *testing.T) {
+type mockExecutor struct {
+	reset      func(bool)
+	exec       func(ctx context.Context, job *runner.Job) ([]byte, error)
+	calledWith *runner.Job
+}
+
+func (m mockExecutor) WithReset(doReset bool) {
+	return
+}
+
+func (m mockExecutor) Execute(ctx context.Context, job *runner.Job) ([]byte, error) {
+	return m.exec(ctx, job)
+}
+
+func Test_TaskRunner_Defaultshell(t *testing.T) {
 	c := runner.NewExecutionContext(nil, "/", variables.NewVariables(), &utils.Envfile{}, []string{"true"}, []string{"false"}, []string{"echo 1"}, []string{"echo 2"})
 	ob, eb := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 
@@ -123,7 +137,20 @@ func Test_DockerExec_Cmd(t *testing.T) {
 			"alpine:3.21.3", "sh", "-c"}}, "/", variables.NewVariables(), utils.NewEnvFile(func(e *utils.Envfile) {}),
 			[]string{""}, []string{""}, []string{""}, []string{""})
 
-		rnr, err := runner.NewTaskRunner(runner.WithContexts(map[string]*runner.ExecutionContext{"default_docker": dockerCtx}))
+		me := mockExecutor{
+			reset: func(b bool) {},
+			exec: func(ctx context.Context, job *runner.Job) ([]byte, error) {
+				job.Stdout.Write([]byte(`eirctl`))
+				return []byte{}, nil
+			},
+		}
+
+		rnr, err := runner.NewTaskRunner(
+			runner.WithContexts(map[string]*runner.ExecutionContext{"default_docker": dockerCtx}),
+			runner.WithExecutorFactory(func(execContext *runner.ExecutionContext, job *runner.Job) (runner.ExecutorIface, error) {
+				return me, nil
+			}),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,7 +199,34 @@ func Test_DockerExec_Cmd(t *testing.T) {
 BAZ=wqiyh
 QUX=looopar`))
 
-		rnr, err := runner.NewTaskRunner(runner.WithContexts(map[string]*runner.ExecutionContext{"default_docker": dockerCtx}))
+		me := mockExecutor{
+			reset: func(b bool) {},
+			exec: func(ctx context.Context, job *runner.Job) ([]byte, error) {
+				got := utils.ConvertToMapOfStrings(job.Env.Map())
+
+				if _, ok := got["ADDED"]; ok {
+					t.Error("should have skipped adding var")
+				}
+
+				for _, v := range [][2]string{{"FOO", "bar"}, {"QUX", "looopar"},
+					{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}} {
+					val, ok := got[v[0]]
+					if !ok {
+						t.Errorf("key %s not present", v[0])
+					}
+					if val != v[1] {
+						t.Errorf("value %s not correct", v[1])
+					}
+				}
+				job.Stdout.Write([]byte(`eirctl`))
+				return []byte{}, nil
+			},
+		}
+
+		rnr, err := runner.NewTaskRunner(runner.WithContexts(map[string]*runner.ExecutionContext{"default_docker": dockerCtx}),
+			runner.WithExecutorFactory(func(execContext *runner.ExecutionContext, job *runner.Job) (runner.ExecutorIface, error) {
+				return me, nil
+			}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,24 +250,6 @@ QUX=looopar`))
 		// Assert
 		if len(testErr.String()) > 0 {
 			t.Fatalf("got: %s, wanted nil", testErr.String())
-		}
-		rCloser := &tCloser{strings.NewReader(testOut.String())}
-		got, _ := utils.ReadEnvFile(rCloser)
-
-		if _, ok := got["ADDED"]; ok {
-			t.Error("should have skipped adding var")
-		}
-
-		for _, v := range [][2]string{{"FOO", "bar"}, {"QUX", "looopar"},
-			{"PWD", "/eirctl"}, {"HOME", "/root"},
-			{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}} {
-			val, ok := got[v[0]]
-			if !ok {
-				t.Errorf("key %s not present", v[0])
-			}
-			if val != v[1] {
-				t.Errorf("value %s not correct", v[1])
-			}
 		}
 	})
 	// with custom envfile as well
