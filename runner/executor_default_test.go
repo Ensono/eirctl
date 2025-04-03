@@ -75,6 +75,7 @@ func (ew *errWriter) Write(p []byte) (int, error) {
 	return ew.resp, ew.err
 }
 
+// TODO: turn these into unit tests with a mocked OCI client
 func Test_ContainerExecutor(t *testing.T) {
 	t.Parallel()
 	t.Run("docker with alpine", func(t *testing.T) {
