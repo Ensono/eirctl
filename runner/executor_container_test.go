@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/variables"
@@ -341,6 +343,185 @@ func Test_Execute_shell(t *testing.T) {
 		output := stdout.String()
 		if !strings.Contains(output, "hello") {
 			t.Errorf("got: %q, wanted output to contain 'hello'", output)
+		}
+	})
+}
+
+type errWriter struct {
+	resp int
+	err  error
+}
+
+func (ew *errWriter) Write(p []byte) (int, error) {
+	return ew.resp, ew.err
+}
+
+// TODO: turn these into unit tests with a mocked OCI client
+func Test_ContainerExecutor(t *testing.T) {
+	t.Skip()
+	t.Parallel()
+	t.Run("docker with alpine", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
+		cc.ShellArgs = []string{"sh", "-c"}
+		cc.BindMount = true
+		pwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
+
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		if dh := os.Getenv("DOCKER_HOST"); dh == "" {
+			t.Fatal("ensure your DOCKER_HOST is set correctly")
+		}
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(se.String()) > 0 {
+			t.Errorf("got error %v, expected nil\n\n", se.String())
+		}
+		if len(so.String()) == 0 {
+			t.Errorf("got (%s) no output, expected stdout\n\n", so.String())
+		}
+		want := `/eirctl
+hello, iteration 1
+hello, iteration 2
+hello, iteration 3
+hello, iteration 4
+hello, iteration 5
+hello, iteration 6
+hello, iteration 7
+hello, iteration 8
+hello, iteration 9
+hello, iteration 10
+`
+		if so.String() != want {
+			t.Errorf("outputs do not match\n\tgot: %s\n\twanted:  %s", so.String(), want)
+		}
+	})
+
+	t.Run("correctly mounts host dir", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
+		cc.ShellArgs = []string{"sh", "-c"}
+		cc.BindMount = true
+		pwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
+
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		if dh := os.Getenv("DOCKER_HOST"); dh == "" {
+			t.Fatal("ensure your DOCKER_HOST is set correctly")
+		}
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `ls -l .`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err != nil {
+			t.Fatalf("got %v, wanted nil", err)
+		}
+		if !strings.Contains(so.String(), `compiler.go`) {
+			t.Errorf("got (%v), expected at least compiler.go in the output\n\n", so.String())
+		}
+	})
+
+	t.Run("error docker with alpine:latest", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
+		cc.ShellArgs = []string{"sh", "-c"}
+		cc.WithEnvOverride(map[string]string{"FOO": "bar"})
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		if dh := os.Getenv("DOCKER_HOST"); dh == "" {
+			t.Fatal("ensure your DOCKER_HOST is set correctly")
+		}
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err == nil {
+			t.Fatalf("got %v, wanted error", err)
+		}
+
+		if len(se.String()) == 0 {
+			t.Errorf("got error (%v), expected error\n\n", se.String())
+		}
+
+		if len(so.String()) > 0 {
+			t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
+		}
+	})
+	t.Run("incorrect writer", func(t *testing.T) {
+		cc := runner.NewContainerContext("alpine:3.21.3")
+		cc.ShellArgs = []string{"sh", "-c"}
+
+		execContext := runner.NewExecutionContext(&utils.Binary{}, "", variables.NewVariables(), &utils.Envfile{},
+			[]string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(cc))
+
+		ce, err := runner.GetExecutorFactory(execContext, nil)
+		if err != nil {
+			t.Error(err)
+		}
+		ew := &errWriter{
+			err:  fmt.Errorf("throw here"),
+			resp: 10,
+		}
+
+		_, err = ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: io.Discard,
+			Stderr: ew, //output.NewSafeWriter(io.Discard),
+		})
+
+		if err == nil {
+			t.Fatalf("got %v, wanted error", err)
+		}
+		if !errors.Is(err, runner.ErrContainerMultiplexedStdoutStream) {
+			t.Fatal("incorrect type of error ")
 		}
 	})
 }
