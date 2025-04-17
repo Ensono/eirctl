@@ -57,3 +57,13 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 	}
 	return containerConfig, hostConfig
 }
+
+func mutateShellContainerConfig(containerConfig *container.Config) {
+	containerConfig.Tty = true
+	containerConfig.OpenStdin = true
+	containerConfig.AttachStdin = true
+	containerConfig.StdinOnce = true
+	containerConfig.AttachStdout = true
+	containerConfig.AttachStderr = true
+	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+}

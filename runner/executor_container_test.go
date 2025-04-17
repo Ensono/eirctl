@@ -20,8 +20,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
-	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/term"
 )
 
 type mockContainerClient struct {
@@ -213,12 +213,12 @@ type mockTerminal struct {
 	returnMakeRawErr error
 }
 
-func (m *mockTerminal) MakeRaw(fd uintptr) (*term.State, error) {
+func (m *mockTerminal) MakeRaw(fd int) (*term.State, error) {
 	m.makeRawCalled = true
 	return m.returnMakeRaw, m.returnMakeRawErr
 }
 
-func (m *mockTerminal) Restore(fd uintptr, state *term.State) error {
+func (m *mockTerminal) Restore(fd int, state *term.State) error {
 	m.restoreCalled = true
 	return nil
 }

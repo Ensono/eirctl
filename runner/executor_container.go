@@ -19,9 +19,9 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -50,18 +50,18 @@ type ContainerExecutorIface interface {
 }
 
 type Terminal interface {
-	MakeRaw(fd uintptr) (*term.State, error)
-	Restore(fd uintptr, state *term.State) error
+	MakeRaw(fd int) (*term.State, error)
+	Restore(fd int, state *term.State) error
 }
 
 type realTerminal struct{}
 
-func (t realTerminal) MakeRaw(fd uintptr) (*term.State, error) {
-	return term.MakeRaw(fd)
+func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
+	return term.MakeRaw(int(fd))
 }
 
-func (t realTerminal) Restore(fd uintptr, state *term.State) error {
-	return term.RestoreTerminal(fd, state)
+func (t realTerminal) Restore(fd int, state *term.State) error {
+	return term.Restore(int(fd), state)
 }
 
 type ContainerExecutor struct {
@@ -176,11 +176,8 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
-	containerConfig.Tty = true
-	containerConfig.AttachStdin = true
-	containerConfig.AttachStdout = true
-	containerConfig.AttachStderr = true
-	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	mutateShellContainerConfig(containerConfig)
+
 	hostConfig.AutoRemove = true
 
 	logrus.Debugf("creating with config %+v", containerConfig)
@@ -204,13 +201,14 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
-	oldState, err := e.Term.MakeRaw(os.Stdin.Fd())
+	fd := int(os.Stdin.Fd())
+	oldState, err := e.Term.MakeRaw(fd)
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
-		_ = e.Term.Restore(os.Stdin.Fd(), oldState)
+		_ = e.Term.Restore(fd, oldState)
 	}()
 
 	// Start container with a defined shell
