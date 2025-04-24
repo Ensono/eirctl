@@ -5,6 +5,7 @@ package runner
 
 import (
 	"context"
+	"os"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -62,8 +63,13 @@ func mutateShellContainerConfig(containerConfig *container.Config) {
 	containerConfig.Tty = true
 	containerConfig.OpenStdin = true
 	containerConfig.AttachStdin = true
-	containerConfig.StdinOnce = true
 	containerConfig.AttachStdout = true
 	containerConfig.AttachStderr = true
 	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	containerConfig.Env = append(containerConfig.Env, []string{"COLUMNS=120", "LINES=40"}...)
+}
+
+func resizeSignal() chan os.Signal {
+	// effectively a No-Op
+	return make(chan os.Signal, 1)
 }

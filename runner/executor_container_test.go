@@ -31,6 +31,7 @@ type mockContainerClient struct {
 	start  func(ctx context.Context, containerID string, options container.StartOptions) error
 	attach func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
 	wait   func(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
+	resize func(ctx context.Context, containerID string, options container.ResizeOptions) error
 }
 
 func (mc mockContainerClient) Close() error {
@@ -63,6 +64,10 @@ func (mc mockContainerClient) ContainerInspect(ctx context.Context, containerID 
 
 func (mc mockContainerClient) ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error) {
 	return mc.attach(ctx, container, options)
+}
+
+func (mc mockContainerClient) ContainerResize(ctx context.Context, containerID string, options container.ResizeOptions) error {
+	return mc.resize(ctx, containerID, options)
 }
 
 type mockReaderCloser struct {
@@ -172,7 +177,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 	t.Run("no auth files present", func(t *testing.T) {
 		runner.DOCKER_CONFIG_FILE = "/unknown/config.json"
-		runner.PODMAN_CONFIG_FILE = "/unknown/auth.json"
+		runner.CONTAINER_CONFIG_FILE = "/unknown/auth.json"
 		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
 		_, err := gotFn(context.TODO())
 		if err == nil {
@@ -185,7 +190,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 	t.Run("read auth file error", func(t *testing.T) {
 		runner.DOCKER_CONFIG_FILE = "/unknown/config.json"
-		runner.PODMAN_CONFIG_FILE = "/unknown/auth.json"
+		runner.CONTAINER_CONFIG_FILE = "/unknown/auth.json"
 		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":function(){}?}}}`), 0777); err != nil {
 			t.Fatal(err)
@@ -221,6 +226,14 @@ func (m *mockTerminal) MakeRaw(fd int) (*term.State, error) {
 func (m *mockTerminal) Restore(fd int, state *term.State) error {
 	m.restoreCalled = true
 	return nil
+}
+
+func (m *mockTerminal) IsTerminal(fd int) bool {
+	return true
+}
+
+func (m *mockTerminal) GetSize(fd int) (width, height int, err error) {
+	return 1, 1, nil
 }
 
 type MockConn struct {
@@ -308,6 +321,9 @@ func Test_Execute_shell(t *testing.T) {
 
 			},
 			close: func() error {
+				return nil
+			},
+			resize: func(ctx context.Context, containerID string, options container.ResizeOptions) error {
 				return nil
 			},
 		}

@@ -9,6 +9,9 @@ import (
 	"io"
 	"os"
 	"path"
+	"runtime"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -18,6 +21,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -47,21 +51,34 @@ type ContainerExecutorIface interface {
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
 	// Shell
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+	ContainerResize(ctx context.Context, containerID string, options container.ResizeOptions) error
 }
 
 type Terminal interface {
 	MakeRaw(fd int) (*term.State, error)
 	Restore(fd int, state *term.State) error
+	IsTerminal(fd int) bool
+	GetSize(fd int) (width, height int, err error)
 }
 
 type realTerminal struct{}
 
 func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
-	return term.MakeRaw(int(fd))
+	return term.MakeRaw(fd)
+	// return term.MakeRaw(uintptr(fd))
 }
 
 func (t realTerminal) Restore(fd int, state *term.State) error {
-	return term.Restore(int(fd), state)
+	return term.Restore(fd, state)
+	// return term.RestoreTerminal(uintptr(fd), state)
+}
+
+func (t realTerminal) IsTerminal(fd int) bool {
+	return term.IsTerminal(fd)
+}
+
+func (t realTerminal) GetSize(fd int) (width, height int, err error) {
+	return term.GetSize(fd)
 }
 
 type ContainerExecutor struct {
@@ -130,36 +147,49 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 
 	containerConfig, hostConfig := platformContainerConfig(containerContext, cEnv, cmd, wd, tty, attachStdin)
 
-	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
-		return nil, err
-	}
-
 	if job.IsShell && job.Stdin != nil {
 		return e.shell(ctx, containerConfig, hostConfig, job)
 	}
 	return e.execute(ctx, containerConfig, hostConfig, job)
 }
 
+func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
+
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			if err := e.PullImage(ctx, containerConfig.Image, job.Stdout); err != nil {
+				return container.CreateResponse{}, err
+			}
+			// Image pulled now create container
+			return e.createContainer(ctx, containerConfig, hostConfig, job)
+		}
+		return container.CreateResponse{}, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+	}
+	return resp, nil
+}
+
 func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	logrus.Debugf("%+v", containerConfig)
 
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	// createdContainer
+	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
 
-	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
 	// streamLogs
 	errExecCh := make(chan error)
-	if err := e.streamLogs(ctx, resp.ID, errExecCh, job); err != nil {
+	if err := e.streamLogs(ctx, createdContainer.ID, errExecCh, job); err != nil {
 		return nil, err
 	}
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
@@ -171,9 +201,10 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 		}
 	case <-statusWaitCh:
 	}
-	return []byte{}, e.checkExitStatus(ctx, resp.ID)
+	return []byte{}, e.checkExitStatus(ctx, createdContainer.ID)
 }
 
+// shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	mutateShellContainerConfig(containerConfig)
@@ -182,13 +213,19 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 
 	logrus.Debugf("creating with config %+v", containerConfig)
 
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if runtime.GOOS == "windows" && containerConfig.Cmd[0] == "pwsh" {
+		containerConfig.Cmd = append(containerConfig.Cmd, "-NoLogo", "-NoProfile",
+			"-Command", "Remove-Module PSReadLine; pwsh")
+	}
+
+	// createdContainer
+	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
-		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+		return nil, err
 	}
 
 	// Attach to container stdio
-	attachedResp, err := e.cc.ContainerAttach(ctx, resp.ID, container.AttachOptions{
+	attachedResp, err := e.cc.ContainerAttach(ctx, createdContainer.ID, container.AttachOptions{
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
@@ -202,19 +239,29 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 
 	// Set terminal to raw mode
 	fd := int(os.Stdin.Fd())
-	oldState, err := e.Term.MakeRaw(fd)
-	if err != nil {
-		return nil, err
+	if e.Term.IsTerminal(fd) {
+		logrus.Debug("Making Terminal Raw")
+		oldState, err := e.Term.MakeRaw(fd)
+		if err != nil {
+			return nil, err
+		}
+		defer e.Term.Restore(fd, oldState)
 	}
 
-	defer func() {
-		_ = e.Term.Restore(fd, oldState)
-	}()
+	e.resizeShellTTY(ctx, fd, createdContainer.ID)
 
 	// Start container with a defined shell
-	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
+
+	sigCh := resizeSignal()
+	go func() {
+		for range sigCh {
+			logrus.Debug("terminal window resized")
+			e.resizeShellTTY(ctx, fd, createdContainer.ID)
+		}
+	}()
 
 	// Start copying stdin -> container Connection
 	go func() {
@@ -230,7 +277,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		}
 	}()
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
@@ -242,6 +289,44 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	return []byte{}, nil
 }
 
+func (e *ContainerExecutor) isTTYSupported(fd int) bool {
+	// Detect common incompatible shells (Cygwin, MinTTY, MSYS)
+	if runtime.GOOS == "windows" {
+		logrus.Debug("is in windows")
+		if os.Getenv("PSModulePath") != "" || os.Getenv("PSVersionTable") != "" {
+			logrus.Debug("is powershell")
+			return false
+		}
+		termProgram, term := os.Getenv("TERM_PROGRAM"), os.Getenv("TERM")
+		if slices.ContainsFunc([]string{"mintty", "cygwin"}, func(v string) bool {
+			return strings.Contains(termProgram, v)
+		}) {
+			return false
+		}
+		if slices.ContainsFunc([]string{"mintty", "cygwin", "xterm"}, func(v string) bool {
+			return strings.Contains(term, v)
+		}) {
+			logrus.Debug("fd is a win terminal")
+			return false
+		}
+	}
+	return e.Term.IsTerminal(fd)
+}
+
+func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containerId string) {
+	if e.Term.IsTerminal(fd) {
+		width, height, err := e.Term.GetSize(fd)
+		if err != nil {
+			logrus.Debugf("failed to get terminal size: %v", err)
+			return
+		}
+		_ = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
+			Height: uint(height),
+			Width:  uint(width),
+		})
+	}
+}
+
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutput io.Writer) error {
 	logrus.Debugf("pulling image: %s", name)
@@ -250,7 +335,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	if err != nil {
 		return err
 	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
 	if err != nil {
