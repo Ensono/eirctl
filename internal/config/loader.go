@@ -109,6 +109,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	cl.dst.Variables.Set("Root", cl.dir)
 
 	logrus.Debugf("config %s loaded", file)
+	cl.dst.SourceFile = file
 	return cl.dst, nil
 }
 

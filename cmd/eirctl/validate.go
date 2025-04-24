@@ -10,13 +10,13 @@ func newValidateCmd(rootCmd *EirCtlCmd) {
 	c := &cobra.Command{
 		Use:   "validate",
 		Short: `validates config file`,
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.MinimumNArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := rootCmd.initConfig()
+			cfg, err := rootCmd.initConfig()
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(rootCmd.ChannelOut, "file is valid")
+			fmt.Fprintf(rootCmd.ChannelOut, "file (%s) is valid\n", cfg.SourceFile)
 			return nil
 		},
 		PostRunE: func(cmd *cobra.Command, args []string) error {
