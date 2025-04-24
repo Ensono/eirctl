@@ -11,23 +11,71 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 
-Yet another build tool alternative to GNU Make. 
+EirCtl is a build tool alternative to GNU Make, as with some of the others like it's inspiration [taskctl]() and taskfile and others it is cross platform so works on windows.
+> As with most things windows, this comes with a few caveats
 
-EirCtl is built around the Ensono Independent Runner set up, however it can and is used in isolation. 
-
-[PLACEHOLDER]
+Whilst it is built within the Ensono ecosystem and is used within the Ensono Independent Runner and Ensono Stacks, **it can and is used in isolation**.
 
 ## Configuration
 
-[PLACEHOLDER]
+The configuration is driven through YAML which has its [schema](https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json) published and maintained. For an easier developer experience it can integrated into your IDE.
 
-Key concepts
+Key concepts, see below for more details.
 
-- contexts
-- containers
-- pipelines
-- execution graph
-- task => jobs
+- [task](#tasks) => jobs
+- [contexts](#contexts)
+- [pipelines](#pipelines)
+
+Additional concepts:
+
+- execution graphs can be seen [here in more detail.](./docs/graph-implementation.md)
+- native container support [here](#docker-context)
+
+### CLI
+
+The CLI offers a range of commands, each of them needs a valid config file.
+
+- `completion`
+  
+  Generate the autocompletion script for the specified shell
+- `generate`
+  
+  Generates a CI definition in a target implementation from a Eirctl pipeline definition.
+
+- `graph`
+  
+  Visualizes pipeline execution graph
+- `help`
+  
+  Help about any command
+- `init`
+  
+  Initializes the directory with a- sample config file
+
+- `list`
+  
+  Lists contexts, pipelines, tasks- and watchers
+
+- `run`
+
+  Runs a pipeline or a task, see `eirctl run -h` for more options.
+  > :info: eirctl <pipeline|task> will behave as `eirctl run pipeline|task`
+
+- `shell [beta]`
+  
+  Shell into the supplied container-context, works only with the native container context
+
+- `show`
+  
+  Shows task's details
+
+- `validate`
+  
+  Validates config file
+
+- `watch`
+  
+  Watches changes in directories to perform certain tasks [WATCHERS...]
 
 ## Tasks
 
@@ -156,7 +204,7 @@ Stage definition takes following parameters:
 - `condition` - condition to check before running stage
 - `variables` - stage's variables
 
-## eirctl output formats
+## output formats
 
 eirctl has several output formats:
 
@@ -167,9 +215,12 @@ eirctl has several output formats:
 ## Contexts
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
+
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
+
 ```yaml
 contexts:
-  local:
+  zsh:
     executable:
       bin: /bin/zsh
       args:
@@ -187,18 +238,21 @@ Context has hooks which may be triggered once before first context usage or ever
 
 ```yaml
 context:
-    docker-compose:
-      executable:
-        bin: docker-compose
-        args: ["exec", "api"]
-      up: docker-compose up -d api
-      down: docker-compose down api
-
-    local:
-      after: rm -rf var/*
+  docker-compose:
+    executable:
+      bin: docker-compose
+      args: ["exec", "api"]
+    up: docker-compose up -d api
+    down: docker-compose down api
+  local:
+    after: rm -rf var/*
 ```
 
 ### Docker context
+
+It uses the native Go API for OCI compliant docker runtimes (docker, podman, containerd, etc...).
+
+> This means you don't need the docker cli installed
 
 ```yaml
   alpine:

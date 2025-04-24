@@ -289,30 +289,6 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	return []byte{}, nil
 }
 
-func (e *ContainerExecutor) isTTYSupported(fd int) bool {
-	// Detect common incompatible shells (Cygwin, MinTTY, MSYS)
-	if runtime.GOOS == "windows" {
-		logrus.Debug("is in windows")
-		if os.Getenv("PSModulePath") != "" || os.Getenv("PSVersionTable") != "" {
-			logrus.Debug("is powershell")
-			return false
-		}
-		termProgram, term := os.Getenv("TERM_PROGRAM"), os.Getenv("TERM")
-		if slices.ContainsFunc([]string{"mintty", "cygwin"}, func(v string) bool {
-			return strings.Contains(termProgram, v)
-		}) {
-			return false
-		}
-		if slices.ContainsFunc([]string{"mintty", "cygwin", "xterm"}, func(v string) bool {
-			return strings.Contains(term, v)
-		}) {
-			logrus.Debug("fd is a win terminal")
-			return false
-		}
-	}
-	return e.Term.IsTerminal(fd)
-}
-
 func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containerId string) {
 	if e.Term.IsTerminal(fd) {
 		width, height, err := e.Term.GetSize(fd)
@@ -395,4 +371,28 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 		return interp.NewExitStatus(uint8(resp.State.ExitCode))
 	}
 	return nil
+}
+
+func (e *ContainerExecutor) isTTYSupported(fd int) bool {
+	// Detect common incompatible shells (Cygwin, MinTTY, MSYS)
+	if runtime.GOOS == "windows" {
+		logrus.Debug("is in windows")
+		if os.Getenv("PSModulePath") != "" || os.Getenv("PSVersionTable") != "" {
+			logrus.Debug("is powershell")
+			return false
+		}
+		termProgram, term := os.Getenv("TERM_PROGRAM"), os.Getenv("TERM")
+		if slices.ContainsFunc([]string{"mintty", "cygwin"}, func(v string) bool {
+			return strings.Contains(termProgram, v)
+		}) {
+			return false
+		}
+		if slices.ContainsFunc([]string{"mintty", "cygwin", "xterm"}, func(v string) bool {
+			return strings.Contains(term, v)
+		}) {
+			logrus.Debug("fd is a win terminal")
+			return false
+		}
+	}
+	return e.Term.IsTerminal(fd)
 }
