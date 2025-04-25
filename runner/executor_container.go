@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"runtime"
 	"strings"
 	"time"
 
@@ -226,11 +225,6 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	hostConfig.AutoRemove = true
 
 	logrus.Debugf("creating with config %+v", containerConfig)
-
-	if runtime.GOOS == "windows" && containerConfig.Cmd[0] == "pwsh" {
-		containerConfig.Cmd = append(containerConfig.Cmd, "-NoLogo", "-NoProfile",
-			"-Command", "Remove-Module PSReadLine; pwsh")
-	}
 
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
