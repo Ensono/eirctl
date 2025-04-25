@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -183,7 +185,8 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 
 	// streamLogs
 	errExecCh := make(chan error)
-	if err := e.streamLogs(ctx, createdContainer.ID, errExecCh, job); err != nil {
+	doneReadingCh := make(chan struct{})
+	if err = e.streamLogs(ctx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
 		return nil, err
 	}
 
@@ -198,6 +201,19 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 			return nil, err
 		}
 	case <-statusWaitCh:
+		// even though the container is technically finished
+		// in some case the buffer might still be copied in to.
+		// we need to make sur this blocks for maximum of 5 sec
+		// or until it is done reading
+		// now wait up to 1s for the drain to complete
+		timer := time.NewTimer(1 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-doneReadingCh:
+			logrus.Debug("fully drained logs after exit")
+		case <-timer.C:
+			logrus.Debug("timed out waiting on buffer to drain completely...")
+		}
 	}
 	return []byte{}, e.checkExitStatus(ctx, createdContainer.ID)
 }
@@ -243,7 +259,10 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		if err != nil {
 			return nil, err
 		}
-		defer e.Term.Restore(fd, oldState)
+		// defer e.Term.Restore(fd, oldState)
+		defer func() {
+			_ = e.Term.Restore(fd, oldState)
+		}()
 	}
 
 	e.resizeShellTTY(ctx, fd, createdContainer.ID)
@@ -329,7 +348,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	return nil
 }
 
-func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan error, job *Job) error {
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan<- error, doneReadingCh chan<- struct{}, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -346,13 +365,20 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		for {
 			if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, reader); err != nil {
 				// Handle EOF (when logs stop)
-				if errors.Is(err, io.EOF) {
+				// or reading from a closed socket after close
+				if errors.Is(err, io.EOF) ||
+					strings.Contains(err.Error(), "use of closed network connection") ||
+					errors.Is(err, http.ErrBodyReadAfterClose) ||
+					strings.Contains(err.Error(), "read on closed response body") {
+					logrus.Infof("exiting on reader closed %v", err)
 					break
 				}
+				logrus.Errorf("stream buffer exiting on %s", err)
 				errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 				return
 			}
 		}
+		doneReadingCh <- struct{}{}
 	}()
 
 	return nil

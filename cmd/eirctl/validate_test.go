@@ -19,7 +19,7 @@ func Test_validateCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"validate", "testdata/graph.yaml"},
-			output: []string{"file is valid"},
+			output: []string{"file", "is valid"},
 		})
 	})
 }

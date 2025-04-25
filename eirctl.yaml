@@ -19,11 +19,11 @@ contexts:
 
   golint:
     container:
-      name: golangci/golangci-lint:v1.64.7-alpine
+      name: golangci/golangci-lint:v2.1.5-alpine
       # entrypoint:
       #   - /usr/bin/env
       # enable_dind: true
-      enable_mount: true
+      # enable_mount: true
     envfile:
       exclude:
         - GO
@@ -142,7 +142,9 @@ tasks:
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
-      - golangci-lint run
+      # echo "lint ran with exit code: $?"
+      - | 
+        golangci-lint run
 
   goreleaser:
     command:

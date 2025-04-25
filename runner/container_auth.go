@@ -45,7 +45,6 @@ func registryAuthFile() (*configfile.ConfigFile, error) {
 		defaultPaths = append([]string{authFile}, defaultPaths...)
 	}
 
-	af := &configfile.ConfigFile{}
 	for _, authFile := range defaultPaths {
 		if _, err := os.Stat(authFile); err == nil {
 			logrus.Debugf("auth file: %s", authFile)
@@ -53,7 +52,7 @@ func registryAuthFile() (*configfile.ConfigFile, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%w, auth file read: %v", ErrRegistryAuth, err)
 			}
-			af, err = config.LoadFromReader(bytes.NewReader(b))
+			af, err := config.LoadFromReader(bytes.NewReader(b))
 			if err != nil {
 				return nil, fmt.Errorf("%w, unable to load config: %v", ErrRegistryAuth, err)
 			}
