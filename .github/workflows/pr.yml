@@ -45,7 +45,7 @@ jobs:
           go-version: 1.24.x
       - name: Linters
         run: |
-          go run -race cmd/main.go run lints
+          go run cmd/main.go run lints
 
   test:
     name: Test
