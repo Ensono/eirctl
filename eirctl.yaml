@@ -144,9 +144,8 @@ tasks:
     command:
       # echo "lint ran with exit code: $?"
       - | 
+        pwd && ls -lat 
         golangci-lint run
-        cat .golangci.yaml
-        go env
 
   goreleaser:
     command:
