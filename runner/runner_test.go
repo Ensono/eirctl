@@ -134,7 +134,7 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		dockerCtx := runner.NewExecutionContext(&utils.Binary{Bin: "docker", Args: []string{
 			"run",
 			"--rm",
-			"alpine:3.21.3", "sh", "-c"}}, "/", variables.NewVariables(), utils.NewEnvFile(func(e *utils.Envfile) {}),
+			"container:fooo", "sh", "-c"}}, "/", variables.NewVariables(), utils.NewEnvFile(func(e *utils.Envfile) {}),
 			[]string{""}, []string{""}, []string{""}, []string{""})
 
 		me := mockExecutor{

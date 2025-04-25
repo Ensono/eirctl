@@ -282,8 +282,7 @@ func (r *TaskRunner) after(ctx context.Context, t *task.Task, env, vars *variabl
 		if err != nil {
 			return fmt.Errorf(`"after" command compilation failed: %w`, err)
 		}
-
-		exec, err := newDefaultExecutor(job.Stdin, job.Stdout, job.Stderr)
+		exec, err := r.executorFactory(execContext, job)
 		if err != nil {
 			return err
 		}
