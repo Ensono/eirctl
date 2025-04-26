@@ -218,6 +218,8 @@ Contexts allow you to set up execution environment, variables, binary which will
 
 The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
 
+> tasks running without a context will be run in a cross [platform shell](https://github.com/mvdan/sh) - it is alsm
+
 ```yaml
 contexts:
   zsh:

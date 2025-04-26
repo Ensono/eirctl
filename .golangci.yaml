@@ -28,3 +28,4 @@ linters:
           - ineffassign
           - staticcheck
           - unused
+          - govet
