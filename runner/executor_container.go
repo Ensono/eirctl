@@ -64,12 +64,10 @@ type realTerminal struct{}
 
 func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
 	return term.MakeRaw(fd)
-	// return term.MakeRaw(uintptr(fd))
 }
 
 func (t realTerminal) Restore(fd int, state *term.State) error {
 	return term.Restore(fd, state)
-	// return term.RestoreTerminal(uintptr(fd), state)
 }
 
 func (t realTerminal) IsTerminal(fd int) bool {
@@ -322,6 +320,9 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	if err != nil {
 		return err
 	}
+	// 120 seconds is an arbitrary time limit beyond which the program won't wait
+	// In case of slow internet or extremely large layers this may be hit.
+	// TODO: make this configurable
 	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
@@ -364,10 +365,8 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 					strings.Contains(err.Error(), "use of closed network connection") ||
 					errors.Is(err, http.ErrBodyReadAfterClose) ||
 					strings.Contains(err.Error(), "read on closed response body") {
-					logrus.Infof("exiting on reader closed %v", err)
 					break
 				}
-				logrus.Errorf("stream buffer exiting on %s", err)
 				errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 				return
 			}
