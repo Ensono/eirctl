@@ -17,12 +17,20 @@ curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-`
 MacOS binary
 
 ```bash
-curl -L https://github.com/Ensono/eirctl/releases/download/0.3.7/eirctl-darwin-`uname -m` -o eirctl
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-`uname -m` -o eirctl
 ```
 
 ```bash
 chmod +x eirctl
 sudo mv eirctl /usr/local/bin
+```
+
+Windows binaries for your platform can be downloaded manually, or via pwsh (`iwr` or similar) then moved to a $PATH on your computer.
+
+```sh
+https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-386.exe
+https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe
+https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-arm64.exe
 ```
 
 Verify installation
