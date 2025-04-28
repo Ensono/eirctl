@@ -200,7 +200,7 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 	case <-statusWaitCh:
 		// even though the container is technically finished
 		// in some case the buffer might still be copied in to.
-		// we need to make sur this blocks for maximum of 5 sec
+		// we need to make sure this blocks for maximum of 5 sec
 		// or until it is done reading
 		// now wait up to 1s for the drain to complete
 		timer := time.NewTimer(1 * time.Second)
