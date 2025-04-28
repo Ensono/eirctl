@@ -36,7 +36,9 @@ tasks:
     description: Generates Terraform Doc for a module in a given path under `$TF_DIR` variable
     command:
       - |
-        terraform-docs --output-file README.md markdown ${TF_DIR}
+        terraform-docs --output-file ${OUTPUT_FILE} markdown ${TF_DIR}
+    env:
+      OUTPUT_FILE: README.md
 
   lint:terraform:format:
     context: tf
@@ -47,26 +49,20 @@ tasks:
       
       `taskctl run lint:terraform:format -- -recursive`
     command:
-      - |
-        terraform fmt {{ if .ArgsList }}{{ .Args }} -check{{ end }} -diff -recursive deploy/aws
+      - terraform fmt {{ if .ArgsList }}{{ .Args }} -check{{ end }} -diff -recursive ${TF_DIR}
 
   lint:terraform:validate:
     context: tf
     description: Perform Terraform Validation
     command:
-      - |
-        terraform -chdir=deploy/aws/account-security init -backend=false 
-        terraform -chdir=deploy/aws/account-security validate
-      - |
-        terraform -chdir=deploy/aws/idp init -backend=false 
-        terraform -chdir=deploy/aws/idp validate
+      - terraform -chdir=${TF_DIR} init -backend=false 
+      - terraform -chdir=${TF_DIR} validate
   
   test:unit:terraform:
     context: tf
     description: Perform Terraform Unit Tests
     command:
-      - terraform -chdir=deploy/aws/account-security test
-      - terraform -chdir=deploy/aws/idp test
+      - terraform -chdir=${TF_DIR} test
     
   infra:init: 
     context: tf 
