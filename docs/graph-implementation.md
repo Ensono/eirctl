@@ -49,6 +49,8 @@ With denormalization performed for each `run` command we can perform a hierarchi
 
 The general flow of inheritance is from the more general to the more specific, i.e. `Context < Pipeline < Task`.
 
+> NB: presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
+
 That means that anything set in the context level will always be injected into the pipeline and task, unless the same key is set in the pipeline in which case it will be overwritten.
 
 Anything set in a task will overwrite previouusly set env keys.

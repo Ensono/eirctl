@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -18,10 +20,11 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/moby/term"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -47,21 +50,32 @@ type ContainerExecutorIface interface {
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
 	// Shell
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+	ContainerResize(ctx context.Context, containerID string, options container.ResizeOptions) error
 }
 
 type Terminal interface {
-	MakeRaw(fd uintptr) (*term.State, error)
-	Restore(fd uintptr, state *term.State) error
+	MakeRaw(fd int) (*term.State, error)
+	Restore(fd int, state *term.State) error
+	IsTerminal(fd int) bool
+	GetSize(fd int) (width, height int, err error)
 }
 
 type realTerminal struct{}
 
-func (t realTerminal) MakeRaw(fd uintptr) (*term.State, error) {
+func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
 	return term.MakeRaw(fd)
 }
 
-func (t realTerminal) Restore(fd uintptr, state *term.State) error {
-	return term.RestoreTerminal(fd, state)
+func (t realTerminal) Restore(fd int, state *term.State) error {
+	return term.Restore(fd, state)
+}
+
+func (t realTerminal) IsTerminal(fd int) bool {
+	return term.IsTerminal(fd)
+}
+
+func (t realTerminal) GetSize(fd int) (width, height int, err error) {
+	return term.GetSize(fd)
 }
 
 type ContainerExecutor struct {
@@ -130,36 +144,50 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 
 	containerConfig, hostConfig := platformContainerConfig(containerContext, cEnv, cmd, wd, tty, attachStdin)
 
-	if err := e.PullImage(ctx, containerContext.Image, job.Stdout); err != nil {
-		return nil, err
-	}
-
 	if job.IsShell && job.Stdin != nil {
 		return e.shell(ctx, containerConfig, hostConfig, job)
 	}
 	return e.execute(ctx, containerConfig, hostConfig, job)
 }
 
+func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
+
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			if err := e.PullImage(ctx, containerConfig.Image, job.Stdout); err != nil {
+				return container.CreateResponse{}, err
+			}
+			// Image pulled now create container
+			return e.createContainer(ctx, containerConfig, hostConfig, job)
+		}
+		return container.CreateResponse{}, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+	}
+	return resp, nil
+}
+
 func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	logrus.Debugf("%+v", containerConfig)
 
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	// createdContainer
+	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
 
-	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
 	// streamLogs
 	errExecCh := make(chan error)
-	if err := e.streamLogs(ctx, resp.ID, errExecCh, job); err != nil {
+	doneReadingCh := make(chan struct{})
+	if err = e.streamLogs(ctx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
 		return nil, err
 	}
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
@@ -170,28 +198,40 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 			return nil, err
 		}
 	case <-statusWaitCh:
+		// even though the container is technically finished
+		// in some case the buffer might still be copied in to.
+		// we need to make sure this blocks for maximum of 5 sec
+		// or until it is done reading
+		// now wait up to 1s for the drain to complete
+		timer := time.NewTimer(1 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-doneReadingCh:
+			logrus.Debug("fully drained logs after exit")
+		case <-timer.C:
+			logrus.Debug("timed out waiting on buffer to drain completely...")
+		}
 	}
-	return []byte{}, e.checkExitStatus(ctx, resp.ID)
+	return []byte{}, e.checkExitStatus(ctx, createdContainer.ID)
 }
 
+// shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
-	containerConfig.Tty = true
-	containerConfig.AttachStdin = true
-	containerConfig.AttachStdout = true
-	containerConfig.AttachStderr = true
-	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	mutateShellContainerConfig(containerConfig)
+
 	hostConfig.AutoRemove = true
 
 	logrus.Debugf("creating with config %+v", containerConfig)
 
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	// createdContainer
+	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
-		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
+		return nil, err
 	}
 
 	// Attach to container stdio
-	attachedResp, err := e.cc.ContainerAttach(ctx, resp.ID, container.AttachOptions{
+	attachedResp, err := e.cc.ContainerAttach(ctx, createdContainer.ID, container.AttachOptions{
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
@@ -204,19 +244,33 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
-	oldState, err := e.Term.MakeRaw(os.Stdin.Fd())
-	if err != nil {
-		return nil, err
+	fd := int(os.Stdin.Fd())
+	if e.Term.IsTerminal(fd) {
+		logrus.Debug("Making Terminal Raw")
+		oldState, err := e.Term.MakeRaw(fd)
+		if err != nil {
+			return nil, err
+		}
+		// defer e.Term.Restore(fd, oldState)
+		defer func() {
+			_ = e.Term.Restore(fd, oldState)
+		}()
 	}
 
-	defer func() {
-		_ = e.Term.Restore(os.Stdin.Fd(), oldState)
-	}()
+	e.resizeShellTTY(ctx, fd, createdContainer.ID)
 
 	// Start container with a defined shell
-	if err := e.cc.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
+
+	sigCh := resizeSignal()
+	go func() {
+		for range sigCh {
+			logrus.Debug("terminal window resized")
+			e.resizeShellTTY(ctx, fd, createdContainer.ID)
+		}
+	}()
 
 	// Start copying stdin -> container Connection
 	go func() {
@@ -232,7 +286,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		}
 	}()
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
@@ -244,6 +298,20 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	return []byte{}, nil
 }
 
+func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containerId string) {
+	if e.Term.IsTerminal(fd) {
+		width, height, err := e.Term.GetSize(fd)
+		if err != nil {
+			logrus.Debugf("failed to get terminal size: %v", err)
+			return
+		}
+		_ = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
+			Height: uint(height),
+			Width:  uint(width),
+		})
+	}
+}
+
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutput io.Writer) error {
 	logrus.Debugf("pulling image: %s", name)
@@ -252,7 +320,10 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	if err != nil {
 		return err
 	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// 120 seconds is an arbitrary time limit beyond which the program won't wait
+	// In case of slow internet or extremely large layers this may be hit.
+	// TODO: make this configurable
+	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
 	if err != nil {
@@ -272,7 +343,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	return nil
 }
 
-func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan error, job *Job) error {
+func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan<- error, doneReadingCh chan<- struct{}, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -289,13 +360,18 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		for {
 			if _, err := stdcopy.StdCopy(job.Stdout, job.Stderr, reader); err != nil {
 				// Handle EOF (when logs stop)
-				if errors.Is(err, io.EOF) {
+				// or reading from a closed socket after close
+				if errors.Is(err, io.EOF) ||
+					strings.Contains(err.Error(), "use of closed network connection") ||
+					errors.Is(err, http.ErrBodyReadAfterClose) ||
+					strings.Contains(err.Error(), "read on closed response body") {
 					break
 				}
 				errCh <- fmt.Errorf("%w: %v", ErrContainerMultiplexedStdoutStream, err)
 				return
 			}
 		}
+		doneReadingCh <- struct{}{}
 	}()
 
 	return nil

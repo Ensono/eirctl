@@ -19,10 +19,7 @@ contexts:
 
   golint:
     container:
-      name: golangci/golangci-lint:v1.64.7-alpine
-      # entrypoint:
-      #   - /usr/bin/env
-      # enable_dind: true
+      name: golangci/golangci-lint:v2.1.5-alpine
       enable_mount: true
     envfile:
       exclude:
@@ -87,13 +84,14 @@ tasks:
         go install github.com/jstemmer/go-junit-report@v0.9.1 && \
         go install github.com/axw/gocov/gocov@v1.0.0 && \
         go install github.com/AlekSi/gocov-xml@v1.0.0
+    allow_failure: true
 
   test:
     command:
       - |
         mkdir -p .coverage 
         export GOFLAGS=-buildvcs=false
-        go test $(go list ./... | grep -v /local/) -v -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 | tee .coverage/test.out
+        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 | tee .coverage/test.out
         cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
         gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
     env:
@@ -141,7 +139,10 @@ tasks:
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
-      - golangci-lint run
+      # echo "lint ran with exit code: $?"
+      # pwd && ls -lat 
+      - | 
+        golangci-lint run
 
   goreleaser:
     command:

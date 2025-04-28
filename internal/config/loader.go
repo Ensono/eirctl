@@ -109,6 +109,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	cl.dst.Variables.Set("Root", cl.dir)
 
 	logrus.Debugf("config %s loaded", file)
+	cl.dst.SourceFile = file
 	return cl.dst, nil
 }
 
@@ -352,11 +353,7 @@ func (cl *Loader) decode(cm map[string]interface{}) (*ConfigDefinition, error) {
 
 func (cl *Loader) ResolveDefaultConfigFile() (file string, err error) {
 	dir := cl.dir
-	for {
-		if dir == filepath.Dir(dir) {
-			break
-		}
-
+	for dir != filepath.Dir(dir) {
 		for _, v := range DefaultFileNames {
 			file := filepath.Join(dir, v)
 			if utils.FileExists(file) {
