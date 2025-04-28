@@ -74,10 +74,10 @@ tasks:
     description: |
       Generates a tfplan file. This assumes the use of workspace
       Expects a TF_DIR env variable. 
-      Optionally can append args to the using the stdin `-- -arg1=val`
+      Optionally can append args to the using the stdin e.g. `-- --var-file=../vars.tfvars`
     command:
       - terraform -chdir=${TF_DIR} workspace select -or-create ${WORKSPACE}
-      - terraform -chdir=${TF_DIR} plan -out tfplan -var-file=../vars.tfvars {{ if .ArgsList }}{{ .Args }}{{ end }} 
+      - terraform -chdir=${TF_DIR} plan -out tfplan {{ if .ArgsList }}{{ .Args }}{{ end }} 
 
   infra:apply:workspace:
     context: tf 
