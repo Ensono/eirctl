@@ -11,10 +11,12 @@ contexts:
         # adds your/CI SSH directory to allow for git module checkout
         - '-v $HOME/.ssh:/root/.ssh'
         # adds the default .aws directory for easier local management 
-        # when on remote hosts like CI this will simply be ignored for a different 
+        # when on remote hosts or in CI this will simply be ignored for a different 
         # auth mechanism like IMDS or OIDC token 
         # or direct AWS_ACCESS_KEY/AWS_SECRET_KEY/AWS_SESSION_TOKEN injection
         - '-v $HOME/.aws:/root/.aws'
+        # User supplied directories
+        - ${EIRCTL_CONTEXT_VOL_ARGS}
     envfile:
       exclude:
         - PATH
