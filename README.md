@@ -122,7 +122,9 @@ $ eirctl lint2 -- package.go main.go
 
 ### Storing task's output
 
-[PLACEHOLDER]
+For more information about storing the task output and picking it up by another task see the [artifacts](./docs/artifacts.md) for more details.
+
+> Future iteration should include a custom remote backend like S3, GCS, etc...
 
 ### Tasks variations
 
@@ -147,6 +149,7 @@ this config will run build 3 times with different GOOS
 ### Task conditional execution
 
 The following task will run only when there are any changes that are staged but not committed:
+
 ```yaml
 tasks:
   build:
@@ -161,6 +164,7 @@ Pipeline is a set of stages (tasks or other pipelines) to be executed in a certa
 Stage may override task's environment, variables etc. 
 
 This pipeline:
+
 ```yaml
 pipelines:
     pipeline1:
@@ -216,11 +220,18 @@ eirctl has several output formats:
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 
-The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables). 
 
-> tasks running without a context will be run in a cross [platform shell](https://github.com/mvdan/sh) - it is alsm
+> _evnfile_ property on the context allows for further customization of the injected envirnoment. 
+> It can merge env from a file or mutate/include/exclude existing environment - see the [schema](./schemas/schema_v1.json) for more details
+
+*Tasks running without a context* will be run in a [cross platform shell](https://github.com/mvdan/sh). You can follow any issues on the project site with GNU tool conversion of host->mvdan emulator shell mapping.
 
 ```yaml
+tasks:
+  runs:mvdan:sh:
+    command: echo "in emulated cross platform shell"
+
 contexts:
   zsh:
     executable:
@@ -238,6 +249,8 @@ contexts:
 
 Context has hooks which may be triggered once before first context usage or every time before task with this context will run.
 
+> NB: context before/after tasks run outside of the context itself and are always executed in the mvdan shell.
+
 ```yaml
 context:
   docker-compose:
@@ -246,40 +259,75 @@ context:
       args: ["exec", "api"]
     up: docker-compose up -d api
     down: docker-compose down api
-  local:
-    after: rm -rf var/*
 ```
 
 ### Docker context
 
-It uses the native Go API for OCI compliant docker runtimes (docker, podman, containerd, etc...).
+It uses the native Go API for OCI compliant runtimes (docker, podman, containerd, etc...) and offers further enhancements like the command [shell](#cli).
 
 > This means you don't need the docker cli installed
 
+There are however _three_ ways of achieving the same thing
+
 ```yaml
-  alpine:
+contexts:
+  new:container:
+    container:
+      name: alpine:latest
+      enable_dind: false
+
+  # the executable property will not be removed
+  # as it's handy for a lot of other use cases - see above
+  # 
+  # It will however remove all the env-file injection and so on
+  old:container:
     executable:
-      bin: /usr/local/bin/docker
+      bin: docker
       args:
         - run
         - --rm
+        - -v $PWD:/app
+        - -w /app 
         - alpine:latest
-    env:
-      DOCKER_HOST: "tcp://0.0.0.0:2375"
-    before: echo "SOME COMMAND TO RUN BEFORE TASK"
-    after: echo "SOME COMMAND TO RUN WHEN TASK FINISHED SUCCESSFULLY"
+        - sh
+        - -c
 
 tasks:
-  mysql-task:
-    context: alpine
-    command: uname -a
+  run:docker:mvdan: 
+    command:
+      - docker run --rm -v $PWD:/app -w /app alpine:latest sh -c "pwd && ls -lat ."
+  
+  run:container:new: 
+    context: new:container
+    command:
+      - pwd
+      - ls -lat .
+
+  run:container:old: 
+    context: old:container
+    command:
+      - pwd
+      - ls -lat .
 ```
 
-Being able to pass environment variables to a Docker container is crucial for many build scenarios.
+Whilst they are all valid to achieve a similar outcome, each depends on the use case. 
+
+_some downsides of the `old:container` context_
+
+- The lack of changing env injection with the `old:container` context, it does not support variations properly on the task as it pre-creates a set of environment variables.
+
+- Using the CLI directly limits can be hit with the number of env variables you can inject in.
 
 ## Go API
 
-[PLACEHOLDER]
+*Currently* this project only supports a pre-built binary for a complete flow, however you can see the tests and examples for some useful flows. 
+
+The runner package:
+
+- [Executor Container's](runner/executor_container.go) public API, specifically the `Execute` method is a potentially useful single shot execution.
+
+- [TaskRunner](runner/runner.go)'s `Run` method is a useful scheduling flow where multiple tasks need coordinating.
+
 
 ## How to contribute?
 

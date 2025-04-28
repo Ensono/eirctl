@@ -1,7 +1,7 @@
 dist: bin
 
 builds:
-- dir: cmd/taskctl
+- dir: cmd/eirctl
   env:
     - CGO_ENABLED=0
   goos:
