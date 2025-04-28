@@ -2,8 +2,40 @@
 
 ## Getting started
 
+You can install a prebuilt binary for your system from Github, see below the details.
+
 ### Install
 
+Major platform binaries [here](https://github.com/Ensono/eirctl/releases)
+
+*nix binary
+
+```bash
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-`uname -m` -o eirctl
+```
+
+MacOS binary
+
+```bash
+curl -L https://github.com/Ensono/eirctl/releases/download/0.3.7/eirctl-darwin-`uname -m` -o eirctl
+```
+
+```bash
+chmod +x eirctl
+sudo mv eirctl /usr/local/bin
+```
+
+Verify installation
+
+```bash
+eirctl --version
+```
+
+Download specific version:
+
+```bash
+curl -L https://github.com/Ensono/eirctl/releases/download/0.3.7/eirctl-darwin-`uname -m` -o eirctl
+```
 
 ### Usage
 
