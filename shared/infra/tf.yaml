@@ -2,7 +2,7 @@
 
 # Shared infra 
 contexts:
-  tf: 
+  eirctl:shared:infra:tf: 
     container:
       name: docker.io/hashicorp/terraform:1.10.5
       entrypoint: 
@@ -22,7 +22,7 @@ contexts:
         - PATH
         - HOME
 
-  tf:docs:
+  eirctl:shared:infra:tf:docs:
     container:
       name: quay.io/terraform-docs/terraform-docs:0.19.0
       entrypoint: 
@@ -33,8 +33,8 @@ contexts:
         - HOME
 
 tasks:
-  doc:terraform:generate:v2:
-    context: docs
+  eirctl:tf:docs:generate:
+    context: eirctl:shared:infra:tf:docs
     description: Generates Terraform Doc for a module in a given path under `$TF_DIR` variable
     command:
       - |
@@ -42,8 +42,8 @@ tasks:
     env:
       OUTPUT_FILE: README.md
 
-  lint:terraform:format:
-    context: tf
+  eirctl:tf:lint:format:
+    context: eirctl:shared:infra:tf
     description: |
       Perform Terraform Format Check
       
@@ -53,26 +53,26 @@ tasks:
     command:
       - terraform fmt {{ if .ArgsList }}{{ .Args }} -check{{ end }} -diff -recursive ${TF_DIR}
 
-  lint:terraform:validate:
-    context: tf
+  eirctl:tf:lint:validate:
+    context: eirctl:shared:infra:tf
     description: Perform Terraform Validation
     command:
       - terraform -chdir=${TF_DIR} init -backend=false 
       - terraform -chdir=${TF_DIR} validate
   
-  test:unit:terraform:
-    context: tf
+  eirctl:tf:test:unit:
+    context: eirctl:shared:infra:tf
     description: Perform Terraform Unit Tests
     command:
       - terraform -chdir=${TF_DIR} test
     
-  infra:init: 
-    context: tf 
+  eirctl:tf:init: 
+    context: eirctl:shared:infra:tf 
     command:
       - terraform -chdir=${TF_DIR} init {{ if .ArgsList }}{{ .Args }}{{ end }}
 
-  infra:plan:workspace: 
-    context: tf
+  eirctl:tf:plan:workspace: 
+    context: eirctl:shared:infra:tf
     description: |
       Generates a tfplan file. This assumes the use of workspace
       Expects a TF_DIR env variable. 
@@ -81,8 +81,8 @@ tasks:
       - terraform -chdir=${TF_DIR} workspace select -or-create ${WORKSPACE}
       - terraform -chdir=${TF_DIR} plan -out tfplan {{ if .ArgsList }}{{ .Args }}{{ end }} 
 
-  infra:apply:workspace:
-    context: tf 
+  eirctl:tf:apply:workspace:
+    context: eirctl:shared:infra:tf 
     description: |
       Applies the generated tfplan file. 
       Expects a TF_DIR env variable. 

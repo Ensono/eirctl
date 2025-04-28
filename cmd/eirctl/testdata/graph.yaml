@@ -1,3 +1,14 @@
+contexts: 
+  foo:
+    container:
+      name: golang:1.24.1-bookworm
+      enable_dind: true
+    envfile:
+      exclude:
+        - GO
+        - CXX
+        - CGO
+
 pipelines:
   graph:pipeline1:
     - task: graph:task1 # => graph:pipeline1__graph:task1__executionOrder
