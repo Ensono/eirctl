@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
+# yaml-language-server: $schema=/Users/dusannitschneider/git/ensono/eirctl/schemas/schema_v1.json
 
 # Shared infra 
 contexts:
@@ -36,9 +36,7 @@ tasks:
   eirctl:tf:docs:generate:
     context: eirctl:shared:infra:tf:docs
     description: Generates Terraform Doc for a module in a given path under `$TF_DIR` variable
-    command:
-      - |
-        terraform-docs --output-file ${OUTPUT_FILE} markdown ${TF_DIR}
+    command: terraform-docs --output-file ${OUTPUT_FILE} markdown ${TF_DIR}
     env:
       OUTPUT_FILE: README.md
 

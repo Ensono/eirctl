@@ -348,6 +348,7 @@
           "description": "Pipeline is the name of the pipeline to run\nTask and Pipeline are mutually exclusive\nif both are specified task will win"
         },
         "depends_on": {
+          "$ref": "#/$defs/StringSlice",
           "oneOf": [
             {
               "type": "string"
@@ -356,9 +357,6 @@
               "type": "array"
             }
           ],
-          "items": {
-            "type": "string"
-          },
           "description": "DependsOn"
         },
         "allow_failure": {
@@ -385,6 +383,19 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "StringSlice": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "TaskDefinition": {
       "properties": {
         "name": {
@@ -397,6 +408,7 @@
           "type": "string"
         },
         "command": {
+          "$ref": "#/$defs/StringSlice",
           "oneOf": [
             {
               "type": "string"
@@ -405,9 +417,6 @@
               "type": "array"
             }
           ],
-          "items": {
-            "type": "string"
-          },
           "description": "Command is the actual command to run in either a specified executable or\nin mvdn.shell"
         },
         "after": {

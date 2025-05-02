@@ -53,6 +53,10 @@ type ConfigDefinition struct {
 	Generator *Generator `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
 }
 
+// StringSlice is a []string that can unmarshal from either
+// a YAML string or a YAML sequence of strings.
+type StringSlice []string
+
 type ContextDefinition struct {
 	Dir    string   `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
 	Up     []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
@@ -203,9 +207,18 @@ func (EnvVarMapType) JSONSchema() *jsonschema.Schema {
 	}
 }
 
-// StringSlice is a []string that can unmarshal from either
-// a YAML string or a YAML sequence of strings.
-type StringSlice []string
+// JSONSchema implements jsonschema.ExtSchema
+func (StringSlice) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		OneOf: []*jsonschema.Schema{
+			{Type: "string"},
+			{
+				Type:  "array",
+				Items: &jsonschema.Schema{Type: "string"},
+			},
+		},
+	}
+}
 
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (s *StringSlice) UnmarshalYAML(value *yaml.Node) error {
