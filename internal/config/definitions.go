@@ -1,11 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/invopop/jsonschema"
+	"gopkg.in/yaml.v3"
 )
 
 //go:generate go run ../../tools/schemagenerator/main.go -dir ../../
@@ -109,7 +111,7 @@ type PipelineDefinition struct {
 	// if both are specified task will win
 	Pipeline string `mapstructure:"pipeline" yaml:"pipeline,omitempty" json:"pipeline,omitempty" jsonschema:"oneof_required=pipeline"`
 	// DependsOn
-	DependsOn []string `mapstructure:"depends_on" yaml:"depends_on,omitempty" json:"depends_on,omitempty" jsonschema:"oneof_type=string;array"`
+	DependsOn StringSlice `mapstructure:"depends_on" yaml:"depends_on,omitempty" json:"depends_on,omitempty" jsonschema:"oneof_type=string;array"`
 	// AllowFailure
 	AllowFailure bool `mapstructure:"allow_failure" yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"`
 	// Dir is the place where to run the task(s) in.
@@ -135,9 +137,9 @@ type TaskDefinition struct {
 	Condition   string `mapstructure:"condition" yaml:"condition,omitempty" json:"condition,omitempty"`
 	// Command is the actual command to run in either a specified executable or
 	// in mvdn.shell
-	Command []string `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
-	After   []string `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
-	Before  []string `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
+	Command StringSlice `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
+	After   []string    `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
+	Before  []string    `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
 	// Context is the pointer to the key in the context map
 	// it must exist else it will fallback to default context
 	Context string `mapstructure:"context" yaml:"context,omitempty" json:"context,omitempty"`
@@ -199,4 +201,31 @@ func (EnvVarMapType) JSONSchema() *jsonschema.Schema {
 			},
 		},
 	}
+}
+
+// StringSlice is a []string that can unmarshal from either
+// a YAML string or a YAML sequence of strings.
+type StringSlice []string
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (s *StringSlice) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		// Single string — decode into a Go string, then wrap
+		var single string
+		if err := value.Decode(&single); err != nil {
+			return err
+		}
+		*s = StringSlice{single}
+	case yaml.SequenceNode:
+		// Sequence of strings — decode directly into a []string
+		var list []string
+		if err := value.Decode(&list); err != nil {
+			return err
+		}
+		*s = list
+	default:
+		return fmt.Errorf("cannot unmarshal %v into StringSlice", value.Kind)
+	}
+	return nil
 }

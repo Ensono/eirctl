@@ -33,16 +33,6 @@ func TestLoader_Load(t *testing.T) {
 	}
 
 	cl = config.NewConfigLoader(config.NewConfig())
-	cl.WithDir(filepath.Join(cwd, "testdata"))
-	cfg, err = cl.Load("test.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Tasks["task1"] == nil || cfg.Tasks["task1"].Commands[0] != "echo true" {
-		t.Error("yaml parsing failed")
-	}
-
-	cl = config.NewConfigLoader(config.NewConfig())
 	cl.WithDir(filepath.Join(cwd, "testdata", "nested"))
 	cfg, err = cl.Load("")
 	if err != nil {
@@ -90,60 +80,14 @@ func TestLoader_LoadDirImport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(conf.Tasks) != 5 {
+	if len(conf.Tasks) != 6 {
 		t.Error()
 	}
 }
 
+// TODO: tests for StringSlice in Unmarshall & Clash key
+
 func TestLoader_ReadConfigFromURL(t *testing.T) {
-	ttests := map[string]struct {
-		contentType    string
-		responseBytes  []byte
-		wantError      bool
-		taskCount      int
-		additionalPath string
-	}{
-		"correct json": {
-			"application/json",
-			sampleCfg, false, 1, "",
-		},
-		"correct json from file": {
-			"application/x-unknown",
-			sampleCfg, false, 1, "/config.json",
-		},
-		"correct toml": {
-			"application/toml",
-			[]byte(`[tasks.task1]
-command = [ true ]
-`),
-			false, 1, ""},
-	}
-	for name, tt := range ttests {
-		t.Run(name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				writer.Header().Set("Content-Type", tt.contentType)
-				_, err := writer.Write([]byte(tt.responseBytes))
-				if err != nil {
-					t.Errorf("failed to write bytes to response stream")
-				}
-			}))
-
-			cl := config.NewConfigLoader(config.NewConfig())
-			// cl.WithStrictDecoder()
-			config, err := cl.Load(srv.URL + tt.additionalPath)
-			if err != nil && !tt.wantError {
-				t.Error("got error, wanted nil")
-			}
-			if tt.wantError && err == nil {
-				t.Error("got nil, wanted error")
-			}
-
-			if len(config.Tasks) != tt.taskCount {
-				t.Errorf("got %v count, wanted %v task count", len(config.Tasks), tt.taskCount)
-			}
-		})
-	}
-
 	// yaml needs to be run separately "¯\_(ツ)_/¯"
 	t.Run("yaml parsed correctly", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -174,18 +118,6 @@ func TestLoader_errors(t *testing.T) {
 	t.Run("on failed status code", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.WriteHeader(500)
-		}))
-		cl := config.NewConfigLoader(config.NewConfig())
-		_, err := cl.Load(srv.URL)
-		if err == nil {
-			t.Fatal("got nil, wanted error")
-		}
-	})
-
-	t.Run("on unable to figure out mediaType", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			writer.Header().Set("Content-Type", "")
-			writer.Write(sampleCfg)
 		}))
 		cl := config.NewConfigLoader(config.NewConfig())
 		_, err := cl.Load(srv.URL)

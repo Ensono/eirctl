@@ -7,9 +7,7 @@ require (
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/briandowns/spinner v1.23.1
 	github.com/fsnotify/fsnotify v1.7.0
-	github.com/mitchellh/mapstructure v1.5.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/pelletier/go-toml v1.9.5
 	github.com/sirupsen/logrus v1.9.3
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.10.0
@@ -45,6 +43,7 @@ require (
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect

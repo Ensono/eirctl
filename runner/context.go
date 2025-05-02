@@ -275,7 +275,7 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		// check to see if the env matches an invalid variable, if it does
 		// move onto the next item in the  loop
 		if slices.Contains(invalidEnvVarKeys, varName) {
-			logrus.Warnf("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
+			logrus.Debugf("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
 			continue
 		}
 

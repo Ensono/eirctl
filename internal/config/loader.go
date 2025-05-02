@@ -1,24 +1,16 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
-	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
-	"github.com/mitchellh/mapstructure"
-	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // ErrConfigNotFound occurs when requested config file does not exists
@@ -86,12 +78,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 		file = path.Join(cl.dir, file)
 	}
 
-	raw, err := cl.load(file)
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := cl.decode(raw)
+	def, err := cl.load(file)
 	if err != nil {
 		return nil, err
 	}
@@ -124,12 +111,7 @@ func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 		return cl.dst, nil
 	}
 
-	raw, err := cl.load(file)
-	if err != nil {
-		return nil, err
-	}
-
-	def, err := cl.decode(raw)
+	def, err := cl.load(file)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +133,10 @@ func (cl *Loader) reset() {
 	cl.imports = make(map[string]bool)
 }
 
-func (cl *Loader) load(file string) (config map[string]interface{}, err error) {
+// load is called with the base eirctl.yaml|json|toml files for the first time
+// recursively called by other imports if they exist and their imports
+func (cl *Loader) load(file string) (config *ConfigDefinition, err error) {
+	// ensures a recursive forever loop does not occur and set file to visited
 	cl.imports[file] = true
 
 	if utils.IsURL(file) {
@@ -165,50 +150,111 @@ func (cl *Loader) load(file string) (config map[string]interface{}, err error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var raw map[string]interface{}
-
-	importDir := filepath.Dir(file)
-	if imports, ok := config["import"]; ok {
-		for _, v := range imports.([]interface{}) {
-			if utils.IsURL(v.(string)) {
-				if cl.imports[v.(string)] {
-					continue
-				}
-				raw, err = cl.load(v.(string))
-			} else {
-				importFile := path.Join(importDir, v.(string))
-				if cl.imports[importFile] {
-					continue
-				}
-				fi, err := os.Stat(importFile)
-				if err != nil {
-					return nil, fmt.Errorf("%s: %v", importFile, err)
-				}
-				if !fi.IsDir() {
-					raw, err = cl.load(importFile)
-				} else {
-					raw, err = cl.loadDir(importFile)
-				}
-				if err != nil {
-					logrus.Error(err)
-				}
-			}
-			if err != nil {
-				return nil, fmt.Errorf("load import error: %v", err)
-			}
-
-			err = mergo.Merge(&config, raw, mergo.WithOverride, mergo.WithAppendSlice, mergo.WithTypeCheck)
-			if err != nil {
-				return nil, err
-			}
-		}
+	// the config will be cumulatively built over the imports
+	// NOTE: we want to fail on duplicate keys detected
+	if err := cl.parseImports(config, filepath.Dir(file)); err != nil {
+		return nil, err
 	}
-
 	return config, nil
 }
 
-func (cl *Loader) loadDir(dir string) (map[string]interface{}, error) {
+// parseImports map[string]any is a pointer for intents and purpose so we mutate it here with recursive merges
+func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) error {
+
+	for _, val := range baseConfig.Import {
+		// switch val := v.(type) {
+		// case string:
+		if utils.IsURL(val) {
+			if cl.imports[val] {
+				// already visited and parsed import file
+				// continuing to next
+				continue
+			}
+			importedConfig, err := cl.load(val)
+			if err != nil {
+				return fmt.Errorf("load import error: %v", err)
+			}
+			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+				return err
+			}
+			// iterate through next import
+			continue
+		}
+		importFile := path.Join(importDir, val)
+		if path.IsAbs(val) {
+			importFile = val
+		}
+		if cl.imports[importFile] {
+			continue
+		}
+		fi, err := os.Stat(importFile)
+		if err != nil {
+			return fmt.Errorf("%s: %v", importFile, err)
+		}
+		if fi.IsDir() {
+			importedConfig, err := cl.loadDir(importFile)
+			if err != nil {
+				return fmt.Errorf("load import error: %v", err)
+			}
+			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+				return err
+			}
+			// iterate through next import
+			continue
+		}
+		importedConfig, err := cl.load(importFile)
+		if err != nil {
+			return fmt.Errorf("load import error: %v", err)
+		}
+		if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var ErrImportKeyClash = errors.New("imported file contains a clash")
+
+// mergeExistingWithImported merges top level keys only and errors on duplicate tasks/pipelines/contexts via imports
+//
+// NOTE: perhaps changet this in the future or allow overwriting
+func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, path string) error {
+	// merge tasks - fail on
+	for name, val := range importedConfig.Tasks {
+		if baseConfig.Tasks == nil {
+			baseConfig.Tasks = map[string]*TaskDefinition{}
+		}
+		if _, exists := baseConfig.Tasks[name]; exists {
+			return fmt.Errorf("%w, file `%s` contains an already specified task (%s)", ErrImportKeyClash, path, name)
+		}
+		baseConfig.Tasks[name] = val
+	}
+
+	// merge pipelines - fail on
+	for name, val := range importedConfig.Pipelines {
+		if baseConfig.Pipelines == nil {
+			baseConfig.Pipelines = map[string][]*PipelineDefinition{}
+		}
+		if _, exists := baseConfig.Pipelines[name]; exists {
+			return fmt.Errorf("%w, file `%s` contains an already specified pipeline (%s)", ErrImportKeyClash, path, name)
+
+		}
+		baseConfig.Pipelines[name] = val
+	}
+	// merge contexts - fail on
+	for name, val := range importedConfig.Contexts {
+		if baseConfig.Contexts == nil {
+			baseConfig.Contexts = map[string]*ContextDefinition{}
+		}
+		if _, exists := baseConfig.Contexts[name]; exists {
+			return fmt.Errorf("%w, file `%s` contains an already specified context (%s)", ErrImportKeyClash, path, name)
+		}
+		baseConfig.Contexts[name] = val
+	}
+	return nil
+}
+
+func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
 	// this is only going to work on yaml files
 	// this program seems to want to accept json/toml and yaml
 	//
@@ -219,7 +265,7 @@ func (cl *Loader) loadDir(dir string) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("%s: %v", dir, err)
 	}
 
-	cm := make(map[string]interface{})
+	cm := &ConfigDefinition{}
 	for _, importFile := range q {
 		if cl.imports[importFile] {
 			continue
@@ -229,17 +275,15 @@ func (cl *Loader) loadDir(dir string) (map[string]interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %v", importFile, err)
 		}
-
-		err = mergo.Merge(&cm, cml, mergo.WithOverride, mergo.WithAppendSlice, mergo.WithTypeCheck)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %v", importFile, err)
+		if err := mergeExistingWithImported(cm, cml, importFile); err != nil {
+			return nil, err
 		}
 	}
 
 	return cm, nil
 }
 
-func (cl *Loader) readURL(urlStr string) (map[string]interface{}, error) {
+func (cl *Loader) readURL(urlStr string) (*ConfigDefinition, error) {
 	resp, err := http.Get(urlStr)
 	if err != nil {
 		return nil, err
@@ -249,106 +293,23 @@ func (cl *Loader) readURL(urlStr string) (map[string]interface{}, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("%d: config request failed - %s", resp.StatusCode, urlStr)
 	}
-
-	ext := ""
-	ct := resp.Header.Get("Content-Type")
-
-	mediaType, _, _ := mime.ParseMediaType(ct)
-
-	switch mediaType {
-	case "application/json":
-		ext = ".json"
-	case "application/x-yaml", "application/yaml", "text/yaml":
-		ext = ".yaml"
-	case "application/x-toml", "application/toml", "text/toml":
-		ext = ".toml"
-	default:
-		up, err := url.Parse(urlStr)
-		if err != nil {
-			return cl.unmarshalDataStream(resp.Body, "")
-		}
-		ext = filepath.Ext(up.Path)
+	cm := &ConfigDefinition{}
+	if err := yaml.NewDecoder(resp.Body).Decode(&cm); err != nil {
+		return nil, err
 	}
-
-	return cl.unmarshalDataStream(resp.Body, ext)
+	return cm, nil
 }
 
-func (cl *Loader) readFile(filename string) (map[string]interface{}, error) {
+func (cl *Loader) readFile(filename string) (*ConfigDefinition, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", filename, err)
 	}
-
-	return cl.unmarshalDataByte(data, filepath.Ext(filename))
-}
-
-func (cl *Loader) unmarshalDataByte(data []byte, ext string) (map[string]interface{}, error) {
-	cm := make(map[string]any)
-
-	switch strings.ToLower(ext) {
-	case ".yaml", ".yml":
-		if err := yaml.Unmarshal(data, &cm); err != nil {
-			return nil, err
-		}
-	case ".json":
-		if err := json.Unmarshal(data, &cm); err != nil {
-			return nil, err
-		}
-	case ".toml":
-		if err := toml.Unmarshal(data, &cm); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("unsupported config file type")
-	}
-
-	return cm, nil
-}
-
-func (cl *Loader) unmarshalDataStream(data io.Reader, ext string) (map[string]interface{}, error) {
-	cm := make(map[string]any)
-
-	switch strings.ToLower(ext) {
-	case ".yaml", ".yml":
-		if err := yaml.NewDecoder(data).Decode(&cm); err != nil {
-			return nil, err
-		}
-	case ".json":
-		if err := json.NewDecoder(data).Decode(&cm); err != nil {
-			return nil, err
-		}
-	case ".toml":
-		if err := toml.NewDecoder(data).Decode(&cm); err != nil {
-			return nil, err
-		}
-	default:
-		// speed up GC cycle if data is not read
-		_, _ = io.Copy(io.Discard, data)
-		return nil, errors.New("unsupported config file type")
-	}
-
-	return cm, nil
-}
-
-func (cl *Loader) decode(cm map[string]interface{}) (*ConfigDefinition, error) {
-	c := &ConfigDefinition{}
-	// TODO: think about removing this
-	md, _ := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			mapstructure.StringToTimeDurationHookFunc(),
-		),
-		ErrorUnused:      false,
-		WeaklyTypedInput: true,
-		Result:           c,
-		TagName:          "",
-	})
-
-	err := md.Decode(cm)
-	if err != nil {
+	cm := &ConfigDefinition{}
+	if err := yaml.Unmarshal(data, &cm); err != nil {
 		return nil, err
 	}
-
-	return c, nil
+	return cm, nil
 }
 
 func (cl *Loader) ResolveDefaultConfigFile() (file string, err error) {
