@@ -12,7 +12,7 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/scheduler"
 	"github.com/Ensono/eirctl/variables"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 var ErrInvalidCiMeta = errors.New("CI meta is invalid")
@@ -48,7 +48,7 @@ func (impl *githubCiImpl) Convert(pipeline *scheduler.ExecutionGraph) ([]byte, e
 	impl.pipeline = dp
 	ghaWorkflow := &schema.GithubWorkflow{
 		Name: impl.pipeline.Name(), // this can be the raw name as it's a string value not the key
-		Jobs: yaml.MapSlice{},
+		Jobs: schema.NewOrderedMap(),
 	}
 
 	// top level On is required for a valid GHA pipeline
@@ -78,6 +78,7 @@ func (impl *githubCiImpl) Convert(pipeline *scheduler.ExecutionGraph) ([]byte, e
 	}
 	b := &bytes.Buffer{}
 	enc := yaml.NewEncoder(b)
+	enc.SetIndent(2)
 	defer enc.Close()
 	if err := enc.Encode(ghaWorkflow); err != nil {
 		return nil, err
@@ -215,7 +216,7 @@ func jobBuilder(ciyaml *schema.GithubWorkflow, pipeline *scheduler.ExecutionGrap
 		if err := addMetaToJob(job, node); err != nil {
 			return err
 		}
-		ciyaml.Jobs = append(ciyaml.Jobs, yaml.MapItem{Key: jobName, Value: job})
+		ciyaml.Jobs.Add(jobName, *job)
 	}
 	return nil
 }

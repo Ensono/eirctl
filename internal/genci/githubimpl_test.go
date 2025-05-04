@@ -2,13 +2,14 @@ package genci_test
 
 import (
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/internal/genci"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/scheduler"
 	"github.com/Ensono/eirctl/task"
+	"gopkg.in/yaml.v3"
 )
 
 func TestGenCi_GithubImpl(t *testing.T) {
@@ -57,7 +58,7 @@ func TestGenCi_GithubImpl(t *testing.T) {
 func TestGenCi_GithubImpl_ordering(t *testing.T) {
 
 	t.Run("is correct in nested tasks", func(t *testing.T) {
-		config := genGraphHelper(t, ghaTesterYaml)
+		config := genGraphHelper(t, eirctlTesterYaml)
 
 		gc, err := genci.New("github", config)
 
@@ -71,40 +72,33 @@ func TestGenCi_GithubImpl_ordering(t *testing.T) {
 		if len(b) == 0 {
 			t.Fatal("no bytes written")
 		}
-		// ensure ordering is done correctly
-		wantFirstOneTwo := `    - name: foo-_first-_one
-      id: foo-_first-_one
-      run: eirctl run task one
-    - name: foo-_first-_two
-      id: foo-_first-_two
-      run: eirctl run task two`
-		if !strings.Contains(string(b), wantFirstOneTwo) {
-			t.Errorf("first order not correct\n\tgot:\n\n%s\n\twant:\n\n%s\n", string(b), wantFirstOneTwo)
+		// testing unmarshall back using orderedMaps
+		ghConf := &schema.GithubWorkflow{}
+		if err := yaml.Unmarshal(b, ghConf); err != nil {
+			t.Fatal(err)
 		}
 
-		wantSecond34onetwo := `    - name: foo-_second-_task3
-      id: foo-_second-_task3
-      run: eirctl run task task3
-      env:
-        FOO: bar
-    - name: foo-_second-_task4
-      id: foo-_second-_task4
-      run: eirctl run task task4
-      env:
-        FOO: bar
-    - name: foo-_second-_one
-      id: foo-_second-_one
-      run: eirctl run task one
-    - name: foo-_second-_two
-      id: foo-_second-_two
-      run: eirctl run task two`
-		if !strings.Contains(string(b), wantSecond34onetwo) {
-			t.Errorf("second order not correct\n\tgot:\n\n%s\n\twant:\n\n%s\n", string(b), wantSecond34onetwo)
+		first := ghConf.Jobs.Values["first"].Steps
+
+		if first[2].Name != "foo-_first-_one" {
+			t.Errorf("got: %v, want foo-_first-_one", first[2].Name)
 		}
+		if first[3].Name != "foo-_first-_two" {
+			t.Fatal("")
+		}
+
+		second := ghConf.Jobs.Values["second"].Steps
+		if second[2].Name != "foo-_second-_task3" {
+			t.Fatal("")
+		}
+		if second[5].Name != "foo-_second-_two" {
+			t.Fatal("")
+		}
+
 	})
 }
 
-var ghaTesterYaml = []byte(`contexts:
+var eirctlTesterYaml = []byte(`contexts:
   podman:
     container:
       name: alpine:latest
@@ -216,5 +210,8 @@ func genGraphHelper(t *testing.T, configYaml []byte) *config.Config {
 
 	cl := config.NewConfigLoader(config.NewConfig())
 	cfg, err := cl.Load(tf.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
 	return cfg
 }

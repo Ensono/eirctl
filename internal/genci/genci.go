@@ -18,7 +18,7 @@ import (
 
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/scheduler"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 var (
