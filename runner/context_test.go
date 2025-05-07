@@ -272,7 +272,7 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 			want:          []string{pwd + "/bar:/in", "/foo/baz:/two"},
 		},
 		"HOME": {
-			containerArgs: []string{"-v $HOME/bar:/in", "-v ${HOME}/baz:/two"},
+			containerArgs: []string{"-v $HOME/bar:/in", "--volume ${HOME}/baz:/two"},
 			want:          []string{home + "/bar:/in", home + "/baz:/two"},
 		},
 		"~": {
@@ -284,12 +284,47 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
 			cc := runner.NewContainerContext("image:latest")
-			cc.VolumesFromArgs(tt.containerArgs)
+			cc.ParseContainerArgs(tt.containerArgs)
 			got := cc.Volumes()
 			for vol := range got {
 				if !slices.Contains(tt.want, vol) {
 					t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
 				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_UserArgs(t *testing.T) {
+	t.Parallel()
+	ttests := map[string]struct {
+		containerArgs []string
+		want          string
+	}{
+		"--user foo": {
+			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo"},
+			want:          "foo",
+		},
+		"-u foo": {
+			containerArgs: []string{"-v $PWD/bar:/in", "-v /foo/baz:/two", "-u foo"},
+			want:          "foo",
+		},
+		" -u foo:bar": {
+			containerArgs: []string{"-v $HOME/bar:/in", " -u foo:bar"},
+			want:          "foo:bar",
+		},
+		" empty ": {
+			containerArgs: []string{"-v $HOME/bar:/in", " -bar foo:bar"},
+			want:          "",
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			cc := runner.NewContainerContext("image:latest")
+			cc.ParseContainerArgs(tt.containerArgs)
+			got := cc.User()
+			if got != tt.want {
+				t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", got, tt.want)
 			}
 		})
 	}

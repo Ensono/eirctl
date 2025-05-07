@@ -3,15 +3,16 @@ package schema
 import (
 	"errors"
 	"fmt"
+	"sync"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // Workflow represents the root of a GitHub workflow file.
 type GithubWorkflow struct {
 	Name        string               `json:"name,omitempty" yaml:"name,omitempty"`
 	On          *GithubTriggerEvents `json:"on" yaml:"on"`
-	Jobs        yaml.MapSlice        `json:"jobs" yaml:"jobs"`
+	Jobs        OrderedMap           `json:"jobs" yaml:"jobs"`
 	Defaults    *GithubDefaults      `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 	Env         map[string]any       `json:"env,omitempty" yaml:"env,omitempty"`
 	Permissions map[string]string    `json:"permissions,omitempty" yaml:"permissions,omitempty"`
@@ -132,4 +133,84 @@ type GithubStrategy struct {
 	Matrix      map[string][]string `json:"matrix,omitempty" yaml:"matrix,omitempty"`
 	MaxParallel int                 `json:"max-parallel,omitempty" yaml:"max_parallel,omitempty"`
 	FailFast    bool                `json:"fail-fast,omitempty" yaml:"fail_fast,omitempty"`
+}
+
+//
+// YAML helpers for custom types
+//
+
+// OrderedMap preserves insertion order of keys when (un)marshaling YAML.
+type OrderedMap struct {
+	Keys   []string
+	Values map[string]GithubJob
+	mu     *sync.Mutex
+}
+
+func NewOrderedMap(initialItems ...OrderedMap) OrderedMap {
+	om := OrderedMap{Keys: []string{}, Values: map[string]GithubJob{}, mu: &sync.Mutex{}}
+	return om
+}
+
+func (om *OrderedMap) Add(key string, val GithubJob) {
+	om.mu.Lock()
+	defer om.mu.Unlock()
+	om.Keys = append(om.Keys, key)
+	om.Values[key] = val
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (om *OrderedMap) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("OrderedMap: expected a mapping node but got %v", node.Kind)
+	}
+	om.Values = make(map[string]GithubJob, len(node.Content)/2)
+	om.Keys = make([]string, 0, len(node.Content)/2)
+	// node.Content is [ key1, val1, key2, val2, ... ]
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+		key := keyNode.Value
+
+		var v GithubJob
+		if err := valNode.Decode(&v); err != nil {
+			return err
+		}
+
+		om.Keys = append(om.Keys, key)
+		om.Values[key] = v
+	}
+	return nil
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (om OrderedMap) MarshalYAML() (any, error) {
+	out := &yaml.Node{
+		Kind: yaml.MappingNode,
+		Tag:  "!!map",
+	}
+	for _, key := range om.Keys {
+		// key node
+		out.Content = append(out.Content, &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: key,
+		})
+		// value node: marshal the value back into a node
+		raw, err := yaml.Marshal(om.Values[key])
+		if err != nil {
+			return nil, err
+		}
+		var valDoc yaml.Node
+		if err := yaml.Unmarshal(raw, &valDoc); err != nil {
+			return nil, err
+		}
+		// valDoc.Content[0] is the real node for the value
+		if len(valDoc.Content) > 0 {
+			out.Content = append(out.Content, valDoc.Content[0])
+		} else {
+			// fallback
+			out.Content = append(out.Content, &valDoc)
+		}
+	}
+	return out, nil
 }

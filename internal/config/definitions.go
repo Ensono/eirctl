@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/invopop/jsonschema"
@@ -109,7 +110,7 @@ type PipelineDefinition struct {
 	// if both are specified task will win
 	Pipeline string `mapstructure:"pipeline" yaml:"pipeline,omitempty" json:"pipeline,omitempty" jsonschema:"oneof_required=pipeline"`
 	// DependsOn
-	DependsOn []string `mapstructure:"depends_on" yaml:"depends_on,omitempty" json:"depends_on,omitempty" jsonschema:"oneof_type=string;array"`
+	DependsOn schema.StringSlice `mapstructure:"depends_on" yaml:"depends_on,omitempty" json:"depends_on,omitempty" jsonschema:"oneof_type=string;array"`
 	// AllowFailure
 	AllowFailure bool `mapstructure:"allow_failure" yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"`
 	// Dir is the place where to run the task(s) in.
@@ -135,9 +136,9 @@ type TaskDefinition struct {
 	Condition   string `mapstructure:"condition" yaml:"condition,omitempty" json:"condition,omitempty"`
 	// Command is the actual command to run in either a specified executable or
 	// in mvdn.shell
-	Command []string `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
-	After   []string `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
-	Before  []string `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
+	Command schema.StringSlice `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
+	After   []string           `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
+	Before  []string           `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
 	// Context is the pointer to the key in the context map
 	// it must exist else it will fallback to default context
 	Context string `mapstructure:"context" yaml:"context,omitempty" json:"context,omitempty"`

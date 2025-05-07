@@ -35,6 +35,9 @@ type ContainerContext struct {
 	volumes   map[string]struct{}
 	// isPrivileged bool
 	envOverride map[string]string
+	// user is a container arg specified via --user/-u
+	// can be both user or user:group
+	user string
 }
 
 // NewContainerContext accepts name of the image
@@ -53,15 +56,45 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	return c
 }
 
-func (c *ContainerContext) VolumesFromArgs(cargs []string) *ContainerContext {
+// func (c *ContainerContext) WithUser(user string) *ContainerContext {
+// 	c.user = user
+// 	return c
+// }
+
+func (c *ContainerContext) ParseContainerArgs(cargs []string) *ContainerContext {
+	c.parseUserArgs(cargs)
+	c.parseVolumes(cargs)
+	return c
+}
+
+func (c *ContainerContext) parseVolumes(cargs []string) {
 	vols := []string{}
 	for _, v := range cargs {
+		v = strings.TrimSpace(v)
 		if strings.HasPrefix(v, "-v") {
-			vols = append(vols, expandVolumeString(v))
+			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
+			continue
+		}
+		if strings.HasPrefix(v, "--volume") {
+			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "--volume"))))
+			continue
 		}
 	}
 	c.WithVolumes(vols...)
-	return c
+}
+
+func (c *ContainerContext) parseUserArgs(cargs []string) {
+	for _, v := range cargs {
+		v = strings.TrimSpace(v)
+		if strings.HasPrefix(v, "-u") {
+			c.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
+			break
+		}
+		if strings.HasPrefix(v, "--user") {
+			c.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
+			break
+		}
+	}
 }
 
 // expandVolumeString accepts a string in the form of:
@@ -74,12 +107,16 @@ func (c *ContainerContext) VolumesFromArgs(cargs []string) *ContainerContext {
 //
 // Special consideration will be put on `~` and replaced by HOME variable
 func expandVolumeString(vol string) string {
-	v := strings.TrimSpace(strings.TrimPrefix(vol, "-v"))
-	return os.ExpandEnv(strings.Replace(v, `~`, `${HOME}`, 1))
+	home, _ := os.UserHomeDir()
+	return os.ExpandEnv(strings.Replace(vol, `~`, home, 1))
 }
 
 func (c *ContainerContext) Volumes() map[string]struct{} {
 	return c.volumes
+}
+
+func (c *ContainerContext) User() string {
+	return c.user
 }
 
 // BindVolume formatted for bindmount
@@ -275,7 +312,7 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		// check to see if the env matches an invalid variable, if it does
 		// move onto the next item in the  loop
 		if slices.Contains(invalidEnvVarKeys, varName) {
-			logrus.Warnf("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
+			logrus.Debugf("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
 			continue
 		}
 
