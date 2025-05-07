@@ -128,10 +128,15 @@
           "description": "Name is the name of the container\n\ncan be specified in the following formats\n\n- \u003cimage-name\u003e (Same as using \u003cimage-name\u003e with the latest tag)\n\n- \u003cimage-name\u003e:\u003ctag\u003e\n\n- \u003cimage-name\u003e@\u003cdigest\u003e\n\nIf the known runtime is podman it should include the registry domain\ne.g. `docker.io/alpine:latest`"
         },
         "entrypoint": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
+          "$ref": "#/$defs/StringSlice",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array"
+            }
+          ],
           "description": "Entrypoint Overwrites the default ENTRYPOINT of the image"
         },
         "enable_dind": {

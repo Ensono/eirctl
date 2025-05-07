@@ -1,5 +1,9 @@
 package utils
 
+import (
+	"github.com/Ensono/eirctl/internal/schema"
+)
+
 // Binary is a structure for storing binary file path and arguments that should be passed on binary's invocation
 type Binary struct {
 	// Bin is the name of the executable to run
@@ -51,7 +55,7 @@ type Container struct {
 	// e.g. `docker.io/alpine:latest`
 	Name string `mapstructure:"name" yaml:"name" json:"name"`
 	// Entrypoint Overwrites the default ENTRYPOINT of the image
-	Entrypoint []string `mapstructure:"entrypoint" yaml:"entrypoint,omitempty" json:"entrypoint,omitempty"`
+	Entrypoint schema.StringSlice `mapstructure:"entrypoint" yaml:"entrypoint,omitempty" json:"entrypoint,omitempty" jsonschema:"oneof_type=string;array"`
 	// EnableDinD mounts the docker sock...
 	//
 	// >highly discouraged
