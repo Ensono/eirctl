@@ -39,7 +39,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "foo"},
-			output: []string{"Name: foo", "Image: golang:1.24.1-bookworm"},
+			output: []string{"Name: foo", "Image: golang:1.24.3-bookworm"},
 		})
 	})
 }
