@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,44 @@ func TestLoader_Load(t *testing.T) {
 	}
 }
 
+func Test_LoadImport(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "imprt-tes*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpFile.Name())
+	testSrv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/x-yaml")
+		_, err := writer.Write([]byte(fmt.Sprintf(`
+import:
+  - %s
+  - %s
+tasks:
+  task1:
+    command:
+      - true
+`, tmpFile.Name(), tmpFile.Name())))
+		if err != nil {
+			t.Errorf("failed to write bytes to response stream")
+		}
+	}))
+	loaderTYaml := fmt.Sprintf(`import: 
+  - %s
+  - %s
+  - %s
+tasks:
+  task2:
+    command: echo true`, testSrv.URL, tmpFile.Name(), testSrv.URL)
+	if _, err := tmpFile.Write([]byte(loaderTYaml)); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cfg, err := cl.Load(tmpFile.Name())
+	if len(cfg.Tasks) != 2 {
+		t.Errorf("got %v, wanted 2", len(cfg.Tasks))
+	}
+}
 func TestLoader_resolveDefaultConfigFile(t *testing.T) {
 	cl := config.NewConfigLoader(config.NewConfig())
 	cl.WithDir(filepath.Join(cl.Dir(), "testdata"))
