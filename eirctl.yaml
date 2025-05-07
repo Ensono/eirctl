@@ -11,7 +11,7 @@ contexts:
     container:
       name: golang:1.24.3-bookworm
       enable_dind: true
-      # enable_mount: true
+      enable_mount: true
     envfile:
       exclude:
         - GO
