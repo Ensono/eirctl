@@ -5,6 +5,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,10 +23,11 @@ func platformPullOptions(_ context.Context, imageName string) (image.PullOptions
 
 func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
 	containerConfig := &container.Config{
-		Image:       containerContext.Image,
-		Entrypoint:  containerContext.Entrypoint,
-		Env:         cEnv,
-		Volumes:     containerContext.Volumes(),
+		Image:      containerContext.Image,
+		Entrypoint: containerContext.Entrypoint,
+		Env:        cEnv,
+		// TODO: start declaring named volumes
+		Volumes:     map[string]struct{}{},
 		Cmd:         cmd,
 		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
 		AttachStdin: attachStdin,
@@ -36,10 +38,14 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		User:       containerContext.User(),
 	}
 
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	if containerContext.BindMount {
-		containerConfig.Volumes = map[string]struct{}{}
-		for _, volume := range containerContext.BindMounts() {
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}, Binds: []string{}}
+
+	// hostConfig.Binds = []string{}
+
+	// containerConfig.Volumes = map[string]struct{}{}
+	for _, volume := range containerContext.BindMounts() {
+		if containerContext.BindMount {
+			// use the new mounts
 			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
 				// TODO: enable additional mount types
 				// e.g. `image` for built container volume inspection
@@ -54,7 +60,9 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 				// Consistency:   mount.ConsistencyDefault,
 				// TmpfsOptions:  &mount.TmpfsOptions{},
 			})
+			continue
 		}
+		hostConfig.Binds = append(hostConfig.Binds, fmt.Sprintf("%s:%s:rw", volume.SourcePath, volume.TargetPath))
 	}
 
 	return containerConfig, hostConfig
