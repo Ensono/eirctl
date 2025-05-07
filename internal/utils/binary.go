@@ -58,7 +58,7 @@ type Container struct {
 	Entrypoint schema.StringSlice `mapstructure:"entrypoint" yaml:"entrypoint,omitempty" json:"entrypoint,omitempty" jsonschema:"oneof_type=string;array"`
 	// EnableDinD mounts the docker sock...
 	//
-	// >highly discouraged
+	// > highly discouraged
 	EnableDinD bool `mapstructure:"enable_dind" yaml:"enable_dind,omitempty" json:"enable_dind,omitempty"`
 	// EnableBindMount signifies whether to use the --volume or --mount specification.
 	// Default false.
@@ -71,6 +71,8 @@ type Container struct {
 	//
 	// Args like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock
 	// will be removed.
+	//
+	// Currently the only the -v|--volume and -u|--user args get parsed.
 	ContainerArgs []string `mapstructure:"container_args" yaml:"container_args,omitempty" json:"container_args,omitempty"`
 	// Shell will be used to run the command in a specific shell on the container
 	//
