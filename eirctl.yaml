@@ -9,7 +9,7 @@ output: prefixed
 contexts:
   go1x:
     container:
-      name: golang:1.24.1-bookworm
+      name: golang:1.24.2-bookworm
       enable_dind: true
     envfile:
       exclude:
@@ -39,6 +39,7 @@ pipelines:
 
   lints:
     - task: golint
+    - task: vuln:check
     # govet is run as part of golint
     # - task: govet
   
@@ -85,6 +86,15 @@ tasks:
         go install github.com/axw/gocov/gocov@v1.0.0 && \
         go install github.com/AlekSi/gocov-xml@v1.0.0
     allow_failure: true
+  
+  vuln:check:
+    context: go1x
+    description: | 
+      Runs a vulnerability scan against the code base
+    command: 
+      - |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
 
   test:
     command:

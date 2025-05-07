@@ -36,6 +36,7 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		// WorkingDir in a container will always be /eirctl
 		// will append any job specified paths to the default working
 		WorkingDir: wd,
+		User:       containerContext.User(),
 	}
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}

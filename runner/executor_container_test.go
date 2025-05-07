@@ -294,7 +294,7 @@ func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerE
 
 	containerOpt := runner.NewContainerContext("container:foo-3.21.3")
 	containerOpt.ShellArgs = []string{"sh"}
-	containerOpt.VolumesFromArgs([]string{"-v ${PWD}:/testdir"})
+	containerOpt.ParseContainerArgs([]string{"-v ${PWD}:/testdir"})
 
 	// containerOpt
 	execContext := runner.NewExecutionContext(nil, configContext.Dir, configContext.Env, configContext.Envfile,
