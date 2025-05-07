@@ -26,7 +26,8 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		Image:      containerContext.Image,
 		Entrypoint: containerContext.Entrypoint,
 		Env:        cEnv,
-		// TODO: start declaring named volumes
+		// These are reserved for named volumes if they don't exist they are created as anonymous volumes
+		// TODO: reserve this for future volume management
 		Volumes:     map[string]struct{}{},
 		Cmd:         cmd,
 		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
@@ -39,10 +40,6 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 	}
 
 	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}, Binds: []string{}}
-
-	// hostConfig.Binds = []string{}
-
-	// containerConfig.Volumes = map[string]struct{}{}
 	for _, volume := range containerContext.BindMounts() {
 		if containerContext.BindMount {
 			// use the new mounts
