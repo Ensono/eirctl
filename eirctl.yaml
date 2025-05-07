@@ -9,9 +9,9 @@ output: prefixed
 contexts:
   go1x:
     container:
-      name: golang:1.24.2-bookworm
+      name: golang:1.24.3-bookworm
       enable_dind: true
-      enable_mount: true
+      # enable_mount: true
     envfile:
       exclude:
         - GO
@@ -143,6 +143,10 @@ tasks:
     variables:
       RepoOwner: Ensono
       BinName: eirctl
+  
+  build:container:
+    description: Builds the docker image 
+    command: docker build --build-arg Version={{.Version}} --build-arg Revision={{.Revision}} -t eirctl:{{.Version}} .
 
   golint:
    # in CI it is run 

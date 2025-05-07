@@ -1,8 +1,6 @@
 module github.com/Ensono/eirctl
 
-go 1.24.2
-
-// toolchain 1.24.2
+go 1.24.3
 
 require (
 	dario.cat/mergo v1.0.1
