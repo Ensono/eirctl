@@ -9,12 +9,18 @@ import (
 	"path"
 	"strings"
 
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/docker/docker/api/types/container"
 	"github.com/sirupsen/logrus"
 )
 
 const (
+	// TODO: potentially re-create the old docker behaviour
+	// of a lookup in a directory
+	DOCKER_CONFIG string = `DOCKER_CONFIG`
+
 	// REGISTRY_AUTH_FILE is the environment variable name
 	// for the file to use with container registry authentication
 	REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
@@ -32,20 +38,31 @@ var (
 	CONTAINER_CONFIG_FILE string = ".config/containers/auth.json"
 )
 
-func registryAuthFile() (*configfile.ConfigFile, error) {
+func registryAuthFile(contextEnv []string) (*configfile.ConfigFile, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 
-	defaultPaths := []string{path.Join(home, DOCKER_CONFIG_FILE), path.Join(home, CONTAINER_CONFIG_FILE)}
+	authFiles := []string{path.Join(home, DOCKER_CONFIG_FILE), path.Join(home, CONTAINER_CONFIG_FILE)}
 
-	if authFile, found := os.LookupEnv(REGISTRY_AUTH_FILE); found {
-		// If REGISTRY_AUTH_FILE has been supplied - check it first
-		defaultPaths = append([]string{authFile}, defaultPaths...)
+	containerEnv := utils.ConvertFromEnv(contextEnv)
+
+	// break if found REGISTRY_AUTH_FILE variable
+	// if this is registered first it will always have preference over DOCKER_CONFIG
+	if regFile, found := containerEnv[REGISTRY_AUTH_FILE]; found {
+		authFiles = append([]string{regFile}, authFiles...)
+	} else {
+		// if registry is not specified
+		// check docker to maintain the old docker config directory behaviour
+		// it must contain a file called `config.json` in this directory
+		if regFile, found := containerEnv[DOCKER_CONFIG]; found {
+			authFiles = append([]string{path.Join(regFile, "config.json")}, authFiles...)
+		}
 	}
 
-	for _, authFile := range defaultPaths {
+	for _, authFile := range authFiles {
+		logrus.Debugf("trying file: %s", authFile)
 		if _, err := os.Stat(authFile); err == nil {
 			logrus.Debugf("auth file: %s", authFile)
 			b, err := os.ReadFile(authFile)
@@ -59,14 +76,16 @@ func registryAuthFile() (*configfile.ConfigFile, error) {
 			return af, nil
 		}
 	}
-	return nil, fmt.Errorf("%w, no auth file found", ErrRegistryAuth)
+	logrus.Debug("using unauthenticated registry client")
+	return &configfile.ConfigFile{}, nil
 }
 
-func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
+func AuthLookupFunc(containerConf *container.Config) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		rc := strings.Split(name, "/")
+		logrus.Debugf("beginning AuthFunc")
+		rc := strings.Split(containerConf.Image, "/")
 		registryName := rc[0]
-		af, err := registryAuthFile()
+		af, err := registryAuthFile(containerConf.Env)
 		if err != nil {
 			return "", err
 		}

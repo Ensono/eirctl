@@ -12,10 +12,10 @@ import (
 	"github.com/docker/docker/api/types/mount"
 )
 
-func platformPullOptions(ctx context.Context, imageName string) (image.PullOptions, error) {
+func platformPullOptions(ctx context.Context, containerConf *container.Config) (image.PullOptions, error) {
 	pullOpts := image.PullOptions{}
 
-	ra, err := AuthLookupFunc(imageName)(ctx)
+	ra, err := AuthLookupFunc(containerConf)(ctx)
 	if err != nil {
 		return image.PullOptions{}, err
 	}

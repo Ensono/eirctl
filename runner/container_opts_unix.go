@@ -5,6 +5,7 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,18 +15,27 @@ import (
 	"github.com/docker/docker/api/types/mount"
 )
 
-func platformPullOptions(_ context.Context, imageName string) (image.PullOptions, error) {
-	return image.PullOptions{
-		PrivilegeFunc: AuthLookupFunc(imageName),
-	}, nil
+func platformPullOptions(ctx context.Context, containerConf *container.Config) (image.PullOptions, error) {
+	afn := AuthLookupFunc(containerConf)
+	po := image.PullOptions{
+		PrivilegeFunc: afn,
+	}
+	ra, err := afn(ctx)
+	if err != nil {
+		return image.PullOptions{}, err
+	}
+	po.RegistryAuth = ra
+	return po, nil
 }
 
 func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
 	containerConfig := &container.Config{
-		Image:       containerContext.Image,
-		Entrypoint:  containerContext.Entrypoint,
-		Env:         cEnv,
-		Volumes:     containerContext.Volumes(),
+		Image:      containerContext.Image,
+		Entrypoint: containerContext.Entrypoint,
+		Env:        cEnv,
+		// These are reserved for named volumes if they don't exist they are created as anonymous volumes
+		// TODO: reserve this for future volume management
+		Volumes:     map[string]struct{}{},
 		Cmd:         cmd,
 		Tty:         tty, // TODO: TTY along with StdIn will require switching off stream multiplexer
 		AttachStdin: attachStdin,
@@ -36,10 +46,10 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		User:       containerContext.User(),
 	}
 
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
-	if containerContext.BindMount {
-		containerConfig.Volumes = map[string]struct{}{}
-		for _, volume := range containerContext.BindMounts() {
+	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}, Binds: []string{}}
+	for _, volume := range containerContext.BindMounts() {
+		if containerContext.BindMount {
+			// use the new mounts
 			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
 				// TODO: enable additional mount types
 				// e.g. `image` for built container volume inspection
@@ -54,7 +64,9 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 				// Consistency:   mount.ConsistencyDefault,
 				// TmpfsOptions:  &mount.TmpfsOptions{},
 			})
+			continue
 		}
+		hostConfig.Binds = append(hostConfig.Binds, fmt.Sprintf("%s:%s:rw", volume.SourcePath, volume.TargetPath))
 	}
 
 	return containerConfig, hostConfig
