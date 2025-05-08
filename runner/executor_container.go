@@ -26,7 +26,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
-	// cmdMobyCliPull "github.com/docker/cli/cli/command/image"
 )
 
 var (
@@ -327,7 +326,6 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	// testPull.RunPull(ctx, e.cc, pullOpts)
 	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
 	if err != nil {
 		logrus.Debugf("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)

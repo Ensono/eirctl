@@ -259,10 +259,6 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 			Image: "private.io/alpine:3.21.3",
 			Env:   []string{fmt.Sprintf("%s=%s", runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())}}
 
-		// os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
-
-		// defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
-
 		defer os.Remove(tmpRegFile.Name())
 
 		gotFn := runner.AuthLookupFunc(containerConf)
