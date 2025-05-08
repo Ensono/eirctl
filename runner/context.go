@@ -70,7 +70,7 @@ func (c *ContainerContext) ParseContainerArgs(cargs []string) *ContainerContext 
 func (c *ContainerContext) parseVolumes(cargs []string) {
 	vols := []string{}
 	for _, v := range cargs {
-		v = strings.TrimSpace(v)
+		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-v") {
 			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
 			continue
@@ -85,7 +85,7 @@ func (c *ContainerContext) parseVolumes(cargs []string) {
 
 func (c *ContainerContext) parseUserArgs(cargs []string) {
 	for _, v := range cargs {
-		v = strings.TrimSpace(v)
+		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-u") {
 			c.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
 			break
