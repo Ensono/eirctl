@@ -15,6 +15,10 @@ import (
 )
 
 const (
+	// TODO: potentially re-create the old docker behaviour
+	// of a lookup in a directory
+	// DOCKER_CONFIG string = `DOCKER_CONFIG`
+
 	// REGISTRY_AUTH_FILE is the environment variable name
 	// for the file to use with container registry authentication
 	REGISTRY_AUTH_FILE string = `REGISTRY_AUTH_FILE`
@@ -46,6 +50,7 @@ func registryAuthFile() (*configfile.ConfigFile, error) {
 	}
 
 	for _, authFile := range defaultPaths {
+		logrus.Debugf("trying file: %s", authFile)
 		if _, err := os.Stat(authFile); err == nil {
 			logrus.Debugf("auth file: %s", authFile)
 			b, err := os.ReadFile(authFile)
@@ -59,11 +64,13 @@ func registryAuthFile() (*configfile.ConfigFile, error) {
 			return af, nil
 		}
 	}
-	return nil, fmt.Errorf("%w, no auth file found", ErrRegistryAuth)
+	logrus.Debug("using unauthenticated registry client")
+	return &configfile.ConfigFile{}, nil
 }
 
 func AuthLookupFunc(name string) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
+		logrus.Debugf("beginning AuthFunc")
 		rc := strings.Split(name, "/")
 		registryName := rc[0]
 		af, err := registryAuthFile()

@@ -15,10 +15,17 @@ import (
 	"github.com/docker/docker/api/types/mount"
 )
 
-func platformPullOptions(_ context.Context, imageName string) (image.PullOptions, error) {
-	return image.PullOptions{
-		PrivilegeFunc: AuthLookupFunc(imageName),
-	}, nil
+func platformPullOptions(ctx context.Context, imageName string) (image.PullOptions, error) {
+	afn := AuthLookupFunc(imageName)
+	po := image.PullOptions{
+		PrivilegeFunc: afn,
+	}
+	ra, err := afn(ctx)
+	if err != nil {
+		return image.PullOptions{}, err
+	}
+	po.RegistryAuth = ra
+	return po, nil
 }
 
 func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {

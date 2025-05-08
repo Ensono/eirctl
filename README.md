@@ -318,6 +318,9 @@ _some downsides of the `old:container` context_
 
 - Using the CLI directly limits can be hit with the number of env variables you can inject in.
 
+> NOTE: if using private registries and are running in an environment where a separate docker config file is generated - e.g. in CI where there is no access to HOME or similar 
+  - set an `REGISTRY_AUTH_FILE` env variable to point to the registry auth and other docker config settings
+
 ## Go API
 
 *Currently* this project only supports a pre-built binary for a complete flow, however you can see the tests and examples for some useful flows. 

@@ -140,6 +140,27 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		}
 	})
 
+	t.Run("is public registry - authFunc run", func(t *testing.T) {
+		// originalEnv := os.Environ()
+		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
+		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`), 0777); err != nil {
+			t.Fatal(err)
+		}
+		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
+
+		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		defer os.Remove(tmpRegFile.Name())
+
+		gotFn := runner.AuthLookupFunc("public.io/alpine:3.21.3")
+		got, err := gotFn(context.TODO())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "" {
+			t.Errorf("got %s, wanted ''", got)
+		}
+	})
+
 	t.Run("use private registry idtoken - authFunc run", func(t *testing.T) {
 		// originalEnv := os.Environ()
 		tmpRegFile, _ := os.CreateTemp(os.TempDir(), "auth-*")
@@ -184,11 +205,8 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		runner.CONTAINER_CONFIG_FILE = "/unknown/auth.json"
 		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
 		_, err := gotFn(context.TODO())
-		if err == nil {
-			t.Fatalf("got %v, wanted err", err)
-		}
-		if !errors.Is(err, runner.ErrRegistryAuth) {
-			t.Errorf("got '%v', wanted a %v", err, runner.ErrRegistryAuth)
+		if err != nil {
+			t.Fatalf("got %v, wanted <nil>", err)
 		}
 	})
 

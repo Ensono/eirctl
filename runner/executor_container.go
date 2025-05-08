@@ -26,6 +26,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
+	// cmdMobyCliPull "github.com/docker/cli/cli/command/image"
 )
 
 var (
@@ -155,6 +156,8 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		if errdefs.IsNotFound(err) {
+			// if containerConfig.Env
+			// os.Setenv()
 			if err := e.PullImage(ctx, containerConfig.Image, job.Stdout); err != nil {
 				return container.CreateResponse{}, err
 			}
@@ -315,9 +318,9 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutput io.Writer) error {
 	logrus.Debugf("pulling image: %s", name)
-
 	pullOpts, err := platformPullOptions(ctx, name)
 	if err != nil {
+		logrus.Debugf("platformPullOptions err: %v", err)
 		return err
 	}
 	// 120 seconds is an arbitrary time limit beyond which the program won't wait
@@ -325,8 +328,11 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, name string, dstOutpu
 	// TODO: make this configurable
 	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
+
+	// testPull.RunPull(ctx, e.cc, pullOpts)
 	reader, err := e.cc.ImagePull(timeoutCtx, name, pullOpts)
 	if err != nil {
+		logrus.Debugf("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
 	}
 
