@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"testing"
@@ -111,7 +112,7 @@ func Test_ImagePull(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := nce.PullImage(context.TODO(), cc.Image, io.Discard); err != nil {
+		if err := nce.PullImage(context.TODO(), &container.Config{}, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -125,12 +126,37 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`), 0777); err != nil {
 			t.Fatal(err)
 		}
-		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{fmt.Sprintf("%s=%s", runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())}}
 
-		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
 		defer os.Remove(tmpRegFile.Name())
 
-		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		gotFn := runner.AuthLookupFunc(containerConf)
+		got, err := gotFn(context.TODO())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == "" {
+			t.Error("got '', wanted a token")
+		}
+	})
+
+	t.Run("DOCKER_CONFIG use private registry - authFunc run", func(t *testing.T) {
+		// originalEnv := os.Environ()
+		tmpRegFile, _ := os.Create(path.Join(os.TempDir(), "config.json"))
+		_, err := tmpRegFile.Write([]byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{fmt.Sprintf("%s=%s", runner.DOCKER_CONFIG, path.Dir(tmpRegFile.Name()))}}
+
+		defer os.Remove(tmpRegFile.Name())
+
+		gotFn := runner.AuthLookupFunc(containerConf)
 		got, err := gotFn(context.TODO())
 		if err != nil {
 			t.Fatal(err)
@@ -146,12 +172,14 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`), 0777); err != nil {
 			t.Fatal(err)
 		}
-		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
 
-		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		containerConf := &container.Config{
+			Image: "public.io/alpine:3.21.3",
+			Env:   []string{fmt.Sprintf("%s=%s", runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())}}
+
 		defer os.Remove(tmpRegFile.Name())
 
-		gotFn := runner.AuthLookupFunc("public.io/alpine:3.21.3")
+		gotFn := runner.AuthLookupFunc(containerConf)
 		got, err := gotFn(context.TODO())
 		if err != nil {
 			t.Fatal(err)
@@ -167,12 +195,14 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"eyJwYXlsb2FkIjoic29tZXRvaXViaGdmZHM/RERmZHN1amJmZy9kc2ZnZCIsInZlcnNpb24iOiIyIiwiZXhwaXJhdGlvbiI6MTc0MjI4MjE2Nn0K"}}}`), 0777); err != nil {
 			t.Fatal(err)
 		}
-		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
 
-		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{fmt.Sprintf("%s=%s", runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())}}
+
 		defer os.Remove(tmpRegFile.Name())
 
-		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		gotFn := runner.AuthLookupFunc(containerConf)
 		got, err := gotFn(context.TODO())
 		if err != nil {
 			t.Fatal(err)
@@ -187,10 +217,13 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`), 0777); err != nil {
 			t.Fatal(err)
 		}
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{}}
 
 		defer os.Remove(tmpRegFile.Name())
 
-		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		gotFn := runner.AuthLookupFunc(containerConf)
 		got, err := gotFn(context.TODO())
 		if err != nil {
 			t.Fatal(err)
@@ -203,7 +236,11 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 	t.Run("no auth files present", func(t *testing.T) {
 		runner.DOCKER_CONFIG_FILE = "/unknown/config.json"
 		runner.CONTAINER_CONFIG_FILE = "/unknown/auth.json"
-		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{}}
+
+		gotFn := runner.AuthLookupFunc(containerConf)
 		_, err := gotFn(context.TODO())
 		if err != nil {
 			t.Fatalf("got %v, wanted <nil>", err)
@@ -217,12 +254,18 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 		if err := os.WriteFile(tmpRegFile.Name(), []byte(`{"auths":{"private.io":{"auth":function(){}?}}}`), 0777); err != nil {
 			t.Fatal(err)
 		}
-		os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
 
-		defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+		containerConf := &container.Config{
+			Image: "private.io/alpine:3.21.3",
+			Env:   []string{fmt.Sprintf("%s=%s", runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())}}
+
+		// os.Setenv(runner.REGISTRY_AUTH_FILE, tmpRegFile.Name())
+
+		// defer os.Unsetenv(runner.REGISTRY_AUTH_FILE)
+
 		defer os.Remove(tmpRegFile.Name())
 
-		gotFn := runner.AuthLookupFunc("private.io/alpine:3.21.3")
+		gotFn := runner.AuthLookupFunc(containerConf)
 		_, err := gotFn(context.TODO())
 		if err == nil {
 			t.Fatalf("got %v, wanted err", err)

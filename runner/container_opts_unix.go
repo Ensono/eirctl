@@ -15,8 +15,8 @@ import (
 	"github.com/docker/docker/api/types/mount"
 )
 
-func platformPullOptions(ctx context.Context, imageName string) (image.PullOptions, error) {
-	afn := AuthLookupFunc(imageName)
+func platformPullOptions(ctx context.Context, containerConf *container.Config) (image.PullOptions, error) {
+	afn := AuthLookupFunc(containerConf)
 	po := image.PullOptions{
 		PrivilegeFunc: afn,
 	}
