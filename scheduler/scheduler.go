@@ -3,13 +3,13 @@
 package scheduler
 
 import (
-	"os/exec"
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
 
@@ -60,7 +60,7 @@ func (s *Scheduler) Schedule(g *ExecutionGraph) error {
 			}
 
 			if stage.Condition != "" {
-				meets, err := checkStageCondition(stage.Condition)
+				meets, err := s.checkStageCondition(stage.Condition)
 				if err != nil {
 					logrus.Error(err)
 					stage.UpdateStatus(StatusError)
@@ -182,16 +182,23 @@ func checkStatus(p *ExecutionGraph, stage *Stage) bool {
 	return true
 }
 
-func checkStageCondition(condition string) (bool, error) {
-	cmd := exec.Command(condition)
-	err := cmd.Run()
-	if err != nil {
-		if utils.IsExitError(err) {
-			return false, nil
-		}
+func (s *Scheduler) checkStageCondition(condition string) (bool, error) {
+	ec, job := runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
+		runner.NewJobFromCommand(condition)
 
+	exec, err := runner.GetExecutorFactory(ec, job)
+	if err != nil {
 		return false, err
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	_, err = exec.Execute(ctx, job)
+	if err != nil {
+		if _, ok := runner.IsExitStatus(err); ok {
+			return false, nil
+		}
+		return false, err
+	}
 	return true, nil
 }

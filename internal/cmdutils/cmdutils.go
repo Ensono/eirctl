@@ -4,6 +4,7 @@ package cmdutils
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/config"
@@ -51,13 +52,23 @@ func PrintSummary(g *scheduler.ExecutionGraph, chanOut io.Writer, detailedSummar
 
 	fmt.Fprintf(chanOut, BOLD_TERMINAL, "Summary: \n")
 
+	slices.SortFunc(stages, func(i, j *scheduler.Stage) int {
+		if i.Start().After(j.Start()) {
+			return 1
+		}
+		if j.Start().After(i.Start()) {
+			return -1
+		}
+		return 0
+	})
+
 	for _, stage := range stages {
 		stage.Name = stageNameHelper(g.Name(), stage.Name)
 		switch stage.ReadStatus() {
 		case scheduler.StatusDone:
 			fmt.Fprintf(chanOut, GREEN_TERMINAL, fmt.Sprintf("- Stage %s was completed in %s\n", stage.Name, stage.Duration()))
 		case scheduler.StatusSkipped:
-			fmt.Fprintf(chanOut, GREEN_TERMINAL, fmt.Sprintf("- Stage %s was skipped\n", stage.Name))
+			fmt.Fprintf(chanOut, CYAN_TERMINAL, fmt.Sprintf("- Stage %s was skipped\n", stage.Name))
 		case scheduler.StatusError:
 			log := ""
 			if stage.Task != nil {
