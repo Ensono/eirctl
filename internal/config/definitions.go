@@ -100,7 +100,10 @@ type ContextDefinition struct {
 type PipelineDefinition struct {
 	// Name is the friendly name to give to pipeline
 	Name string `mapstructure:"name" yaml:"name" json:"name,omitempty"`
-	// Condition is the condition to evaluate on whether to run this task or not
+	// Condition evaluates whether to run this task or not within a given Schedule (Pipeline).
+	// This always runs in the default Executor and does not inherit any pipeline or task variables and environment.
+	//
+	// The condition must be a valid shell syntax and returns a non-zero (0) exit code for the task to be skipped inside a pipeline.
 	Condition string `mapstructure:"condition" yaml:"condition" json:"condition,omitempty"`
 	// Task is the pointer to the task to run
 	// it has to match the key in tasks map

@@ -9,7 +9,6 @@ import (
 	"github.com/Ensono/eirctl/variables"
 
 	"github.com/Ensono/eirctl/runner"
-
 	"github.com/Ensono/eirctl/task"
 )
 
@@ -172,7 +171,7 @@ func TestScheduler_Cancel(t *testing.T) {
 	}
 }
 
-func TestConditionErroredStage(t *testing.T) {
+func Test_Scheduler_ConditionErroredStage(t *testing.T) {
 	stage1 := scheduler.NewStage("stage1", func(s *scheduler.Stage) {
 		s.Task = task.FromCommands("t1", "true")
 		s.Condition = "true"
@@ -182,7 +181,7 @@ func TestConditionErroredStage(t *testing.T) {
 		s.Task = task.FromCommands("t2", "false")
 		s.AllowFailure = true
 		s.DependsOn = []string{"stage1"}
-		s.Condition = "/unknown-bin"
+		s.Condition = "wrong"
 	})
 
 	graph, err := scheduler.NewExecutionGraph("t1", stage1, stage2)
@@ -198,8 +197,12 @@ func TestConditionErroredStage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if stage1.ReadStatus() != scheduler.StatusDone || stage2.ReadStatus() != scheduler.StatusError {
-		t.Error()
+	if stage1.ReadStatus() != scheduler.StatusDone {
+		t.Errorf("stage 1 incorrectly finished, got %v wanted Done", stage1.ReadStatus())
+	}
+	// This is now kind of pointless 
+	if stage2.ReadStatus() != scheduler.StatusSkipped {
+		t.Errorf("stage 2 incorrectly finished, got %v wanted Done", stage2.ReadStatus())
 	}
 }
 
