@@ -65,16 +65,16 @@ type containerArgs struct {
 	flagSet *pflag.FlagSet
 }
 
-type userFlagString struct {
+type singleUseFlagString struct {
 	val   string
 	count int
 }
 
-func (s *userFlagString) String() string {
+func (s *singleUseFlagString) String() string {
 	return s.val
 }
 
-func (s *userFlagString) Set(v string) error {
+func (s *singleUseFlagString) Set(v string) error {
 	s.count++
 	if s.count > 1 {
 		return fmt.Errorf("error in container_args, user flag (-u/--user) already specified (%v). found: %s", s.val, v)
@@ -83,7 +83,7 @@ func (s *userFlagString) Set(v string) error {
 	return nil
 }
 
-func (s *userFlagString) Type() string {
+func (s *singleUseFlagString) Type() string {
 	return "string"
 }
 
@@ -91,7 +91,7 @@ func newContainerArgs(cargs []string) *containerArgs {
 	// Create a new FlagSet to parse this single flag
 	// let pflag do the work
 	// Add additional flags we want to handle here
-	userVarFlag := &userFlagString{}
+	userVarFlag := &singleUseFlagString{}
 	flagSet := pflag.NewFlagSet("containerArgsTempFlags", pflag.ContinueOnError)
 	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
