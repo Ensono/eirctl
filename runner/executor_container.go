@@ -313,7 +313,6 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 }
 
 // Container pull images - all contexts that have a container property
-// TODO: Why is dstOutput never used?
 func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
 	logrus.Debugf("pulling image: %s", containerConf.Image)
 	pullOpts, err := platformPullOptions(ctx, containerConf)

@@ -68,7 +68,13 @@ func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext
 		return nil, err
 	}
 
-	c.parseVolumes(cargs)
+	cargs = c.parseVolumes(cargs)
+
+	_, err = c.parseRemaining(cargs)
+
+	if err != nil {
+		return nil, err
+	}
 
 	return c, nil
 }
@@ -121,6 +127,14 @@ func (c *ContainerContext) parseUserArgs(cargs []string) ([]string, error) {
 	}
 
 	return newCargs, nil
+}
+
+func (c *ContainerContext) parseRemaining(cargs []string) ([]string, error) {
+	if len(cargs) != 0 {
+		return nil, fmt.Errorf("unparsed arguments detected: %v", cargs)
+	}
+
+	return cargs, nil
 }
 
 // expandVolumeString accepts a string in the form of:

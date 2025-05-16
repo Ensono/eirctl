@@ -102,13 +102,14 @@ tasks:
       - |
         mkdir -p .coverage
         export GOFLAGS=-buildvcs=false
-        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 $GO_TEST_EXTRA_ARGS | tee .coverage/test.out
+        set -x
+        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 -run=$GO_TEST_RUN_ARGS | tee .coverage/test.out
         cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
         gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
     env:
       # TODO: bug when exclude is set up on the context it should allow task level overwrites
       GOFLAGS: -buildvcs=false
-      # GO_TEST_EXTRA_ARGS="-run "Test_ImagePull"
+      # GO_TEST_RUN_ARGS: "Test_ImagePull"
     allow_failure: true
 
   build:

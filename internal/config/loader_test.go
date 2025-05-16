@@ -70,7 +70,7 @@ tasks:
 			t.Errorf("failed to write bytes to response stream")
 		}
 	}))
-	loaderTYaml := fmt.Sprintf(`import: 
+	loaderTYaml := fmt.Sprintf(`import:
   - %s
   - %s
   - %s
@@ -221,7 +221,7 @@ func TestLoader_contexts(t *testing.T) {
     quote: "'"
     envfile:
       generate: true
-      exclude: 
+      exclude:
         - PATH
   powershell:
     container:
@@ -309,7 +309,7 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
       shell_args:
         - -NonInteractive
         - -Command
-      container_args: ["--some","-f","-v /var/run/docker.sock:/var/run/docker.sock","-other","--safe"]
+      container_args: ["--user foo","-v /var/run/docker.sock:/var/run/docker.sock"]
     envfile:
       exclude:
         - SOURCEVERSIONMESSAGE
@@ -327,7 +327,7 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
       shell_args:
         - -NonInteractive
         - -Command
-      container_args: ["--some","-f","-other","--safe"]
+      container_args: ["--user foo","-v /foo:/foo"]
       enable_dind: true
     envfile:
       exclude:
@@ -335,7 +335,7 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
         - JAVA
         - GO
         - HOMEBREW`),
-			expectVolsCount: 2,
+			expectVolsCount: 3,
 		},
 		"includes ONLY forbidden args": {
 			contexts: []byte(`contexts:
