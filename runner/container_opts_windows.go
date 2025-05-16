@@ -39,7 +39,10 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		User:       containerContext.User(),
 	}
 
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}}
+	hostConfig := &container.HostConfig{
+		Mounts:     []mount.Mount{},
+		UsernsMode: container.UsernsMode(containerContext.userns),
+	}
 	// only mount of type bind  can be used on windows
 	for _, volume := range containerContext.BindMounts() {
 		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{

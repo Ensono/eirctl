@@ -296,35 +296,117 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 }
 
 func Test_ContainerContext_UserArgs(t *testing.T) {
-	t.Parallel()
 	ttests := map[string]struct {
 		containerArgs []string
 		want          string
+		expectErr     bool
 	}{
 		"--user foo": {
-			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo"},
+			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo", "--userns private"},
 			want:          "foo",
+			expectErr:     false,
 		},
 		"-u foo": {
-			containerArgs: []string{"-v $PWD/bar:/in", "-v /foo/baz:/two", "-u foo"},
+			containerArgs: []string{"-v $PWD/bar:/in", "--volume /foo/baz:/two", "-u foo"},
 			want:          "foo",
+			expectErr:     false,
 		},
 		" -u foo:bar": {
 			containerArgs: []string{"-v $HOME/bar:/in", " -u foo:bar"},
 			want:          "foo:bar",
+			expectErr:     false,
 		},
-		" empty ": {
-			containerArgs: []string{"-v $HOME/bar:/in", " -bar foo:bar"},
+		"-u bar and --user foo": {
+			containerArgs: []string{"-u bar", "-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo"},
 			want:          "",
+			expectErr:     true,
+		},
+		"-u bar and --user=foo": {
+			containerArgs: []string{"-u bar", "-v /foo/bar:/in", "--user=foo", "-v /foo/baz:/two"},
+			want:          "",
+			expectErr:     true,
+		},
+		"-u foo and -u foo": {
+			containerArgs: []string{"-u foo", "-v /foo/bar:/in", "-u foo", "-v /foo/baz:/two"},
+			want:          "",
+			expectErr:     true,
+		},
+		"--user bar and --user foo": {
+			containerArgs: []string{"--user bar", "-v /foo/bar:/in", "--user foo", "-v /foo/baz:/two"},
+			want:          "",
+			expectErr:     true,
 		},
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			cc := runner.NewContainerContext("image:latest")
-			cc.ParseContainerArgs(tt.containerArgs)
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
 			got := cc.User()
-			if got != tt.want {
-				t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", got, tt.want)
+
+			if err != nil && !tt.expectErr {
+				t.Errorf("not expecting an error: %s", err)
+				t.FailNow()
+			}
+
+			if err == nil {
+				if tt.expectErr {
+					t.Errorf("expecting an error for duplicate user flags, got: %s", got)
+					t.FailNow()
+				}
+
+				if got != tt.want {
+					t.Errorf("incorrect user mapping, got: %s, wanted: %s\n", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_UnsupportedArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          string
+		expectErr     bool
+	}{
+		"--foo": {
+			containerArgs: []string{"--foo"},
+			want:          "",
+			expectErr:     true,
+		},
+		"--bar": {
+			containerArgs: []string{"--bar"},
+			want:          "",
+			expectErr:     true,
+		},
+		"-u bar and --foo foo": {
+			containerArgs: []string{"-u bar", "--foo foo"},
+			want:          "",
+			expectErr:     true,
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			if err != nil && !tt.expectErr {
+				t.Errorf("not expecting an error: %s", err)
+				t.FailNow()
+			}
+
+			got := cc.User()
+
+			if err == nil {
+				if tt.expectErr {
+					t.Errorf("expecting an error for duplicate user flags, got: %s", got)
+					t.FailNow()
+				}
+
+				if got != tt.want {
+					t.Errorf("incorrect user mapping, got: %s, wanted: %s\n", got, tt.want)
+				}
 			}
 		})
 	}

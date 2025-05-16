@@ -46,7 +46,11 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		User:       containerContext.User(),
 	}
 
-	hostConfig := &container.HostConfig{Mounts: []mount.Mount{}, Binds: []string{}}
+	hostConfig := &container.HostConfig{
+		Mounts:     []mount.Mount{},
+		Binds:      []string{},
+		UsernsMode: container.UsernsMode(containerContext.userns),
+	}
 	for _, volume := range containerContext.BindMounts() {
 		if containerContext.BindMount {
 			// use the new mounts

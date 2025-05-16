@@ -5,7 +5,7 @@ contexts:
   podman:
     container:
       name: alpine:latest
-    env: 
+    env:
       GLOBAL_VAR: this is it
     envfile:
       exclude:
@@ -14,7 +14,7 @@ contexts:
     container:
       name: ensonostackseuweirdfmu.azurecr.io/ensono/eir-asciidoctor:latest
       container_args:
-        - -p 1313:1313
+        - -v foo:foo
       shell: pwsh
       shell_args:
         - -Command
@@ -26,7 +26,7 @@ contexts:
 ci_meta:
   targetOpts:
     github:
-      "on": 
+      "on":
         push:
           branches:
             - gfooo
@@ -39,7 +39,7 @@ pipelines:
         GLOBAL_VAR: prodPipeline
   graph:pipeline1:
     - task: graph:task2
-      depends_on: 
+      depends_on:
         - graph:task1
     - task: graph:task3
       depends_on: [graph:task1]
@@ -83,13 +83,13 @@ tasks:
     context: podman
 
   graph:task3:
-    command: 
+    command:
       - echo "hello, task3 in env ${ENV_NAME}"
     env:
       FOO: bar
 
   graph:task4:
-    command: | 
+    command: |
       echo "hello, task4 in env ${ENV_NAME}"
     context: podman
     env:
