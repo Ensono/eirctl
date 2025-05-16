@@ -390,3 +390,44 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestLoader_contexts_with_containerArgs_errors(t *testing.T) {
+	ttests := map[string]struct {
+		contexts []byte
+	}{
+		"includes user args duplicates": {
+			contexts: []byte(`contexts:
+  test:args:
+    container:
+      name: ensono/eir-infrastructure:1.1.251
+      shell: pwsh
+      shell_args:
+        - -NonInteractive
+        - -Command
+      container_args: ["--user foo","-u foo", "-v /var/run/docker.sock:/var/run/docker.sock"]
+    envfile:
+      exclude:
+        - SOURCEVERSIONMESSAGE
+        - JAVA
+        - GO
+        - HOMEBREW`),
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir, _ := os.MkdirTemp(os.TempDir(), "context*")
+			fname := filepath.Join(dir, "context.yaml")
+
+			f, _ := os.Create(fname)
+			defer os.RemoveAll(dir)
+			f.Write(tt.contexts)
+			loader := config.NewConfigLoader(config.NewConfig())
+			loader.WithStrictDecoder()
+			_, err := loader.Load(fname)
+			if err == nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

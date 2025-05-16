@@ -75,6 +75,16 @@ func (ca *containerArgs) addProcessed(arg ...string) {
 	ca.processed = append(ca.processed, arg...)
 }
 
+func (ca *containerArgs) argsValues() []string {
+	args := []string{}
+	for _, v := range ca.args {
+		if !slices.Contains(ca.processed, v) {
+			args = append(args, v)
+		}
+	}
+	return args
+}
+
 func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 
 	if err := ca.parseUserArgs(cc); err != nil {
@@ -91,7 +101,7 @@ func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 
 func (ca *containerArgs) parseVolumes(cc *ContainerContext) {
 	vols := []string{}
-	for _, v := range ca.args {
+	for _, v := range ca.argsValues() {
 		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-v") {
 			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
@@ -109,13 +119,13 @@ func (ca *containerArgs) parseVolumes(cc *ContainerContext) {
 
 func (ca *containerArgs) parseUserArgs(cc *ContainerContext) error {
 
-	for _, v := range ca.args {
+	for _, v := range ca.argsValues() {
 		v = os.ExpandEnv(strings.TrimSpace(v))
 		if slices.ContainsFunc(ca.processed, func(processedArg string) bool {
 			return (strings.HasPrefix(processedArg, "-u") || strings.HasPrefix(processedArg, "--user")) &&
 				(strings.HasPrefix(v, "-u") || strings.HasPrefix(v, "--user"))
 		}) {
-			return fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
+			return fmt.Errorf("error in container_args, user flag (-u/--user) already present (%v). found: %s", ca.processed, v)
 		}
 		if strings.HasPrefix(v, "-u") {
 			cc.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))

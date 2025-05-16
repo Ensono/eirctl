@@ -171,7 +171,7 @@ func checkForbiddenContainerArgs(cargs []string) []string {
 				idx := slices.Index(cargs, s)
 				// when looking for pairs need to append both the flag and flag value
 				//
-				verbotenArgIdx = append(verbotenArgIdx, idx-1, idx)
+				verbotenArgIdx = append(verbotenArgIdx, idx)
 			}
 			return false
 		})
