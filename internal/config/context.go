@@ -116,8 +116,16 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 			}
 			cc.WithVolumes(fmt.Sprintf("%s:/var/run/docker.sock", dockerHostPath))
 		}
+
 		// CONTAINER ARGS these are best left to be tightly controlled
-		cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs))
+		_, err = cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs))
+
+		// TODO: Should this have a test, where, how? Seems like others in this
+		// file aren't covered currently...
+		if err != nil {
+			return nil, err
+		}
+
 		if container.Entrypoint != nil {
 			cc.Entrypoint = container.Entrypoint
 		}

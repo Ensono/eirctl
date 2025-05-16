@@ -61,14 +61,21 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 // 	return c
 // }
 
-func (c *ContainerContext) ParseContainerArgs(cargs []string) *ContainerContext {
-	c.parseUserArgs(cargs)
+func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext, error) {
+	cargs, err := c.parseUserArgs(cargs)
+
+	if err != nil {
+		return nil, err
+	}
+
 	c.parseVolumes(cargs)
-	return c
+
+	return c, nil
 }
 
-func (c *ContainerContext) parseVolumes(cargs []string) {
+func (c *ContainerContext) parseVolumes(cargs []string) []string {
 	vols := []string{}
+	newCargs := []string{}
 	for _, v := range cargs {
 		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-v") {
@@ -79,22 +86,41 @@ func (c *ContainerContext) parseVolumes(cargs []string) {
 			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "--volume"))))
 			continue
 		}
+
+		newCargs = append(newCargs, v)
 	}
 	c.WithVolumes(vols...)
+
+	return newCargs
 }
 
-func (c *ContainerContext) parseUserArgs(cargs []string) {
+func (c *ContainerContext) parseUserArgs(cargs []string) ([]string, error) {
+	newCargs := []string{}
+	seenUserArg := false
+
 	for _, v := range cargs {
 		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-u") {
+			if seenUserArg {
+				return nil, fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
+			}
 			c.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
-			break
+			seenUserArg = true
+			continue
 		}
 		if strings.HasPrefix(v, "--user") {
+			if seenUserArg {
+				return nil, fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
+			}
 			c.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
-			break
+			seenUserArg = true
+			continue
 		}
+
+		newCargs = append(newCargs, v)
 	}
+
+	return newCargs, nil
 }
 
 // expandVolumeString accepts a string in the form of:

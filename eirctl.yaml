@@ -43,14 +43,14 @@ pipelines:
     - task: vuln:check
     # govet is run as part of golint
     # - task: govet
-  
+
   test:unit:
     - task: clean
     - task: test_prereqs
     - task: test
       # env:
       #   DOCKER_HOST: unix:///var/run/docker.sock
-      depends_on: 
+      depends_on:
         - clean
         - test_prereqs
 
@@ -70,16 +70,16 @@ pipelines:
         BinName: eirctl
 
 tasks:
-  clean: 
-    command: 
+  clean:
+    command:
       - echo "running clean"
-      - | 
+      - |
         rm -rf bin/*
         rm -rf dist/*
         rm -rf vendor/*
         rm -rf .coverage
-  test_prereqs: 
-    command: 
+  test_prereqs:
+    command:
       - echo "running test pre-requisites"
       - |
         mkdir -p .coverage
@@ -87,12 +87,12 @@ tasks:
         go install github.com/axw/gocov/gocov@v1.0.0 && \
         go install github.com/AlekSi/gocov-xml@v1.0.0
     allow_failure: true
-  
+
   vuln:check:
     context: go1x
-    description: | 
+    description: |
       Runs a vulnerability scan against the code base
-    command: 
+    command:
       - |
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck ./...
@@ -100,14 +100,15 @@ tasks:
   test:
     command:
       - |
-        mkdir -p .coverage 
+        mkdir -p .coverage
         export GOFLAGS=-buildvcs=false
-        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 | tee .coverage/test.out
+        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -coverprofile=.coverage/out -count=1 $GO_TEST_EXTRA_ARGS | tee .coverage/test.out
         cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
         gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
     env:
       # TODO: bug when exclude is set up on the context it should allow task level overwrites
       GOFLAGS: -buildvcs=false
+      # GO_TEST_EXTRA_ARGS="-run "Test_ImagePull"
     allow_failure: true
 
   build:
@@ -143,20 +144,20 @@ tasks:
     variables:
       RepoOwner: Ensono
       BinName: eirctl
-  
+
   build:container:
-    description: Builds the docker image 
+    description: Builds the docker image
     command: docker build --build-arg Version={{.Version}} --build-arg Revision={{.Revision}} -t eirctl:{{.Version}} .
 
   golint:
-   # in CI it is run 
+    # in CI it is run
     context: golint
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
       # echo "lint ran with exit code: $?"
-      # pwd && ls -lat 
-      - | 
+      # pwd && ls -lat
+      - |
         golangci-lint run
 
   goreleaser:
@@ -172,30 +173,30 @@ tasks:
 
   schema_gen_deps:
     description: |
-      Installing dependencies for the struct type generation 
+      Installing dependencies for the struct type generation
     command:
       - pnpm install -g quicktype
-  
+
   generate_own_schema:
-    description: | 
+    description: |
       Generates the schema for a eirctl itself.
-      
+
       Exits in CI if changes detected.
     command:
       - go run tools/schemagenerator/main.go
-      - | 
-        if [ ! -z "$(git status --porcelain --untracked-files=no)" ]; then 
+      - |
+        if [ ! -z "$(git status --porcelain --untracked-files=no)" ]; then
           if [ ! -z ${CI+x} ] ; then
             echo "In CI with an unclean tree - exiting"
             echo "Info: make sure you have generatedschema and committed"
             exit 1
           fi
         fi
-  
+
   generate_ci_structs_from_schema:
     description: |
       Type generation for target CI definitions used by the generate command
-           CI Definitions will be used by generate-def command.
+      CI Definitions will be used by generate-def command.
     command:
       - mkdir -p ./internal/z_generated/github
       - quicktype --lang go --src-lang schema --src ./internal/schema/sources/sources/github.json -o internal/z_generated/github/schema.go --field-tags yaml \

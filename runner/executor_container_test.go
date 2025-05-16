@@ -112,7 +112,10 @@ func Test_ImagePull(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := nce.PullImage(context.TODO(), &container.Config{}, io.Discard); err != nil {
+		containerConfig := container.Config{}
+		containerConfig.Image = cc.Image
+
+		if err := nce.PullImage(context.TODO(), &containerConfig, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 	})
