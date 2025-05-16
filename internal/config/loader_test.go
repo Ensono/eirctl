@@ -358,6 +358,7 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dir, _ := os.MkdirTemp(os.TempDir(), "context*")
 			fname := filepath.Join(dir, "context.yaml")
 

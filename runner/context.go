@@ -56,85 +56,88 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	return c
 }
 
-// func (c *ContainerContext) WithUser(user string) *ContainerContext {
-// 	c.user = user
-// 	return c
-// }
+type containerArgs struct {
+	args      []string
+	processed []string
+}
 
 func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext, error) {
-	cargs, err := c.parseUserArgs(cargs)
+	ca := &containerArgs{cargs, []string{}}
 
-	if err != nil {
-		return nil, err
-	}
-
-	cargs = c.parseVolumes(cargs)
-
-	_, err = c.parseRemaining(cargs)
-
-	if err != nil {
+	if err := ca.parseArgs(c); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *ContainerContext) parseVolumes(cargs []string) []string {
+func (ca *containerArgs) addProcessed(arg ...string) {
+	ca.processed = append(ca.processed, arg...)
+}
+
+func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
+
+	if err := ca.parseUserArgs(cc); err != nil {
+		return err
+	}
+
+	ca.parseVolumes(cc)
+	// add more parsers here if needed
+	if err := ca.parseRemaining(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ca *containerArgs) parseVolumes(cc *ContainerContext) {
 	vols := []string{}
-	newCargs := []string{}
-	for _, v := range cargs {
+	for _, v := range ca.args {
 		v = os.ExpandEnv(strings.TrimSpace(v))
 		if strings.HasPrefix(v, "-v") {
 			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
+			ca.addProcessed(v)
 			continue
 		}
 		if strings.HasPrefix(v, "--volume") {
 			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "--volume"))))
+			ca.addProcessed(v)
 			continue
 		}
-
-		newCargs = append(newCargs, v)
 	}
-	c.WithVolumes(vols...)
-
-	return newCargs
+	cc.WithVolumes(vols...)
 }
 
-func (c *ContainerContext) parseUserArgs(cargs []string) ([]string, error) {
-	newCargs := []string{}
-	seenUserArg := false
+func (ca *containerArgs) parseUserArgs(cc *ContainerContext) error {
 
-	for _, v := range cargs {
+	for _, v := range ca.args {
 		v = os.ExpandEnv(strings.TrimSpace(v))
+		if slices.ContainsFunc(ca.processed, func(processedArg string) bool {
+			return (strings.HasPrefix(processedArg, "-u") || strings.HasPrefix(processedArg, "--user")) &&
+				(strings.HasPrefix(v, "-u") || strings.HasPrefix(v, "--user"))
+		}) {
+			return fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
+		}
 		if strings.HasPrefix(v, "-u") {
-			if seenUserArg {
-				return nil, fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
-			}
-			c.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
-			seenUserArg = true
+			cc.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
+			ca.addProcessed(v)
 			continue
 		}
 		if strings.HasPrefix(v, "--user") {
-			if seenUserArg {
-				return nil, fmt.Errorf("error in container_args, user flag (-u/--user) already seen. Found: %s", v)
-			}
-			c.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
-			seenUserArg = true
+			cc.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
+			ca.addProcessed(v)
 			continue
 		}
-
-		newCargs = append(newCargs, v)
 	}
 
-	return newCargs, nil
+	return nil
 }
 
-func (c *ContainerContext) parseRemaining(cargs []string) ([]string, error) {
-	if len(cargs) != 0 {
-		return nil, fmt.Errorf("unparsed arguments detected: %v", cargs)
+func (ca *containerArgs) parseRemaining() error {
+	if len(ca.args) != len(ca.processed) {
+		return fmt.Errorf("unparsed arguments detected: %v", ca.args)
 	}
 
-	return cargs, nil
+	return nil
 }
 
 // expandVolumeString accepts a string in the form of:
