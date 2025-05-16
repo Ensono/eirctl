@@ -302,12 +302,12 @@ func Test_ContainerContext_UserArgs(t *testing.T) {
 		expectErr     bool
 	}{
 		"--user foo": {
-			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo"},
+			containerArgs: []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--user foo", "--userns private"},
 			want:          "foo",
 			expectErr:     false,
 		},
 		"-u foo": {
-			containerArgs: []string{"-v $PWD/bar:/in", "-v /foo/baz:/two", "-u foo"},
+			containerArgs: []string{"-v $PWD/bar:/in", "--volume /foo/baz:/two", "-u foo"},
 			want:          "foo",
 			expectErr:     false,
 		},
@@ -321,8 +321,8 @@ func Test_ContainerContext_UserArgs(t *testing.T) {
 			want:          "",
 			expectErr:     true,
 		},
-		"-u bar and -u foo": {
-			containerArgs: []string{"-u bar", "-v /foo/bar:/in", "-u foo", "-v /foo/baz:/two"},
+		"-u bar and --user=foo": {
+			containerArgs: []string{"-u bar", "-v /foo/bar:/in", "--user=foo", "-v /foo/baz:/two"},
 			want:          "",
 			expectErr:     true,
 		},

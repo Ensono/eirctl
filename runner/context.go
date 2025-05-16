@@ -14,6 +14,7 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -38,6 +39,9 @@ type ContainerContext struct {
 	// user is a container arg specified via --user/-u
 	// can be both user or user:group
 	user string
+	// userns specifies the NS mode in the container - e.g. private, host, container:id
+	// defaults to "" i.e. no remapping occurs
+	userns string
 }
 
 // NewContainerContext accepts name of the image
@@ -57,96 +61,93 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 }
 
 type containerArgs struct {
-	args      []string
-	processed []string
+	args    []string
+	flagSet *pflag.FlagSet
+}
+
+type userFlagString struct {
+	val   string
+	count int
+}
+
+func (s *userFlagString) String() string {
+	return s.val
+}
+
+func (s *userFlagString) Set(v string) error {
+	s.count++
+	if s.count > 1 {
+		return fmt.Errorf("error in container_args, user flag (-u/--user) already specified (%v). found: %s", s.val, v)
+	}
+	s.val = v
+	return nil
+}
+
+func (s *userFlagString) Type() string {
+	return "string"
+}
+
+func newContainerArgs(cargs []string) *containerArgs {
+	// Create a new FlagSet to parse this single flag
+	// let pflag do the work
+	// Add additional flags we want to handle here
+	userVarFlag := &userFlagString{}
+	flagSet := pflag.NewFlagSet("containerArgsTempFlags", pflag.ContinueOnError)
+	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
+	flagSet.VarP(userVarFlag, "user", "u", "")
+	_ = flagSet.StringP("userns", "", "", "")
+
+	return &containerArgs{cargs, flagSet}
 }
 
 func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext, error) {
-	ca := &containerArgs{cargs, []string{}}
 
-	if err := ca.parseArgs(c); err != nil {
+	if err := newContainerArgs(cargs).parseArgs(c); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (ca *containerArgs) addProcessed(arg ...string) {
-	ca.processed = append(ca.processed, arg...)
-}
-
-func (ca *containerArgs) argsValues() []string {
-	args := []string{}
-	for _, v := range ca.args {
-		if !slices.Contains(ca.processed, v) {
-			args = append(args, v)
-		}
-	}
-	return args
-}
-
 func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
+	osArgs := []string{}
+	for _, v := range ca.args {
+		osArgs = append(osArgs, strings.Fields(v)...)
+	}
 
-	if err := ca.parseUserArgs(cc); err != nil {
+	if err := ca.flagSet.Parse(osArgs); err != nil {
 		return err
 	}
 
-	ca.parseVolumes(cc)
+	user, err := ca.flagSet.GetString("user")
+	if err != nil {
+		return err
+	}
+	cc.user = os.ExpandEnv(strings.TrimSpace(user))
+
+	userns, err := ca.flagSet.GetString("userns")
+	if err != nil {
+		return err
+	}
+	cc.userns = os.ExpandEnv(strings.TrimSpace(userns))
+
+	if err := ca.parseVolumes(cc); err != nil {
+		return err
+	}
 	// add more parsers here if needed
-	if err := ca.parseRemaining(); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (ca *containerArgs) parseVolumes(cc *ContainerContext) {
+func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 	vols := []string{}
-	for _, v := range ca.argsValues() {
-		v = os.ExpandEnv(strings.TrimSpace(v))
-		if strings.HasPrefix(v, "-v") {
-			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
-			ca.addProcessed(v)
-			continue
-		}
-		if strings.HasPrefix(v, "--volume") {
-			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "--volume"))))
-			ca.addProcessed(v)
-			continue
-		}
+	volArgs, err := ca.flagSet.GetStringArray("volume")
+	if err != nil {
+		return err
+	}
+	for _, v := range volArgs {
+		vols = append(vols, expandVolumeString(strings.TrimSpace(v)))
 	}
 	cc.WithVolumes(vols...)
-}
-
-func (ca *containerArgs) parseUserArgs(cc *ContainerContext) error {
-
-	for _, v := range ca.argsValues() {
-		v = os.ExpandEnv(strings.TrimSpace(v))
-		if slices.ContainsFunc(ca.processed, func(processedArg string) bool {
-			return (strings.HasPrefix(processedArg, "-u") || strings.HasPrefix(processedArg, "--user")) &&
-				(strings.HasPrefix(v, "-u") || strings.HasPrefix(v, "--user"))
-		}) {
-			return fmt.Errorf("error in container_args, user flag (-u/--user) already present (%v). found: %s", ca.processed, v)
-		}
-		if strings.HasPrefix(v, "-u") {
-			cc.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
-			ca.addProcessed(v)
-			continue
-		}
-		if strings.HasPrefix(v, "--user") {
-			cc.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
-			ca.addProcessed(v)
-			continue
-		}
-	}
-
-	return nil
-}
-
-func (ca *containerArgs) parseRemaining() error {
-	if len(ca.args) != len(ca.processed) {
-		return fmt.Errorf("unparsed arguments detected: %v", ca.args)
-	}
-
 	return nil
 }
 
