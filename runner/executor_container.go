@@ -155,7 +155,7 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			if err := e.PullImage(ctx, containerConfig, job.Stdout); err != nil {
+			if err := e.PullImage(ctx, containerConfig); err != nil {
 				return container.CreateResponse{}, err
 			}
 			// Image pulled now create container
@@ -314,7 +314,7 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 
 // Container pull images - all contexts that have a container property
 // TODO: Why is dstOutput never used?
-func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config, dstOutput io.Writer) error {
+func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
 	logrus.Debugf("pulling image: %s", containerConf.Image)
 	pullOpts, err := platformPullOptions(ctx, containerConf)
 	if err != nil {
