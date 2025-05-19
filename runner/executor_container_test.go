@@ -112,7 +112,7 @@ func Test_ImagePull(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := nce.PullImage(context.TODO(), &container.Config{}, io.Discard); err != nil {
+		if err := nce.PullImage(context.TODO(), &container.Config{Image: cc.Image}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -555,6 +555,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 	})
 
 	t.Run("correctly mounts host dir", func(t *testing.T) {
+		// t.Skip("move to integration tests...")
 		cc := runner.NewContainerContext("alpine:3.21.3")
 		cc.ShellArgs = []string{"sh", "-c"}
 		cc.BindMount = true

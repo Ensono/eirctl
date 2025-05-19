@@ -14,6 +14,7 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -38,6 +39,9 @@ type ContainerContext struct {
 	// user is a container arg specified via --user/-u
 	// can be both user or user:group
 	user string
+	// userns specifies the NS mode in the container - e.g. private, host, container:id
+	// defaults to "" i.e. no remapping occurs
+	userns string
 }
 
 // NewContainerContext accepts name of the image
@@ -56,45 +60,97 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	return c
 }
 
-// func (c *ContainerContext) WithUser(user string) *ContainerContext {
-// 	c.user = user
-// 	return c
-// }
-
-func (c *ContainerContext) ParseContainerArgs(cargs []string) *ContainerContext {
-	c.parseUserArgs(cargs)
-	c.parseVolumes(cargs)
-	return c
+type containerArgs struct {
+	args    []string
+	flagSet *pflag.FlagSet
 }
 
-func (c *ContainerContext) parseVolumes(cargs []string) {
+type singleUseFlagString struct {
+	val   string
+	count int
+}
+
+func (s *singleUseFlagString) String() string {
+	return s.val
+}
+
+func (s *singleUseFlagString) Set(v string) error {
+	s.count++
+	if s.count > 1 {
+		return fmt.Errorf("error in container_args, user flag (-u/--user) already specified (%v). found: %s", s.val, v)
+	}
+	s.val = v
+	return nil
+}
+
+func (s *singleUseFlagString) Type() string {
+	return "string"
+}
+
+func newContainerArgs(cargs []string) *containerArgs {
+	// Create a new FlagSet to parse this single flag
+	// let pflag do the work
+	// Add additional flags we want to handle here
+	userVarFlag := &singleUseFlagString{}
+	flagSet := pflag.NewFlagSet("containerArgsTempFlags", pflag.ContinueOnError)
+	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
+	flagSet.VarP(userVarFlag, "user", "u", "")
+	_ = flagSet.StringP("userns", "", "", "")
+	// TODO: refactor this to use first class properties
+	// on the container object in config/container_definition
+
+	return &containerArgs{cargs, flagSet}
+}
+
+func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext, error) {
+
+	if err := newContainerArgs(cargs).parseArgs(c); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
+	osArgs := []string{}
+	for _, v := range ca.args {
+		osArgs = append(osArgs, strings.Fields(v)...)
+	}
+
+	if err := ca.flagSet.Parse(osArgs); err != nil {
+		return err
+	}
+
+	user, err := ca.flagSet.GetString("user")
+	if err != nil {
+		return err
+	}
+	cc.user = os.ExpandEnv(strings.TrimSpace(user))
+
+	userns, err := ca.flagSet.GetString("userns")
+	if err != nil {
+		return err
+	}
+	cc.userns = os.ExpandEnv(strings.TrimSpace(userns))
+
+	if err := ca.parseVolumes(cc); err != nil {
+		return err
+	}
+	// add more parsers here if needed
+	return nil
+}
+
+func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 	vols := []string{}
-	for _, v := range cargs {
-		v = os.ExpandEnv(strings.TrimSpace(v))
-		if strings.HasPrefix(v, "-v") {
-			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "-v"))))
-			continue
-		}
-		if strings.HasPrefix(v, "--volume") {
-			vols = append(vols, expandVolumeString(strings.TrimSpace(strings.TrimPrefix(v, "--volume"))))
-			continue
-		}
+	volArgs, err := ca.flagSet.GetStringArray("volume")
+	if err != nil {
+		return err
 	}
-	c.WithVolumes(vols...)
-}
-
-func (c *ContainerContext) parseUserArgs(cargs []string) {
-	for _, v := range cargs {
-		v = os.ExpandEnv(strings.TrimSpace(v))
-		if strings.HasPrefix(v, "-u") {
-			c.user = strings.TrimSpace(strings.TrimPrefix(v, "-u"))
-			break
-		}
-		if strings.HasPrefix(v, "--user") {
-			c.user = strings.TrimSpace(strings.TrimPrefix(v, "--user"))
-			break
-		}
+	for _, v := range volArgs {
+		vols = append(vols, expandVolumeString(strings.TrimSpace(v)))
 	}
+	cc.WithVolumes(vols...)
+	return nil
 }
 
 // expandVolumeString accepts a string in the form of:

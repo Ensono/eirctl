@@ -116,8 +116,12 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 			}
 			cc.WithVolumes(fmt.Sprintf("%s:/var/run/docker.sock", dockerHostPath))
 		}
+
 		// CONTAINER ARGS these are best left to be tightly controlled
-		cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs))
+		if _, err := cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs)); err != nil {
+			return nil, err
+		}
+
 		if container.Entrypoint != nil {
 			cc.Entrypoint = container.Entrypoint
 		}
@@ -163,7 +167,7 @@ func checkForbiddenContainerArgs(cargs []string) []string {
 				idx := slices.Index(cargs, s)
 				// when looking for pairs need to append both the flag and flag value
 				//
-				verbotenArgIdx = append(verbotenArgIdx, idx-1, idx)
+				verbotenArgIdx = append(verbotenArgIdx, idx)
 			}
 			return false
 		})
