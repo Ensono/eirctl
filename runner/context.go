@@ -96,6 +96,8 @@ func newContainerArgs(cargs []string) *containerArgs {
 	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
 	_ = flagSet.StringP("userns", "", "", "")
+	// TODO: refactor this to use first class properties
+	// on the container object in config/container_definition
 
 	return &containerArgs{cargs, flagSet}
 }

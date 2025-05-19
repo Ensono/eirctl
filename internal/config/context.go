@@ -118,11 +118,7 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 		}
 
 		// CONTAINER ARGS these are best left to be tightly controlled
-		_, err = cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs))
-
-		// TODO: Should this have a test, where, how? Seems like others in this
-		// file aren't covered currently...
-		if err != nil {
+		if _, err := cc.ParseContainerArgs(checkForbiddenContainerArgs(container.ContainerArgs)); err != nil {
 			return nil, err
 		}
 
