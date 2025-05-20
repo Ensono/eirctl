@@ -114,7 +114,9 @@ func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext
 func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	osArgs := []string{}
 	for _, v := range ca.args {
-		osArgs = append(osArgs, strings.Fields(v)...)
+		// expand env on the whole slice item in case
+		// both the key and value are both coming from an env variable
+		osArgs = append(osArgs, strings.Fields(os.ExpandEnv(v))...)
 	}
 
 	if err := ca.flagSet.Parse(osArgs); err != nil {

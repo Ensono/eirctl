@@ -256,7 +256,6 @@ func ExampleExecutionContext_ProcessEnvfile() {
 }
 
 func Test_ContainerContext_Volumes(t *testing.T) {
-	t.Parallel()
 	pwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	ttests := map[string]struct {
@@ -283,6 +282,7 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			cc := runner.NewContainerContext("image:latest")
 			cc.ParseContainerArgs(tt.containerArgs)
 			got := cc.Volumes()
@@ -290,6 +290,65 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 				if !slices.Contains(tt.want, vol) {
 					t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
 				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_ParseArgs_env_replacement(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          []string
+		setupFunc     func() func()
+	}{
+		"1 property only": {
+			containerArgs: []string{"-v ${VOL}"},
+			want:          []string{"/foo/bar:/in"},
+			setupFunc: func() func() {
+				os.Setenv("VOL", "/foo/bar:/in")
+				return func() {
+					os.Unsetenv("VOL")
+				}
+			},
+		},
+		"user and vol property only": {
+			containerArgs: []string{"-v ${VOL}", "--user ${USER_FOO}"},
+			want:          []string{"/foo/bar:/in", "123:123"},
+			setupFunc: func() func() {
+				os.Setenv("VOL", "/foo/bar:/in")
+				os.Setenv("USER_FOO", "123:123")
+				return func() {
+					os.Unsetenv("VOL")
+				}
+			},
+		},
+		"user key and val and volume property only": {
+			containerArgs: []string{"-v ${VOL}", "${USER_FOO_FULL}"},
+			want:          []string{"/foo/bar:/in", "123:123"},
+			setupFunc: func() func() {
+				os.Setenv("VOL", "/foo/bar:/in")
+				os.Setenv("USER_FOO_FULL", "--user 123:123")
+				return func() {
+					os.Unsetenv("VOL")
+				}
+			},
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			tearDown := tt.setupFunc()
+			defer tearDown()
+
+			cc := runner.NewContainerContext("image:latest")
+			cc.ParseContainerArgs(tt.containerArgs)
+
+			for vol := range cc.Volumes() {
+				if !slices.Contains(tt.want, vol) {
+					t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
+				}
+			}
+			if cc.User() != "" && !slices.Contains(tt.want, cc.User()) {
+				t.Errorf("incorect user mapping, got: %s, wanted: %s\n", cc.User(), tt.want)
 			}
 		})
 	}
