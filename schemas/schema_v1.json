@@ -388,6 +388,33 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "RequiredInput": {
+      "properties": {
+        "vars": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Vars is a list of required variables by the task\nIt is case sensitive\nIt checks both the default vars, supplied vars, and Environment variables"
+        },
+        "env": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Env will identify any missing environment variables\nIt checks complete env vars - merged from global \u003e context \u003e pipeline \u003e task"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Args checks any args supplied after `--`"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "StringSlice": {
       "oneOf": [
         {
@@ -486,6 +513,10 @@
         "ci_meta": {
           "type": "object",
           "description": "Generator is the CI meta properties that will only be used during a generate process"
+        },
+        "required": {
+          "$ref": "#/$defs/RequiredInput",
+          "description": "Required specifies any required inputs into the task"
         }
       },
       "additionalProperties": false,
