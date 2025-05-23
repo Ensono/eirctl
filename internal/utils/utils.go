@@ -280,11 +280,6 @@ func ReaderFromPath(envfile *Envfile) (io.ReadCloser, bool) {
 // ReadEnvFile reads env file inv `k=v` format
 func ReadEnvFile(r io.ReadCloser) (map[string]string, error) {
 	envs := make(map[string]string)
-	// interimEnv will allow to perform a replacement in place of
-	// variables referenced further down in files
-	//
-	// Current limitation without changing the signature would be the need to define
-	// reference variables in order and in the same file
 	envscanner := bufio.NewScanner(r)
 	defer r.Close()
 	for envscanner.Scan() {
@@ -295,6 +290,11 @@ func ReadEnvFile(r io.ReadCloser) (map[string]string, error) {
 			// ensure EnvVar values which themselves include
 			// an `=` equals are correctly set
 			envs[kv[0]] = os.Expand(strings.Join(kv[1:], "="), func(key string) string {
+				// will allow to perform a replacement in place of
+				// variables referenced further down in files
+				//
+				// Current limitation without changing the signature would be the need to define
+				// reference variables in order and in the same file
 				return envs[key]
 			})
 		}

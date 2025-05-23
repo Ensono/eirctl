@@ -33,3 +33,10 @@ tasks:
     
   task:task3:
     command: "echo 'This is {{.Args }} arguments'"
+
+  task:requiredVar:
+    command: "echo '{{ .SetMe }}'"
+    required:
+      env: []
+      vars:
+        - SetMe

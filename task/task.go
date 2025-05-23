@@ -59,30 +59,43 @@ var ErrRequiredInputMissing = errors.New("missing required input")
 // CheckRequired ensures all required environment are specified/present and not empty
 //
 // This is a runtime checkinput
-func (ri *RequiredInput) CheckRuntime(env *variables.Variables) error {
-	envMap := env.Map()
+func (ri *RequiredInput) Check(env *variables.Variables, vars *variables.Variables) error {
 	notFound := []string{}
 	for _, v := range ri.Env {
-		if _, found := envMap[v]; !found {
+		if !env.Has(v) {
 			notFound = append(notFound, v)
 		}
 	}
 	if len(notFound) > 0 {
-		return fmt.Errorf("%w, %v is missing from the required environment variables (%v)", ErrRequiredInputMissing, notFound, ri.Env)
+		return fmt.Errorf("%w, %v is missing from the required env variables (%v)", ErrRequiredInputMissing, notFound, ri.Env)
+	}
+
+	for _, v := range ri.Vars {
+		if !vars.Has(v) {
+			notFound = append(notFound, v)
+		}
+	}
+	if len(notFound) > 0 {
+		return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
 	}
 	return nil
 }
 
-// CheckRequiredVarsArgs ensures all required vars and args are present
-//
-// This is a compile time check
-func (ri *RequiredInput) CheckRequiredVarsArgs(t *Task) error {
-
-	// for _, arg := range ri.Args {
-
-	// }
-	return nil
-}
+// // CheckRequiredVarsArgs ensures all required vars and args are present
+// //
+// // This is a compile time check
+// func (ri *RequiredInput) CheckVars(vars *variables.Variables) error {
+// 	notFound := []string{}
+// 	for _, v := range ri.Vars {
+// 		if !vars.Has(v) {
+// 			notFound = append(notFound, v)
+// 		}
+// 	}
+// 	if len(notFound) > 0 {
+// 		return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
+// 	}
+// 	return nil
+// }
 
 // Task is a structure that describes task, its commands, environment, working directory etc.
 // After task completes it provides task's execution status, exit code, stdout and stderr

@@ -139,7 +139,7 @@ func (tc *TaskCompiler) compileCommand(
 	// NOTE: This could also be a compile time check - but it would preclude any dynamically set environment
 	// variables to be checked
 	if task.Required != nil && task.Required.HasRequired() {
-		if err := task.Required.CheckRuntime(task.Env.Merge(j.Env)); err != nil {
+		if err := task.Required.Check(j.Env.Merge(task.Env), j.Vars); err != nil {
 			return nil, err
 		}
 	}

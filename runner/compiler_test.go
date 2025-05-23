@@ -2,6 +2,7 @@ package runner_test
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -18,6 +19,8 @@ var shBin = utils.Binary{
 var envFile = utils.NewEnvFile()
 
 func TestTaskCompiler_CompileTask_WithRequired_Runtime(t *testing.T) {
+	t.Parallel()
+
 	t.Run("required env has been set", func(t *testing.T) {
 
 		tc := runner.NewTaskCompiler()
@@ -43,6 +46,32 @@ func TestTaskCompiler_CompileTask_WithRequired_Runtime(t *testing.T) {
 			t.Fatal(err)
 		}
 
+	})
+
+	t.Run("error on required env missing", func(t *testing.T) {
+
+		tc := runner.NewTaskCompiler()
+
+		excontextEnvMap := variables.FromMap(map[string]string{"HOME": "/root"})
+		taskContextEnvMap := variables.FromMap(map[string]string{"FOO": "foo"})
+
+		tsk := task.NewTask("tut")
+		tsk.Commands = []string{"echo foo"}
+		tsk.Env.Set("BAR", "task-var-wins")
+		tsk.Required.Env = []string{"FOO", "BAR", "BAZ"}
+
+		_, err := tc.CompileTask(tsk,
+			runner.NewExecutionContext(&shBin, "/tmp", excontextEnvMap, envFile, nil, nil, nil, nil),
+			&bytes.Buffer{},
+			&bytes.Buffer{},
+			&bytes.Buffer{},
+			taskContextEnvMap,
+			variables.NewVariables(),
+		)
+
+		if !errors.Is(err, task.ErrRequiredInputMissing) {
+			t.Errorf("got %v, wanted %v", err, task.ErrRequiredInputMissing)
+		}
 	})
 }
 
