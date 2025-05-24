@@ -248,7 +248,7 @@ func (r *TaskRunner) before(ctx context.Context, t *task.Task, env, vars *variab
 	}
 
 	for _, command := range t.Before {
-		job, err := r.compiler.CompileCommand(t.Name, command, execContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, env, vars)
+		job, err := r.compiler.compileCommand(t, command, execContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, env, vars)
 		if err != nil {
 			return fmt.Errorf(`"before\" command compilation failed: %w`, err)
 		}
@@ -278,7 +278,7 @@ func (r *TaskRunner) after(ctx context.Context, t *task.Task, env, vars *variabl
 	}
 
 	for _, command := range t.After {
-		job, err := r.compiler.CompileCommand(t.Name, command, execContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, env, vars)
+		job, err := r.compiler.compileCommand(t, command, execContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, env, vars)
 		if err != nil {
 			return fmt.Errorf(`"after" command compilation failed: %w`, err)
 		}
@@ -336,7 +336,7 @@ func (r *TaskRunner) checkTaskCondition(t *task.Task) (bool, error) {
 		return false, err
 	}
 
-	job, err := r.compiler.CompileCommand(t.Name, t.Condition, executionContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, r.env, r.variables)
+	job, err := r.compiler.compileCommand(t, t.Condition, executionContext, t.Dir, t.Timeout, nil, r.Stdout, r.Stderr, r.env, r.variables)
 	if err != nil {
 		return false, err
 	}

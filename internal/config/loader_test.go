@@ -29,7 +29,7 @@ func TestLoader_Load(t *testing.T) {
 		t.Error("yaml parsing failed")
 	}
 
-	if cfg.Contexts["local_wth_quote"].Quote != "'" {
+	if cfg.Contexts["local_wth_quote"].Quote != `'` {
 		t.Error("context's quote parsing failed")
 	}
 

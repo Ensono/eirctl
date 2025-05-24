@@ -362,7 +362,7 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 	// if envfile path was provided it is merged with Env and inject as a whole into the container
 	if reader, found := utils.ReaderFromPath(c.Envfile); reader != nil && found {
 		if envFileMap, err := utils.ReadEnvFile(reader); envFileMap != nil && err == nil {
-			// overwriting env from os < env property with the file
+			// overwriting env from OS < env property with the file
 			env = variables.FromMap(envFileMap).Merge(env)
 		}
 	}

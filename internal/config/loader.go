@@ -217,7 +217,7 @@ var ErrImportKeyClash = errors.New("imported file contains a clash")
 
 // mergeExistingWithImported merges top level keys only and errors on duplicate tasks/pipelines/contexts via imports
 //
-// NOTE: perhaps changet this in the future or allow overwriting
+// NOTE: perhaps change this in the future or allow overwriting
 func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, path string) error {
 	// merge tasks - fail on
 	for name, val := range importedConfig.Tasks {

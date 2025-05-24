@@ -24,6 +24,7 @@ func buildTask(def *TaskDefinition, lc *loaderContext) (*task.Task, error) {
 	t.Context = def.Context
 	t.Interactive = def.Interactive
 	t.ResetContext = def.ResetContext
+	t.Required = def.Required
 
 	t.Env = variables.FromMap(def.Env).Merge(t.Env)
 	ef := utils.NewEnvFile()

@@ -60,6 +60,17 @@ func Test_runCommandWithArgumentsList(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:task3", "--raw", "--", "first", "and", "second"}, exactOutput: "This is first and second arguments\n"})
 	})
+
+	t.Run("run with --set Var ", func(t *testing.T) {
+		os.Setenv("EIRCTL_CONFIG_FILE", "testdata/task.yaml")
+		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:requiredVar", "--set", "SetMe=HasBeenSet"}, errored: false, exactOutput: "HasBeenSet\n"})
+	})
+	t.Run("run without --set Var ", func(t *testing.T) {
+		os.Setenv("EIRCTL_CONFIG_FILE", "testdata/task.yaml")
+		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:requiredVar", "--set", "SetNOT=HasBeenSet"}, errored: true})
+	})
 }
 
 func Test_errors_on_run(t *testing.T) {

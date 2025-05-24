@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/main/schemas/schema_v1.json
+# yaml-language-server: $schema=../../../schemas/schema_v1.json
 
 debug: false
 output: cockpit
