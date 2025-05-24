@@ -51,6 +51,16 @@ The general flow of inheritance is from the more general to the more specific, i
 
 > NB: presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
 
+> envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers. 
+
+As the file is scanned line by line any referenced vars need to be specified after their declaration. See below for an example.
+
+```env
+FOO=bar
+QUX=$FOO
+BAZ=${FOO}
+```
+
 That means that anything set in the context level will always be injected into the pipeline and task, unless the same key is set in the pipeline in which case it will be overwritten.
 
 Anything set in a task will overwrite previouusly set env keys.
