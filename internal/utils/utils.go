@@ -289,7 +289,14 @@ func ReadEnvFile(r io.ReadCloser) (map[string]string, error) {
 		if len(kv) >= 2 {
 			// ensure EnvVar values which themselves include
 			// an `=` equals are correctly set
-			envs[kv[0]] = strings.Join(kv[1:], "=")
+			envs[kv[0]] = os.Expand(strings.Join(kv[1:], "="), func(key string) string {
+				// will allow to perform a replacement in place of
+				// variables referenced further down in files
+				//
+				// Current limitation without changing the signature would be the need to define
+				// reference variables in order and in the same file
+				return envs[key]
+			})
 		}
 	}
 

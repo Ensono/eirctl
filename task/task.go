@@ -1,6 +1,8 @@
 package task
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -36,6 +38,65 @@ type Artifact struct {
 	Type ArtifactType `mapstructure:"type" yaml:"type" json:"type" jsonschema:"enum=dotenv,enum=file,default=file"`
 }
 
+type RequiredInput struct {
+	// Vars is a list of required variables by the task
+	// It is case sensitive
+	// It checks both the default vars, supplied vars, and Environment variables
+	Vars []string `yaml:"vars,omitempty" json:"vars,omitempty"`
+	// Env will identify any missing environment variables
+	// It checks complete env vars - merged from global > context > pipeline > task
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+	// Args checks any args supplied after `--`
+	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
+}
+
+func (ri *RequiredInput) HasRequired() bool {
+	return (len(ri.Args) + len(ri.Vars) + len(ri.Env)) > 0
+}
+
+var ErrRequiredInputMissing = errors.New("missing required input")
+
+// CheckRequired ensures all required environment are specified/present and not empty
+//
+// This is a runtime checkinput
+func (ri *RequiredInput) Check(env *variables.Variables, vars *variables.Variables) error {
+	notFound := []string{}
+	for _, v := range ri.Env {
+		if !env.Has(v) {
+			notFound = append(notFound, v)
+		}
+	}
+	if len(notFound) > 0 {
+		return fmt.Errorf("%w, %v is missing from the required env variables (%v)", ErrRequiredInputMissing, notFound, ri.Env)
+	}
+
+	for _, v := range ri.Vars {
+		if !vars.Has(v) {
+			notFound = append(notFound, v)
+		}
+	}
+	if len(notFound) > 0 {
+		return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
+	}
+	return nil
+}
+
+// // CheckRequiredVarsArgs ensures all required vars and args are present
+// //
+// // This is a compile time check
+// func (ri *RequiredInput) CheckVars(vars *variables.Variables) error {
+// 	notFound := []string{}
+// 	for _, v := range ri.Vars {
+// 		if !vars.Has(v) {
+// 			notFound = append(notFound, v)
+// 		}
+// 	}
+// 	if len(notFound) > 0 {
+// 		return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
+// 	}
+// 	return nil
+// }
+
 // Task is a structure that describes task, its commands, environment, working directory etc.
 // After task completes it provides task's execution status, exit code, stdout and stderr
 type Task struct {
@@ -58,6 +119,7 @@ type Task struct {
 
 	Name        string
 	Description string
+	Required    *RequiredInput
 	// internal fields updated by a mutex
 	// only used with the single instance of the task
 	mu        sync.Mutex // guards the below private fields
@@ -76,6 +138,7 @@ func NewTask(name string) *Task {
 		Name:      name,
 		Env:       variables.NewVariables(),
 		Variables: variables.NewVariables(),
+		Required:  &RequiredInput{},
 		exitCode:  -1,
 		errored:   false,
 		mu:        sync.Mutex{},

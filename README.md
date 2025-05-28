@@ -1,4 +1,5 @@
-![](./docs/eirctl-logo.webp)
+![eirctl logo](./docs/eirctl-logo.svg)
+
 # eirctl - concurrent task and container runner
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
@@ -22,7 +23,7 @@ The configuration is driven through YAML which has its [schema](https://raw.gith
 
 Key concepts, see below for more details.
 
-- [task](#tasks) => jobs
+- [task](#tasks) => defines a series of commands and their possible variations which compile down to a [job]()
 - [contexts](#contexts)
 - [pipelines](#pipelines)
 
@@ -86,22 +87,24 @@ Along with globally predefined, variables can be set in a task's definition.
 You can use those variables according to `text/template` [documentation](https://golang.org/pkg/text/template/).
 
 Predefined variables are:
+
 - `.Root` - root config file directory
 - `.Dir` - config file directory
 - `.TempDir` - system's temporary directory
-- `.Args` - provided arguments as a string
-- `.ArgsList` - array of provided arguments
+- `.Args` - provided arguments as a string - useful in assigning additional caller defined args to binaries inside a task
+- `.ArgsList` - array of provided arguments - useful for templating
 - `.Task.Name` - current task's name
 - `.Context.Name` - current task's execution context's name
 - `.Stage.Name` - current stage's name
-- `.Output` - previous command's output
-- `.Tasks.Task1.Output` - `task1` last command output
+
+User supplied vars i.e. using the `--set Var1=value` will all be merged and are available for templating and Required checking
 
 ### Pass CLI arguments to task
 
 Any command line arguments succeeding `--` are passed to each task via `.Args`, `.ArgsList` variables or `ARGS` environment variable.
 
 Given this definition:
+
 ```yaml
 lint1:
   command: go lint {{.Args}}
@@ -119,6 +122,29 @@ $ eirctl lint1 -- package.go
 $ eirctl lint2 -- package.go main.go
 # go lint main.go
 ```
+
+### Required Input
+
+The required input is a map of either `Variables` or `Env` (Environment variables).
+
+The computational check happens at runtime and not compile time - currently - this is to allow for any dynamically set variables throughout the pipeline's execution to be taken into account.
+
+This comes with potential delay of catching of issues, the current implementation will collect all errors before returning to avoid back and forth.
+
+> Potentially some aspects of this could be moved to the validate subcomand.
+
+```yaml
+  task:requiredVar:
+    command: echo "var has been set {{ .SetMe }} and required env ${REQUIRED_ENV}"
+    required:
+      env: [REQUIRED_ENV]
+      vars:
+        - SetMe
+```
+
+`REQUIRED_ENV=isSet eirctl run task task:requiredVar --set SetMe=thats-right`
+
+> When running this task in an eirctl pipeline, `REQUIRED_ENV` can be set in a previous task, in global env, in an envfile, via a direct assignment the parent pipline(s).
 
 ### Storing task's output
 
@@ -160,8 +186,8 @@ tasks:
 
 ## Pipelines
 
-Pipeline is a set of stages (tasks or other pipelines) to be executed in a certain order. Stages may be executed in parallel or one-by-one. 
-Stage may override task's environment, variables etc. 
+Pipeline is a set of stages (tasks or other pipelines) to be executed in a certain order. Stages may be executed in parallel or one-by-one.
+Stage may override task's environment, variables etc.
 
 This pipeline:
 
@@ -220,12 +246,12 @@ eirctl has several output formats:
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 
-The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables). 
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
 
-> _evnfile_ property on the context allows for further customization of the injected envirnoment. 
+> _evnfile_ property on the context allows for further customization of the injected envirnoment.
 > It can merge env from a file or mutate/include/exclude existing environment - see the [schema](./schemas/schema_v1.json) for more details
 
-*Tasks running without a context* will be run in a [cross platform shell](https://github.com/mvdan/sh). You can follow any issues on the project site with GNU tool conversion of host->mvdan emulator shell mapping.
+_Tasks running without a context_ will be run in a [cross platform shell](https://github.com/mvdan/sh). You can follow any issues on the project site with GNU tool conversion of host->mvdan emulator shell mapping.
 
 ```yaml
 tasks:
@@ -310,7 +336,7 @@ tasks:
       - ls -lat .
 ```
 
-Whilst they are all valid to achieve a similar outcome, each depends on the use case. 
+Whilst they are all valid to achieve a similar outcome, each depends on the use case.
 
 _some downsides of the `old:container` context_
 
@@ -318,12 +344,13 @@ _some downsides of the `old:container` context_
 
 - Using the CLI directly limits can be hit with the number of env variables you can inject in.
 
-> NOTE: if using private registries and are running in an environment where a separate docker config file is generated - e.g. in CI where there is no access to HOME or similar 
-  - set an `REGISTRY_AUTH_FILE` env variable to point to the registry auth and other docker config settings
+> NOTE: if using private registries and are running in an environment where a separate docker config file is generated - e.g. in CI where there is no access to HOME or similar
+
+- set an `REGISTRY_AUTH_FILE` env variable to point to the registry auth and other docker config settings
 
 ## Go API
 
-*Currently* this project only supports a pre-built binary for a complete flow, however you can see the tests and examples for some useful flows. 
+_Currently_ this project only supports a pre-built binary for a complete flow, however you can see the tests and examples for some useful flows.
 
 The runner package:
 
@@ -331,10 +358,9 @@ The runner package:
 
 - [TaskRunner](runner/runner.go)'s `Run` method is a useful scheduling flow where multiple tasks need coordinating.
 
-
 ## How to contribute?
 
-Feel free to contribute in any way you want. Share ideas, submit issues, create pull requests. 
+Feel free to contribute in any way you want. Share ideas, submit issues, create pull requests.
 You can start by improving this [README.md](https://github.com/Ensono/eirctl/blob/master/README.md) or suggesting new [features](https://github.com/Ensono/eirctl/issues)
 Thank you!
 

@@ -601,6 +601,14 @@ ANOTHER=region=123,foo=bar;colon=true|pipe=fhass`))},
 			[]string{"FOO", "BAZ", "MULTI", "ANOTHER"},
 			[]string{"bar", "", "somekey=someval", "region=123,foo=bar;colon=true|pipe=fhass"},
 		},
+		"with vars that reference other vars": {
+			closerWrapper{bytes.NewReader([]byte(`FOO=bar
+BAZ=$FOO
+BAR=${FOO}
+MULTI=somekey=someval`))},
+			[]string{"FOO", "BAZ", "BAR", "MULTI"},
+			[]string{"bar", "bar", "bar", "somekey=someval"},
+		},
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {

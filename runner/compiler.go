@@ -45,8 +45,8 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 	for _, variant := range t.GetVariations() {
 		// each command in the array needs compiling
 		for _, command := range t.Commands {
-			j, err := tc.CompileCommand(
-				t.Name,
+			j, err := tc.compileCommand(
+				t,
 				command,
 				executionContext,
 				t.Dir,
@@ -81,8 +81,8 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 }
 
 // CompileCommand compiles command into Job
-func (tc *TaskCompiler) CompileCommand(
-	taskName string,
+func (tc *TaskCompiler) compileCommand(
+	task *task.Task,
 	command string,
 	executionCtx *ExecutionContext,
 	dir string,
@@ -132,6 +132,16 @@ func (tc *TaskCompiler) CompileCommand(
 	j.Dir, err = utils.RenderString(j.Dir, j.Vars.Map())
 	if err != nil {
 		return nil, err
+	}
+
+	// runtime check to see if task can proceed based on inputs
+	//
+	// NOTE: This could also be a compile time check - but it would preclude any dynamically set environment
+	// variables to be checked
+	if task.Required != nil && task.Required.HasRequired() {
+		if err := task.Required.Check(j.Env.Merge(task.Env), j.Vars); err != nil {
+			return nil, err
+		}
 	}
 
 	return j, nil

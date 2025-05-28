@@ -179,6 +179,8 @@ type TaskDefinition struct {
 	ResetContext bool `mapstructure:"reset_context" yaml:"reset_context,omitempty" json:"reset_context,omitempty" jsonschema:"default=false"`
 	// Generator is the CI meta properties that will only be used during a generate process
 	Generator map[string]any `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
+	// Required specifies any required inputs into the task
+	Required *task.RequiredInput `yaml:"required,omitempty" json:"required,omitempty"`
 }
 
 type WatcherDefinition struct {
