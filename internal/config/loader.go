@@ -97,7 +97,9 @@ func (cl *Loader) Load(file string) (*Config, error) {
 
 	logrus.Debugf("config %s loaded", file)
 	cl.dst.SourceFile = file
-	return cl.dst, nil
+
+	// validate config
+	return cl.Validate()
 }
 
 // LoadGlobalConfig load global config file  - ~/.eirctl/config.yaml
@@ -127,6 +129,20 @@ func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 	}
 
 	return cl.dst, err
+}
+
+var ErrValidation = errors.New("validation failed")
+
+// Validate checks the built config for any missed references
+func (cl *Loader) Validate() (*Config, error) {
+	// check tasks are correctly set up
+	for _, task := range cl.dst.Tasks {
+		// check referenced contexts
+		if _, ok := cl.dst.Contexts[task.Context]; !ok {
+			return nil, fmt.Errorf("%w, task (%s) references missing context (%s)", ErrValidation, task.Name, task.Context)
+		}
+	}
+	return cl.dst, nil
 }
 
 func (cl *Loader) reset() {
