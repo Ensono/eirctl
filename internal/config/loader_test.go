@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,9 @@ import (
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/task"
+	"github.com/Ensono/eirctl/variables"
 )
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
@@ -430,4 +434,44 @@ func TestLoader_contexts_with_containerArgs_errors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Loader_Validate(t *testing.T) {
+
+	t.Run("correctly references config", func(t *testing.T) {
+		t.Parallel()
+		mcfg := &config.Config{
+			Tasks: map[string]*task.Task{
+				"foo":         &task.Task{Context: "exists"},
+				"no_ctx_task": &task.Task{Name: "no_ctx_task", Context: ""},
+			},
+			Contexts: map[string]*runner.ExecutionContext{
+				"exists": runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
+			},
+		}
+		cfg := config.NewConfigLoader(mcfg)
+		if _, err := cfg.Validate(); err != nil {
+			t.Errorf("got %v, wanted nil", err)
+		}
+	})
+
+	t.Run("errors on missing context reference", func(t *testing.T) {
+		t.Parallel()
+		mcfg := &config.Config{
+			Tasks: map[string]*task.Task{
+				"foo": &task.Task{Name: "foo", Context: "not_found"},
+			},
+			Contexts: map[string]*runner.ExecutionContext{
+				"exists": runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
+			},
+		}
+		cfg := config.NewConfigLoader(mcfg)
+		_, err := cfg.Validate()
+		if err == nil {
+			t.Errorf("got nil, wanted %v", config.ErrValidation)
+		}
+		if !errors.Is(err, config.ErrValidation) {
+			t.Errorf("incorrect error type thrown, got %q, wanted %q", err, config.ErrValidation)
+		}
+	})
 }
