@@ -137,7 +137,12 @@ func TestConfig_TaskLoader(t *testing.T) {
 		_, _ = tmpEnv.Write([]byte(`FOO=taskX
 ANOTHER_VAR=moo`))
 
-		yamlTasks := fmt.Sprintf(`tasks:
+		yamlTasks := fmt.Sprintf(`
+contexts:
+  podman:
+    container:
+      name: podman:latest
+tasks:
   task-p2:1:
     command:
       - |
@@ -163,7 +168,7 @@ ANOTHER_VAR=moo`))
 		cl := config.NewConfigLoader(config.NewConfig())
 		eirctlCfg, err := cl.Load(file)
 		if err != nil {
-			t.Error()
+			t.Fatal(err)
 		}
 		val, ok := eirctlCfg.Tasks["task-p2:1"]
 		if !ok {
