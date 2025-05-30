@@ -137,9 +137,11 @@ var ErrValidation = errors.New("validation failed")
 func (cl *Loader) Validate() (*Config, error) {
 	// check tasks are correctly set up
 	for _, task := range cl.dst.Tasks {
-		// check referenced contexts
-		if _, ok := cl.dst.Contexts[task.Context]; !ok {
-			return nil, fmt.Errorf("%w, task (%s) references missing context (%s)", ErrValidation, task.Name, task.Context)
+		// check referenced contexts - when declared, that they exist!
+		if task.Context != "" {
+			if _, ok := cl.dst.Contexts[task.Context]; !ok {
+				return nil, fmt.Errorf("%w, task (%s) references missing context (%s)", ErrValidation, task.Name, task.Context)
+			}
 		}
 	}
 	return cl.dst, nil

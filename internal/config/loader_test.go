@@ -441,7 +441,8 @@ func Test_Loader_Validate(t *testing.T) {
 		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
-				"foo": &task.Task{Context: "exists"},
+				"foo":         &task.Task{Context: "exists"},
+				"no_ctx_task": &task.Task{Name: "no_ctx_task", Context: ""},
 			},
 			Contexts: map[string]*runner.ExecutionContext{
 				"exists": runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
@@ -454,6 +455,7 @@ func Test_Loader_Validate(t *testing.T) {
 	})
 
 	t.Run("errors on missing context reference", func(t *testing.T) {
+		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
 				"foo": &task.Task{Name: "foo", Context: "not_found"},
