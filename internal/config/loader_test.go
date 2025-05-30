@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -465,8 +466,12 @@ func Test_Loader_Validate(t *testing.T) {
 			},
 		}
 		cfg := config.NewConfigLoader(mcfg)
-		if _, err := cfg.Validate(); err == nil {
+		_, err := cfg.Validate()
+		if err == nil {
 			t.Errorf("got nil, wanted %v", config.ErrValidation)
+		}
+		if !errors.Is(err, config.ErrValidation) {
+			t.Errorf("incorrect error type thrown, got %q, wanted %q", err, config.ErrValidation)
 		}
 	})
 }
