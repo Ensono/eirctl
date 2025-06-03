@@ -1,4 +1,4 @@
-contexts: 
+contexts:
   foo:
     container:
       name: golang:1.24.3-bookworm
@@ -21,9 +21,16 @@ pipelines:
 
   graph:pipeline2:
     - task: graph:task1
-  
+
   error:
     - task: error:task
+
+  missing:required:env:
+    - task: graph:task1
+    - task: env:req
+      depends_on: graph:task1
+    - task: env:req
+      name: parallel-fail
 
 tasks:
   graph:task1:
@@ -34,10 +41,15 @@ tasks:
 
   graph:task3:
     command: "echo 'hello, world!'"
-  
+
   error:task:
     command: false
-  
+
   error:task2:
     command: exit 1
     allow_failure: true
+
+  env:req:
+    command: echo $FOO
+    required:
+      env: [FOO]
