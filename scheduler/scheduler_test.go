@@ -200,7 +200,7 @@ func Test_Scheduler_ConditionErroredStage(t *testing.T) {
 	if stage1.ReadStatus() != scheduler.StatusDone {
 		t.Errorf("stage 1 incorrectly finished, got %v wanted Done", stage1.ReadStatus())
 	}
-	// This is now kind of pointless 
+	// This is now kind of pointless
 	if stage2.ReadStatus() != scheduler.StatusSkipped {
 		t.Errorf("stage 2 incorrectly finished, got %v wanted Done", stage2.ReadStatus())
 	}
@@ -235,7 +235,7 @@ func Test_Scheduler_Error_Required(t *testing.T) {
 	if stage1.ReadStatus() != scheduler.StatusDone {
 		t.Errorf("stage 1 incorrectly finished, got %v wanted Done", stage1.ReadStatus())
 	}
-	// This is now kind of pointless 
+	// This is now kind of pointless
 	if stage2.ReadStatus() != scheduler.StatusSkipped {
 		t.Errorf("stage 2 incorrectly finished, got %v wanted Done", stage2.ReadStatus())
 	}
