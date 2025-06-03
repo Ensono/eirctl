@@ -193,9 +193,8 @@ func (c *ContainerContext) BindMounts() []BindVolume {
 		// we split on the `:/`
 		// The target mount path MUST always be an absolute path i.e. `/path/in/container`
 		splitVol := strings.Split(vol, ":/")
-		if len(splitVol) == 2 {
-			bv = append(bv, BindVolume{SourcePath: splitVol[0], TargetPath: "/" + splitVol[1]})
-		}
+		// adjusted for edge scenarios with windows and mac folder names
+		bv = append(bv, BindVolume{SourcePath: strings.Join(splitVol[0:len(splitVol)-1], ":/"), TargetPath: "/" + splitVol[len(splitVol)-1]})
 	}
 	return bv
 }

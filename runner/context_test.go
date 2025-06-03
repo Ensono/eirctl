@@ -288,13 +288,58 @@ func Test_ContainerContext_Volumes(t *testing.T) {
 			got := cc.Volumes()
 			for vol := range got {
 				if !slices.Contains(tt.want, vol) {
-					t.Errorf("incorect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
+					t.Errorf("incorrect volume mappging, got: %s, wanted: %s\n", vol, tt.want)
 				}
 			}
 		})
 	}
 }
 
+func Test_ContainerContext_Volume_BindMounts(t *testing.T) {
+	ttests := map[string]struct {
+		volumes        []string
+		wantSourcePath []string
+		wantTargetPath []string
+	}{
+		"unix like": {
+			volumes:        []string{"/foo/bar:/in"},
+			wantSourcePath: []string{"/foo/bar"},
+			wantTargetPath: []string{"/in"},
+		},
+		"win like": {
+			volumes:        []string{"c:/foo/bar/baz/modules:/container/path"},
+			wantSourcePath: []string{"c:/foo/bar/baz/modules"},
+			wantTargetPath: []string{"/container/path"},
+		},
+		"darwin like": {
+			volumes:        []string{"/foo/:bar:/baz/modules:/container/path"},
+			wantSourcePath: []string{"/foo/:bar:/baz/modules"},
+			wantTargetPath: []string{"/container/path"},
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			// t.Parallel()
+			cc := runner.NewContainerContext("image:latest")
+			cc.WithVolumes(tt.volumes...)
+			got := cc.BindMounts()
+
+			if len(got) < 1 {
+				t.Fatal("expecting at least 1 BindMount...")
+			}
+
+			for _, bm := range got {
+				if !slices.Contains(tt.wantSourcePath, bm.SourcePath) {
+					t.Errorf("incorrect volume bind mount translation, got: %s, wanted: %v\n", bm.SourcePath, tt.wantSourcePath)
+				}
+				if !slices.Contains(tt.wantTargetPath, bm.TargetPath) {
+					t.Errorf("incorrect volume bind mount translation, got: %s, wanted: %v\n", bm.TargetPath, tt.wantTargetPath)
+				}
+			}
+		})
+	}
+
+}
 func Test_ContainerContext_ParseArgs_env_replacement(t *testing.T) {
 	ttests := map[string]struct {
 		containerArgs []string
