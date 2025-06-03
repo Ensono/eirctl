@@ -45,6 +45,14 @@ func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 
 	if err := cmd.Execute(); err != nil {
 		if testInput.errored {
+			if len(testInput.output) > 0 {
+				eo, lo := errOut.String(), logOut.String()
+				for _, v := range testInput.output {
+					if !(strings.Contains(eo, v) || strings.Contains(lo, v)) {
+						t.Errorf("\nerror out got: %s\nstdout got: %v\ndoes not contain: %v\n", eo, lo, v)
+					}
+				}
+			}
 			return
 		}
 		t.Fatalf("\ngot: %v\nwanted <nil>\n", err)

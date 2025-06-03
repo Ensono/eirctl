@@ -88,7 +88,7 @@ func Test_errors_on_run(t *testing.T) {
 
 	t.Run("errors inside task", func(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
-		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "error:task", "--raw", "--no-summary"}, errored: true, output: []string{"file not found in $PATH"}})
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "error:task", "--raw", "--no-summary"}, errored: true, output: []string{"exit status 1"}})
 	})
 
 	t.Run("errors inside task 2", func(t *testing.T) {
@@ -111,5 +111,9 @@ func Test_errors_on_run(t *testing.T) {
 		os.Setenv("EIRCTL_CONFIG_FILE", "testdata/task.yaml")
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task-notfound.yaml", "run", "task", "error", "--raw", "--", "first", "second"}, errored: true})
+	})
+
+	t.Run("pipeline on missing required in task", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "pipeline", "missing:required:env"}, errored: true, output: []string{"missing required input", "FOO"}})
 	})
 }

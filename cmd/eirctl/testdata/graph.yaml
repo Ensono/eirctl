@@ -25,6 +25,13 @@ pipelines:
   error:
     - task: error:task
 
+  missing:required:env:
+    - task: graph:task1
+    - task: env:req
+      depends_on: graph:task1
+    - task: env:req
+      name: parallel-fail
+
 tasks:
   graph:task1:
     command: "echo 'hello, world!'"
@@ -41,3 +48,8 @@ tasks:
   error:task2:
     command: exit 1
     allow_failure: true
+
+  env:req:
+    command: echo $FOO
+    required: 
+      env: [FOO]
