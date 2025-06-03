@@ -74,7 +74,7 @@ func PrintSummary(g *scheduler.ExecutionGraph, chanOut io.Writer, detailedSummar
 			if stage.Task != nil {
 				log = strings.TrimSpace(stage.Task.ErrorMessage())
 			}
-			if stage.Pipeline != nil && log == "" {
+			if stage.Pipeline != nil && stage.Pipeline.Error() != nil && log == "" {
 				log = stage.Pipeline.Error().Error()
 			}
 			fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("- Stage %s failed in %s\n", stage.Name, stage.Duration()))
