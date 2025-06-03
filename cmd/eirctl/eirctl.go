@@ -59,6 +59,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 			Short:                      "EIR optimised task runner",
 			Long:                       ``,
 			SuggestionsMinimumDistance: 1,
+			SilenceErrors:              true, // handle errors in the main
 		},
 	}
 

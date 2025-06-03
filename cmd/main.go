@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	eirctlcmd "github.com/Ensono/eirctl/cmd/eirctl"
+	"github.com/Ensono/eirctl/internal/cmdutils"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -68,6 +69,6 @@ func main() {
 	eirctlRootCmd, stop := cmdSetUp()
 	defer stop()
 	if err := eirctlRootCmd.Execute(); err != nil {
-		logrus.Fatal(err)
+		logrus.Fatalf(cmdutils.RED_TERMINAL, err)
 	}
 }

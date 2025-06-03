@@ -14,7 +14,7 @@ var (
 	ErrCycleDetected = errors.New("cycle detected")
 	// ErrNodeNotFound occurs when node is not found in the graph
 	ErrNodeNotFound = errors.New("node not found")
-	ErrRunTimeFault = errors.New("task execution fault")
+	ErrRunTimeFault = errors.New("execution fault")
 )
 
 const (
