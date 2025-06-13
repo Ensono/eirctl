@@ -62,11 +62,11 @@ func Test_HandleOutputCapture(t *testing.T) {
 		wantKey string
 		wantVal string
 	}{
-		"clean input": {[]byte(`export TASK_OUTPUT_FOO=bar`), "FOO", "bar"},
+		"clean input": {[]byte(`export EIRCTL_TASK_OUTPUT_FOO=bar`), "FOO", "bar"},
 		"multiline input": {[]byte(`export BAR=Bassdd
-export TASK_OUTPUT_FOO="bar"
+export EIRCTL_TASK_OUTPUT_FOO="bar"
 `), "FOO", "bar"},
-		"single quotes": {[]byte(`export TASK_OUTPUT_FOO='bar'`), "FOO", "bar"},
+		"single quotes": {[]byte(`export EIRCTL_TASK_OUTPUT_FOO='bar'`), "FOO", "bar"},
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {

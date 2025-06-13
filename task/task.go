@@ -290,7 +290,7 @@ func (t *Task) Output() string {
 	return ""
 }
 
-const prefix string = `TASK_OUTPUT_`
+const prefix string = `EIRCTL_TASK_OUTPUT_`
 
 // HandleOutputCapture
 func (t *Task) HandleOutputCapture(b []byte) {
