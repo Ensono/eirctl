@@ -7,7 +7,6 @@ import (
 
 	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/task"
-	"github.com/sirupsen/logrus"
 )
 
 func TestOutput_prefixedOutputDecorator(t *testing.T) {
@@ -34,16 +33,15 @@ multiline stuff
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			l, b := &bytes.Buffer{}, &bytes.Buffer{}
-			logrus.SetOutput(l)
+			b := &bytes.Buffer{}
 
-			dec := output.NewPrefixedOutputWriter(&task.Task{Name: "task1"}, b)
+			dec := output.NewPrefixedOutputWriter(task.NewTask("task1"), b)
 			err := dec.WriteHeader()
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if !strings.Contains(l.String(), "Running task task1...") {
+			if !strings.Contains(b.String(), "Running task task1...") {
 				t.Fatal()
 			}
 
@@ -51,7 +49,7 @@ multiline stuff
 			if err != nil && n == 0 {
 				t.Fatal()
 			}
-			if !strings.EqualFold(b.String(), tt.expect) {
+			if !strings.Contains(b.String(), tt.expect) {
 				t.Fatalf("got: %s\nwanted: %s\n", b.String(), tt.expect)
 			}
 
@@ -60,7 +58,7 @@ multiline stuff
 				t.Fatal(err)
 			}
 
-			if !strings.Contains(l.String(), "task1 finished") {
+			if !strings.Contains(b.String(), "task1 finished") {
 				t.Fatal()
 			}
 		})
