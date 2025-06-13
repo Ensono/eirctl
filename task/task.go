@@ -1,8 +1,10 @@
 package task
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +19,10 @@ type ArtifactType string
 const (
 	FileArtifactType   ArtifactType = "file"
 	DotEnvArtifactType ArtifactType = "dotenv"
+	// RuntimeEnvArtifactType captures any exported/set variables inside a task execution
+	// Stores them in task output which can later be used inside a pipeline
+	// [Experimental]
+	RuntimeEnvArtifactType ArtifactType = "env"
 )
 
 // Artifact holds the information about the artifact to produce
@@ -32,10 +38,10 @@ type Artifact struct {
 	Name string `mapstructure:"name" yaml:"name,omitempty" json:"name,omitempty"`
 	// Path is the glob like pattern to the
 	// source of the file(s) to store as an output
-	Path string `mapstructure:"path" yaml:"path" json:"path"`
+	Path string `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty"`
 	// Type is the artifact type
 	// valid values are `file`|`dotenv`
-	Type ArtifactType `mapstructure:"type" yaml:"type" json:"type" jsonschema:"enum=dotenv,enum=file,default=file"`
+	Type ArtifactType `mapstructure:"type" yaml:"type" json:"type" jsonschema:"enum=dotenv,enum=file,enum=env,default=dotenv"`
 }
 
 type RequiredInput struct {
@@ -84,18 +90,24 @@ func (ri *RequiredInput) Check(env *variables.Variables, vars *variables.Variabl
 // // CheckRequiredVarsArgs ensures all required vars and args are present
 // //
 // // This is a compile time check
-// func (ri *RequiredInput) CheckVars(vars *variables.Variables) error {
-// 	notFound := []string{}
-// 	for _, v := range ri.Vars {
-// 		if !vars.Has(v) {
-// 			notFound = append(notFound, v)
-// 		}
-// 	}
-// 	if len(notFound) > 0 {
-// 		return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
-// 	}
-// 	return nil
-// }
+//
+//	func (ri *RequiredInput) CheckVars(vars *variables.Variables) error {
+//		notFound := []string{}
+//		for _, v := range ri.Vars {
+//			if !vars.Has(v) {
+//				notFound = append(notFound, v)
+//			}
+//		}
+//		if len(notFound) > 0 {
+//			return fmt.Errorf("%w, %v is missing from the required variables (%v)", ErrRequiredInputMissing, notFound, ri.Vars)
+//		}
+//		return nil
+//	}
+
+type outputCapture struct {
+	mu     *sync.Mutex
+	output map[string]string
+}
 
 // Task is a structure that describes task, its commands, environment, working directory etc.
 // After task completes it provides task's execution status, exit code, stdout and stderr
@@ -122,26 +134,28 @@ type Task struct {
 	Required    *RequiredInput
 	// internal fields updated by a mutex
 	// only used with the single instance of the task
-	mu        sync.Mutex // guards the below private fields
-	start     time.Time
-	end       time.Time
-	skipped   bool
-	exitCode  int16
-	errored   bool
-	errorVal  error
-	Generator map[string]any
+	mu             sync.Mutex // guards the below private fields
+	start          time.Time
+	end            time.Time
+	skipped        bool
+	exitCode       int16
+	errored        bool
+	errorVal       error
+	capturedOutput outputCapture
+	Generator      map[string]any
 }
 
 // NewTask creates new Task instance
 func NewTask(name string) *Task {
 	return &Task{
-		Name:      name,
-		Env:       variables.NewVariables(),
-		Variables: variables.NewVariables(),
-		Required:  &RequiredInput{},
-		exitCode:  -1,
-		errored:   false,
-		mu:        sync.Mutex{},
+		Name:           name,
+		Env:            variables.NewVariables(),
+		Variables:      variables.NewVariables(),
+		Required:       &RequiredInput{},
+		exitCode:       -1,
+		errored:        false,
+		mu:             sync.Mutex{},
+		capturedOutput: outputCapture{mu: &sync.Mutex{}, output: map[string]string{}},
 	}
 }
 
@@ -274,4 +288,29 @@ func (t *Task) GetVariations() []map[string]string {
 // This is left as a legacy method for now. will be removed in the stable 2.x versions
 func (t *Task) Output() string {
 	return ""
+}
+
+const prefix string = `TASK_OUTPUT_`
+
+// HandleOutputCapture
+func (t *Task) HandleOutputCapture(b []byte) {
+	segments := bytes.Fields(b)
+	for _, segment := range segments {
+		if bytes.HasPrefix(segment, []byte(prefix)) {
+			str := string(segment)
+			parts := strings.SplitN(str, "=", 2)
+			if len(parts) == 2 {
+				key, value := parts[0], parts[1]
+				t.capturedOutput.mu.Lock()
+				t.capturedOutput.output[strings.TrimPrefix(key, prefix)] = strings.Trim(value, `'"`)
+				t.capturedOutput.mu.Unlock()
+			}
+		}
+	}
+}
+
+func (t *Task) OutputCaptured() map[string]string {
+	t.capturedOutput.mu.Lock()
+	defer t.capturedOutput.mu.Unlock()
+	return t.capturedOutput.output
 }

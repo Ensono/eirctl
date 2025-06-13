@@ -98,6 +98,7 @@ func NewCockpitOutputWriter(t *task.Task, w io.Writer, close chan bool) *cockpit
 }
 
 func (d *cockpitOutputDecorator) Write(p []byte) (int, error) {
+	d.t.HandleOutputCapture(p)
 	return len(p), nil
 }
 

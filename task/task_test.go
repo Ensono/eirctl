@@ -1,12 +1,14 @@
-package task
+package task_test
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/Ensono/eirctl/task"
 )
 
 func TestTask(t *testing.T) {
-	task := FromCommands("t1", "ls /tmp")
+	task := task.FromCommands("t1", "ls /tmp")
 	task.WithEnv("TEST_ENV", "TEST_VAL")
 
 	if task.Commands[0] != "ls /tmp" {
@@ -23,33 +25,61 @@ func TestTask(t *testing.T) {
 }
 
 func TestTask_ErrorMessage(t *testing.T) {
-	task := NewTask("abc")
-	task.WithError(fmt.Errorf("true"))
+	tsk := task.NewTask("abc")
+	tsk.WithError(fmt.Errorf("true"))
 
-	if task.ErrorMessage() != "true" {
+	if tsk.ErrorMessage() != "true" {
 		t.Error()
 	}
 
-	task = NewTask("errored")
-	if task.ErrorMessage() != "" {
+	tsk = task.NewTask("errored")
+	if tsk.ErrorMessage() != "" {
 		t.Error()
 	}
 
-	task.WithError(fmt.Errorf("true"))
-	if task.Error().Error() != "true" {
+	tsk.WithError(fmt.Errorf("true"))
+	if tsk.Error().Error() != "true" {
 		t.Error()
 	}
 }
 
 func TestNewTask_WithVariations(t *testing.T) {
-	task := FromCommands("t1", "ls /tmp")
+	tsk := task.FromCommands("t1", "ls /tmp")
 
-	if len(task.GetVariations()) != 1 {
+	if len(tsk.GetVariations()) != 1 {
 		t.Error()
 	}
 
-	task.Variations = []map[string]string{{"GOOS": "linux"}, {"GOOS": "windows"}}
-	if len(task.GetVariations()) != 2 {
+	tsk.Variations = []map[string]string{{"GOOS": "linux"}, {"GOOS": "windows"}}
+	if len(tsk.GetVariations()) != 2 {
 		t.Error()
+	}
+}
+
+func Test_HandleOutputCapture(t *testing.T) {
+	ttests := map[string]struct {
+		b       []byte
+		wantKey string
+		wantVal string
+	}{
+		"clean input": {[]byte(`export TASK_OUTPUT_FOO=bar`), "FOO", "bar"},
+		"multiline input": {[]byte(`export BAR=Bassdd
+export TASK_OUTPUT_FOO="bar"
+`), "FOO", "bar"},
+		"single quotes": {[]byte(`export TASK_OUTPUT_FOO='bar'`), "FOO", "bar"},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			tsk := task.NewTask("")
+			tsk.HandleOutputCapture(tt.b)
+			got := tsk.OutputCaptured()
+			val, ok := got[tt.wantKey]
+			if !ok {
+				t.Fatal("got nil, wanted key to be present in capture output")
+			}
+			if val != tt.wantVal {
+				t.Errorf("got %s, wanted %s", val, tt.wantVal)
+			}
+		})
 	}
 }

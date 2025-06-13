@@ -17,16 +17,16 @@
           "type": "string",
           "enum": [
             "dotenv",
-            "file"
+            "file",
+            "env"
           ],
           "description": "Type is the artifact type\nvalid values are `file`|`dotenv`",
-          "default": "file"
+          "default": "dotenv"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "path",
         "type"
       ],
       "description": "Artifact holds the information about the artifact to produce for the specific task."
