@@ -4,7 +4,7 @@
 
 Any task can assign outputs in a form of files or a special dotenv format output which is then added to the tascktl runner and available to all the subsequent tasks.
 
-> Currently onle dotenv is available as an artifact output
+## Dotenv
 
 The artifacts are only usefil inside pipelines, ensuring you provide a depends on will make sure the variables are ready.
 
@@ -56,4 +56,35 @@ tasks:
     command:
       - echo "task:two ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo333"
     context: newdocker:ctx
+```
+
+## Env [Experimental]
+
+When writing a command and a bash style setting of a variable or export is placed in the command along with a artifacts capture specified as `env` the downstream tasks in a pipeline are able to pick them up as environmnent variables
+
+> Experimental - take care when using in production. currently there is no prefixing of variables across tasks in pipelines so the runner environment will just be overwritten with newly set variables
+
+Using the prefix of `EIRCTL_TASK_OUTPUT_`
+
+```yaml
+tasks:
+  run:container:nouveau:
+    context: nouveau:container
+    command:
+      - |
+        echo EIRCTL_TASK_OUTPUT_FOO=$FOO
+    env:
+      FOO: bar
+    artifacts:
+      type: env
+
+  consume:out:
+    command: |
+      echo $FOO
+
+pipelines:
+  set-out:
+    - task: run:container:nouveau
+    - task: consume:out
+      depends_on: run:container:nouveau
 ```

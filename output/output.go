@@ -41,7 +41,7 @@ func NewTaskOutput(t *task.Task, format string, stdout, stderr io.Writer) (*Task
 
 	switch OutputEnum(format) {
 	case RawOutput:
-		o.decorator = newRawOutputWriter(stdout)
+		o.decorator = newRawOutputWriter(t, stdout)
 	case PrefixedOutput:
 		o.decorator = NewPrefixedOutputWriter(t, stdout)
 	case CockpitOutput:

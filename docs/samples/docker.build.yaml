@@ -6,15 +6,15 @@ contexts:
       name: alpine:latest
 
   # Example: using podman inside a container to build images
-  # 
+  #
   podman:container:
     container:
       name: quay.io/podman/stable
       container_args:
-        - --cap-add=sys_admin 
-        - --cap-add mknod 
-        - --device=/dev/fuse 
-        - --security-opt seccomp=unconfined 
+        - --cap-add=sys_admin
+        - --cap-add mknod
+        - --device=/dev/fuse
+        - --security-opt seccomp=unconfined
         - --security-opt label=disable
     env:
       DOCKER_CONFIG: /workspace/.taskctl/.docker
@@ -25,13 +25,13 @@ contexts:
   docker:build:
     container:
       # some container with the executor from kaniko in it
-      name: dnitsch/kaniko-test:0.0.3
+      name: docker.io/dnitsch/kaniko-test:0.0.3
     env:
       # /workspace/.taskctl is the default path where the current working directory gets mounted to
       # ensure you have a step before that runs relevant credential generation
       # Depending on your use case the auth credentials need to look in a certain way
       # https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#pushing-to-different-registries
-      # 
+      #
       DOCKER_CONFIG: /workspace/.taskctl/.docker
 
 pipelines:
@@ -41,8 +41,8 @@ pipelines:
       depends_on:
         - registry:auth
   # pipeline:ci:
-  #   - task: 
-  #   - 
+  #   - task:
+  #   -
 
 tasks:
   registry:auth:
@@ -56,14 +56,14 @@ tasks:
       type: file
 
   build:push:image:
-    description: | 
+    description: |
       Pushes an image to registry
-      
+
       Example: taskctl run build:push:image -c docs/samples/docker.build.yaml
     context: docker:build
     command:
       - executor --context . --dockerfile Dockerfile --destination dnitsch/app-kaniko-test:0.0.7
-  
+
   podman:build:push:
     context: podman:container
     description: |

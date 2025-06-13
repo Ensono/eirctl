@@ -1,16 +1,21 @@
 package output
 
-import "io"
+import (
+	"io"
+
+	"github.com/Ensono/eirctl/task"
+)
 
 // rawOutputDecorator sets up the writer
 // most commonly this will be a bytes.Buffer which is not concurrency safe
 // mu property locks it from multiple writes
 type rawOutputDecorator struct {
 	w *SafeWriter
+	t *task.Task
 }
 
-func newRawOutputWriter(w io.Writer) *rawOutputDecorator {
-	return &rawOutputDecorator{w: NewSafeWriter(w)}
+func newRawOutputWriter(t *task.Task, w io.Writer) *rawOutputDecorator {
+	return &rawOutputDecorator{w: NewSafeWriter(w), t: t}
 }
 
 func (d *rawOutputDecorator) WriteHeader() error {
@@ -18,6 +23,7 @@ func (d *rawOutputDecorator) WriteHeader() error {
 }
 
 func (d *rawOutputDecorator) Write(b []byte) (int, error) {
+	d.t.HandleOutputCapture(b)
 	return d.w.Write(b)
 }
 

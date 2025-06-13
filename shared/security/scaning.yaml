@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
+
+contexts:
+  yamllint:
+    container:
+      name: cytopia/yamllint:alpine-1
+      entrypoint: /usr/bin/env
+    envfile:
+      exclude:
+        - PATH
+        - HOME
+        - which_declare
+        - BASH_FUNC_
+
+tasks:
+  lint:yaml:
+    context: yamllint
+    description: Perform YAML Linting pass additiona arguments via -- stdin
+    command:
+      - yamllint -s -c {{ or (index . "YamlLintConf") "yamllint.conf" }} . {{ .Args }}
+    # required:
+    #   env:
