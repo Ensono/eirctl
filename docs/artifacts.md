@@ -88,3 +88,5 @@ pipelines:
     - task: consume:out
       depends_on: run:container:nouveau
 ```
+
+> Current limitation is that it has to be set directly in the task command and _NOT_ in a script called from command
