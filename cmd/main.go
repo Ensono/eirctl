@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"slices"
@@ -69,6 +70,7 @@ func main() {
 	eirctlRootCmd, stop := cmdSetUp()
 	defer stop()
 	if err := eirctlRootCmd.Execute(); err != nil {
-		logrus.Fatalf(cmdutils.RED_TERMINAL, err)
+		fmt.Fprintf(os.Stdout, cmdutils.RED_TERMINAL+"\n", err)
+		os.Exit(1)
 	}
 }

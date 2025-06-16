@@ -1,7 +1,7 @@
 name: Lint and Test
-on: 
+on:
   pull_request:
-    branches: 
+    branches:
       - main
   push:
     branches:
@@ -35,7 +35,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-24.04
-    env: 
+    env:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-24.04
-    needs: 
+    needs:
       - set-version-tag
       - lint
     env:
@@ -72,7 +72,7 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
-    
+
     - name: check schema
       run: |
         CI=true go run cmd/main.go generate_own_schema
@@ -80,7 +80,7 @@ jobs:
     - name: Test
       run: |
         go run cmd/main.go run pipeline test:unit
-  
+
     - name: Publish Junit style Test Report
       uses: mikepenz/action-junit-report@v5
       if: always() # always run even if the previous step fails
@@ -90,13 +90,13 @@ jobs:
         fail_on_failure: true
         check_name: Eirctl Unit Tests
 
-    - name: Analyze with SonarCloud         
+    - name: Analyze with SonarCloud
       uses: SonarSource/sonarcloud-github-action@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
       with:
-        args:             
+        args:
           -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
           -Dsonar.go.coverage.reportPaths=/github/workspace/.coverage/out
           -Dsonar.go.tests.reportPaths=/github/workspace/.coverage/report-junit.xml

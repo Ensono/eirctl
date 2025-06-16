@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/Ensono/eirctl/task"
-	"github.com/sirupsen/logrus"
 )
 
 type prefixedOutputDecorator struct {
@@ -34,6 +33,8 @@ func (d *prefixedOutputDecorator) Write(p []byte) (int, error) {
 		if advance == 0 {
 			break
 		}
+		// scan line for TASK_OUTPUT_
+		d.t.HandleOutputCapture(line)
 		if _, err := d.w.Write(fmt.Appendf(nil, "\x1b[36m%s\x1b[0m: %s\r\n", d.t.Name, line)); err != nil {
 			return 0, err
 		}
@@ -43,11 +44,11 @@ func (d *prefixedOutputDecorator) Write(p []byte) (int, error) {
 }
 
 func (d *prefixedOutputDecorator) WriteHeader() error {
-	logrus.Infof("Running task %s...", d.t.Name)
-	return nil
+	_, err := d.w.Write(fmt.Appendf(nil, "\x1b[36m[INFO]\x1b[0m: Running task %s...\n", d.t.Name))
+	return err
 }
 
 func (d *prefixedOutputDecorator) WriteFooter() error {
-	logrus.Infof("%s finished. Duration %s", d.t.Name, d.t.Duration())
-	return nil
+	_, err := d.w.Write(fmt.Appendf(nil, "\x1b[36m[INFO]\x1b[0m: %s finished. Duration %s\n", d.t.Name, d.t.Duration()))
+	return err
 }

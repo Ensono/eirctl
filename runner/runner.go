@@ -359,6 +359,7 @@ func (r *TaskRunner) checkTaskCondition(t *task.Task) (bool, error) {
 }
 
 func (r *TaskRunner) storeTaskOutput(t *task.Task) error {
+
 	// don't do anything if no artifacts are assigned
 	if t.Artifacts == nil {
 		return nil
@@ -373,6 +374,11 @@ func (r *TaskRunner) storeTaskOutput(t *task.Task) error {
 			return err
 		}
 		for envKey, envVar := range dotEnvVars {
+			r.env.Set(envKey, envVar)
+		}
+	}
+	if t.Artifacts.Type == task.RuntimeEnvArtifactType {
+		for envKey, envVar := range t.OutputCaptured() {
 			r.env.Set(envKey, envVar)
 		}
 	}
