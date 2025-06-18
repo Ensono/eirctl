@@ -35,8 +35,8 @@ func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (string, e
 		for _, v := range p.BFSNodesFlattened(scheduler.RootNodeName) {
 			stages = append(stages, v.Name)
 		}
-
-		initItems = append(initItems, item{title: pipeline, description: fmt.Sprintf("Stages: %s", strings.Join(stages, ","))})
+		initItems = append(initItems, NewItem(pipeline,
+			fmt.Sprintf("Pipeline stages: %s", strings.Join(stages, ","))))
 	}
 
 	if !showPipelineOnly {
@@ -48,12 +48,10 @@ func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (string, e
 			if desc == "" {
 				desc = "No description"
 			}
-			initItems = append(initItems, item{title: task.Name, description: "Task: " + desc})
-
+			initItems = append(initItems, NewItem(task.Name, "Task: "+desc))
 		}
 	}
-
-	return TuiRun(newModel(initItems))
+	return TuiRun(NewTuiModel(initItems))
 }
 
 // printSummary is a TUI helper

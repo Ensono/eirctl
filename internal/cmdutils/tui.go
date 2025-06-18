@@ -1,4 +1,3 @@
-// this is a manual test only file
 package cmdutils
 
 import (
@@ -15,57 +14,35 @@ type item struct {
 	description string
 }
 
+func NewItem(title, desc string) list.Item {
+	return item{title, desc}
+}
+
 func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.description }
 func (i item) FilterValue() string { return i.title }
 
-type listKeyMap struct {
-	toggleSpinner    key.Binding
-	toggleTitleBar   key.Binding
-	toggleStatusBar  key.Binding
-	togglePagination key.Binding
-	toggleHelpMenu   key.Binding
-}
-
-func newListKeyMap() *listKeyMap {
-	return &listKeyMap{
-		toggleSpinner: key.NewBinding(
-			key.WithKeys("s"),
-			key.WithHelp("s", "toggle spinner"),
-		),
-		toggleTitleBar: key.NewBinding(
-			key.WithKeys("T"),
-			key.WithHelp("T", "toggle title"),
-		),
-		toggleStatusBar: key.NewBinding(
-			key.WithKeys("S"),
-			key.WithHelp("S", "toggle status"),
-		),
-		togglePagination: key.NewBinding(
-			key.WithKeys("P"),
-			key.WithHelp("P", "toggle pagination"),
-		),
-		toggleHelpMenu: key.NewBinding(
-			key.WithKeys("H"),
-			key.WithHelp("H", "toggle help"),
-		),
-	}
-}
-
-type model struct {
+type TuiModel struct {
 	list               list.Model
-	keys               *listKeyMap
 	delegateKeys       *delegateKeyMap
 	selected           string
 	quitting           bool
 	appStyle           lipgloss.Style
 	statusMessageStyle lipgloss.Style
-	titleStyle         lipgloss.Style
 }
 
-func newModel(initialItems []list.Item) model {
+func (m TuiModel) Selected() string {
+	return m.selected
+}
+
+func NewTuiModel(initialItems []list.Item) TuiModel {
 	delegateKeys := newDelegateKeyMap()
-	listKeys := newListKeyMap()
+	tm := TuiModel{
+		delegateKeys: delegateKeys,
+		appStyle:     lipgloss.NewStyle().Padding(1, 2),
+		statusMessageStyle: lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}),
+	}
 
 	// Setup TUI
 	delegate := newItemDelegate(delegateKeys)
@@ -76,30 +53,15 @@ func newModel(initialItems []list.Item) model {
 		Background(lipgloss.Color("#25A065")).
 		Padding(0, 1)
 
-	optionsList.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			listKeys.toggleSpinner,
-			listKeys.toggleTitleBar,
-			listKeys.toggleStatusBar,
-			listKeys.togglePagination,
-			listKeys.toggleHelpMenu,
-		}
-	}
-
-	return model{
-		list:               optionsList,
-		keys:               listKeys,
-		delegateKeys:       delegateKeys,
-		appStyle:           lipgloss.NewStyle().Padding(1, 2),
-		statusMessageStyle: lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#04B575", Dark: "#04B575"}),
-	}
+	tm.list = optionsList
+	return tm
 }
 
-func (m model) Init() tea.Cmd {
+func (m TuiModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m TuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -114,34 +76,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
-		case key.Matches(msg, m.keys.toggleSpinner):
-			cmd := m.list.ToggleSpinner()
-			return m, cmd
-
-		case key.Matches(msg, m.keys.toggleTitleBar):
-			v := !m.list.ShowTitle()
-			m.list.SetShowTitle(v)
-			m.list.SetShowFilter(v)
-			m.list.SetFilteringEnabled(v)
-			return m, nil
-
-		case key.Matches(msg, m.keys.toggleStatusBar):
-			m.list.SetShowStatusBar(!m.list.ShowStatusBar())
-			return m, nil
-
-		case key.Matches(msg, m.keys.togglePagination):
-			m.list.SetShowPagination(!m.list.ShowPagination())
-			return m, nil
-
-		case key.Matches(msg, m.keys.toggleHelpMenu):
-			m.list.SetShowHelp(!m.list.ShowHelp())
-			return m, nil
-
 		case key.Matches(msg, m.delegateKeys.choose):
 			if selectedItem, ok := m.list.SelectedItem().(item); ok {
 				m.selected = selectedItem.Title()
 				m.quitting = true
 
+				// set a message for user about which task/pipeline runs
 				statusCmd := m.list.NewStatusMessage(m.statusMessageStyle.Render("Running " + m.selected + "..."))
 
 				// Quit after 1000 milliseconds (enough time for the message to render)
@@ -158,11 +98,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newListModel, cmd := m.list.Update(msg)
 	m.list = newListModel
 	cmds = append(cmds, cmd)
-
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m TuiModel) View() string {
 	return m.appStyle.Render(m.list.View())
 }
 
@@ -217,12 +156,12 @@ func newDelegateKeyMap() *delegateKeyMap {
 	}
 }
 
-func TuiRun(initialModel model) (string, error) {
+func TuiRun(initialModel TuiModel) (string, error) {
 	final, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run()
 	if err != nil {
 		return "", err
 	}
-	if m, ok := final.(model); ok && m.quitting {
+	if m, ok := final.(TuiModel); ok && m.quitting {
 		return m.selected, nil
 	}
 
