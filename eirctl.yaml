@@ -31,13 +31,6 @@ contexts:
         - HOME
 
 pipelines:
-  prepare:
-    - task: tidy
-    - task: test
-    - task: gofmt
-    - task: golint
-    - pipeline: lints
-
   lints:
     - task: golint
     - task: vuln:check
