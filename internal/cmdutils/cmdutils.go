@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/scheduler"
-	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/bubbles/list"
 )
 
 const (
@@ -21,29 +22,36 @@ const (
 	BOLD_TERMINAL    string = "\x1b[1m%s"
 )
 
-func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (taskOrPipelineSelected string, err error) {
-	optionMap := []huh.Option[string]{}
+func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (string, error) {
+	initItems := []list.Item{}
 
-	for pipeline := range conf.Pipelines {
-		optionMap = append(optionMap, huh.NewOption(fmt.Sprintf("%s - %s", pipeline, fmt.Sprintf(GREY_TERMINAL, "pipeline")), pipeline))
+	pipelines := utils.MapKeys(conf.Pipelines)
+	slices.Sort(pipelines)
+
+	for _, pipeline := range pipelines {
+		p := conf.Pipelines[pipeline]
+
+		stages := []string{}
+		for _, v := range p.BFSNodesFlattened(scheduler.RootNodeName) {
+			stages = append(stages, v.Name)
+		}
+		initItems = append(initItems, NewItem(pipeline,
+			fmt.Sprintf("Pipeline stages: %s", strings.Join(stages, ","))))
 	}
+
 	if !showPipelineOnly {
-		for _, task := range conf.Tasks {
-			optionMap = append(optionMap, huh.NewOption(fmt.Sprintf("%s - %s", task.Name, fmt.Sprintf(GREY_TERMINAL, task.Description)), task.Name))
+		tasks := utils.MapKeys(conf.Tasks)
+		slices.Sort(tasks)
+		for _, tsk := range tasks {
+			task := conf.Tasks[tsk]
+			desc := task.Description
+			if desc == "" {
+				desc = "No description"
+			}
+			initItems = append(initItems, NewItem(task.Name, "Task: "+desc))
 		}
 	}
-
-	taskOrPipelineName := huh.NewForm(
-		huh.NewGroup(
-			// select file name
-			huh.NewSelect[string]().
-				Title("Select the pipelines or tasks to run").
-				Options(optionMap...).
-				Value(&taskOrPipelineSelected),
-		),
-	).WithShowHelp(true)
-	err = taskOrPipelineName.Run()
-	return
+	return TuiRun(NewTuiModel(initItems))
 }
 
 // printSummary is a TUI helper
