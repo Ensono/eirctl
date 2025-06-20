@@ -33,8 +33,6 @@ jobs:
 
   release:
     runs-on: ubuntu-24.04
-    container:
-      image: golang:1.24.3-bookworm
     needs: set-version-tag
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
