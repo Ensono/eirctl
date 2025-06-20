@@ -104,7 +104,7 @@ tasks:
     allow_failure: true
 
   build:
-    # context: go1x
+    context: go1x
     description: Builds the binary
     command:
       - |
