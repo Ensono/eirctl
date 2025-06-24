@@ -3,6 +3,8 @@ package config_test
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -77,7 +79,7 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 	}{
 		"ssh without ref": {
 			rawString:       "git::ssh://github.com/example/repo//config.yaml",
-			wantCheckoutStr: "git@github.com:example/repo",
+			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
 			wantTag:         "",
 			wantYamlPath:    "config.yaml",
 		},
@@ -96,14 +98,36 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 		},
 		"ssh with ref": {
 			rawString:       "git::ssh://github.com/example/repo//config.yaml?ref=v1.0.1",
-			wantCheckoutStr: "git@github.com:example/repo",
+			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
 			wantTag:         "v1.0.1",
 			wantYamlPath:    "config.yaml",
 		},
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			// t.Parallel()
+			tmpSShNew := filepath.Join(os.TempDir(), ".ssh")
+			_ = os.Mkdir(tmpSShNew, 0777)
+			sshConfFile, _ := os.Create(filepath.Join(tmpSShNew, "config"))
+			_, _ = sshConfFile.Write([]byte(`
+Host github.com
+    Hostname ssh.github.com
+    Port 443
+    User git
+`))
+			sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
+			sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
+`))
+			oh := os.Getenv("HOME")
+			os.Setenv("HOME", os.TempDir())
+			defer os.Setenv("HOME", oh)
+			defer os.RemoveAll(tmpSShNew)
 			gs, err := config.NewGitSource(tt.rawString)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -121,6 +145,7 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 	}
 }
 func TestGitSource_Config_FromHead(t *testing.T) {
+	t.Parallel()
 	dummyConfig := &config.ConfigDefinition{
 		Contexts: map[string]*config.ContextDefinition{
 			"foo": {Container: &utils.Container{Name: "bar.io/qux"}},
@@ -227,7 +252,8 @@ func Test_LoaderGit_Integration(t *testing.T) {
 	ttests := map[string]struct {
 		rawStr string
 	}{
-		"use ssh over git public":                 {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
+		// "use ssh over git public": {"git::ssh://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
+		"use https over git public":               {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
 		"use straight git protocol and with .git": {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
 		"ref with branch":                         {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=main"},
 		"ref with complex tag":                    {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=0.7.0"},

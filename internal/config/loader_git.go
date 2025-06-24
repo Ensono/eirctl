@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	gitPrefix           = "git::"
-	gitPathSeparator    = "//"
-	gitConnectionString = "%s@%s:%s" // user@host:org/repo
+	gitPrefix              = "git::"
+	gitPathSeparator       = "//"
+	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
 )
 
 var (
@@ -36,7 +36,6 @@ var (
 )
 
 type GitSource struct {
-	// git storage for testing
 	repo           *git.Repository
 	gcOpts         *git.CloneOptions
 	gitCheckoutStr string
@@ -64,11 +63,11 @@ func NewGitSource(raw string) (*GitSource, error) {
 	case "ssh":
 		p1 := strings.Split(gitImportParts[2], "/")
 		// auth using ssh_config
-		auth, user, err := getGitSSHAuth(p1[0])
+		auth, sshConf, err := getGitSSHAuth(p1[0])
 		if err != nil {
 			return nil, err
 		}
-		gs.gcOpts.URL = fmt.Sprintf(gitConnectionString, user, p1[0], strings.Join(p1[1:], "/"))
+		gs.gcOpts.URL = fmt.Sprintf(sshGitConnectionString, sshConf.User, sshConf.Hostname, sshConf.Port, strings.Join(p1[1:], "/"))
 		gs.gcOpts.Auth = auth
 	case "http", "https":
 		gs.gcOpts.URL = "https://" + gitImportParts[2]
@@ -169,45 +168,76 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 	return r.CommitObject(ref.Hash())
 }
 
-// Git Auth
-func getSSHConfig(hostname string) (string, string, error) {
-	sshUser := ssh_config.Get(hostname, "User")
-	identityFile := ssh_config.Get(hostname, "IdentityFile")
-	if identityFile == "" {
-		// go through the user default identity files
-		for _, f := range []string{"id_rsa", "id_ed25519"} {
-			identityFile = filepath.Join(utils.MustGetUserHomeDir(), ".ssh", f)
-			if utils.FileExists(identityFile) {
-				return sshUser, identityFile, nil
-			}
-		}
-		return "", "", fmt.Errorf("%w\nfailed to identify a default identity file for host", ErrGitOperation)
-	}
-	return sshUser, identityFile, nil
+type SSHConfigAuth struct {
+	User         string
+	IdentityFile string
+	Port         string
+	Hostname     string
 }
-func getGitSSHAuth(host string) (*gitssh.PublicKeys, string, error) {
-	user, keyPath, err := getSSHConfig(host)
-	if err != nil {
-		return nil, "", err
+
+// Git Auth
+func getSSHConfig(sshCfg *ssh_config.Config, hostname string) (SSHConfigAuth, error) {
+
+	sc := SSHConfigAuth{}
+
+	sc.User, _ = sshCfg.Get(hostname, "User")
+	sc.Port, _ = sshCfg.Get(hostname, "Port")
+	sc.Hostname, _ = sshCfg.Get(hostname, "Hostname")
+	sc.IdentityFile, _ = sshCfg.Get(hostname, "IdentityFile")
+
+	if sc.Port == "" {
+		sc.Port = ssh_config.Default("Port")
 	}
-	if user == "" {
-		user = "git"
+	if sc.User == "" {
+		sc.User = ssh_config.Default("User")
+	}
+	if sc.Hostname == "" {
+		sc.Hostname = hostname
 	}
 
-	key, err := os.ReadFile(utils.NormalizeHome(keyPath))
+	if sc.IdentityFile == "" {
+		// go through the user default identity files
+		for _, f := range []string{"id_rsa", "id_ed25519"} {
+			identityFile := filepath.Join(utils.MustGetUserHomeDir(), ".ssh", f)
+			if utils.FileExists(identityFile) {
+				sc.IdentityFile = identityFile
+				return sc, nil
+			}
+		}
+		return sc, fmt.Errorf("%w\nfailed to identify a default identity file for host", ErrGitOperation)
+	}
+	return sc, nil
+}
+
+func getGitSSHAuth(host string) (*gitssh.PublicKeys, SSHConfigAuth, error) {
+	cfgPath := filepath.Join(utils.MustGetUserHomeDir(), ".ssh", "config")
+	f, err := os.Open(cfgPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
+		return nil, SSHConfigAuth{}, err
+	}
+	defer f.Close()
+	cfg, err := ssh_config.Decode(f)
+	if err != nil {
+		return nil, SSHConfigAuth{}, err
+	}
+	sc, err := getSSHConfig(cfg, host)
+	if err != nil {
+		return nil, sc, err
+	}
+	key, err := os.ReadFile(utils.NormalizeHome(sc.IdentityFile))
+	if err != nil {
+		return nil, sc, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
 	}
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+		return nil, sc, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
 	}
 
 	return &gitssh.PublicKeys{
-		User:   user,
+		User:   sc.User,
 		Signer: signer,
 		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		},
-	}, user, nil
+	}, sc, nil
 }
