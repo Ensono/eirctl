@@ -220,15 +220,3 @@ tasks:
     name: "tidy me up"
     command:
       - go mod tidy
-
-  test-var:
-    context: go1x
-    command:
-      - echo $VAR and $BAR
-    variations:
-      - VAR: "123"
-        BAR: "yo2"
-      - VAR: "456"
-        BAR: "yo3"
-      - VAR: "789"
-        BAR: "yo4"
