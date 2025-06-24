@@ -132,7 +132,7 @@ var getCommitFuncFallback []getCommitFunc = []getCommitFunc{
 	func(r *git.Repository, tag string) (*object.Commit, error) {
 		rev, err := r.ResolveRevision(plumbing.Revision(tag))
 		if err != nil {
-			return nil, fmt.Errorf("%w, gone through all fallbacks.", ErrGitTagBranchRevisionWrong)
+			return nil, fmt.Errorf("%w, gone through all fallbacks", ErrGitTagBranchRevisionWrong)
 		}
 		return r.CommitObject(plumbing.NewHashReference("", *rev).Hash())
 	},
@@ -149,7 +149,7 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 				return c, nil
 			}
 		}
-		return nil, fmt.Errorf("%w, gone through all fallbacks.", ErrGitTagBranchRevisionWrong)
+		return nil, fmt.Errorf("%w, gone through all fallbacks", ErrGitTagBranchRevisionWrong)
 	}
 	// use default current head
 	// Get file content from HEAD commit - as a default commit
