@@ -109,30 +109,29 @@ tasks:
     command:
       - |
         ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Revision={{.Revision}}\" -extldflags -static"
-        GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${GOOS}-${GOARCH}${BINARY_SUFFIX} cmd/main.go
+        GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
     variations:
-      - GOOS: windows
-        GOARCH: amd64
+      - BUILD_GOOS: windows
+        BUILD_GOARCH: amd64
         BINARY_SUFFIX: .exe
-      - GOOS: windows
-        GOARCH: "386"
+      - BUILD_GOOS: windows
+        BUILD_GOARCH: "386"
         BINARY_SUFFIX: .exe
-      - GOOS: windows
-        GOARCH: arm64
+      - BUILD_GOOS: windows
+        BUILD_GOARCH: arm64
         BINARY_SUFFIX: .exe
-      - GOOS: darwin
-        GOARCH: amd64
+      - BUILD_GOOS: darwin
+        BUILD_GOARCH: amd64
         BINARY_SUFFIX: ""
-      - GOOS: darwin
-        GOARCH: arm64
+      - BUILD_GOOS: darwin
+        BUILD_GOARCH: arm64
         BINARY_SUFFIX: ""
-      - GOOS: linux
-        GOARCH: arm64
+      - BUILD_GOOS: linux
+        BUILD_GOARCH: arm64
         BINARY_SUFFIX: ""
-      - GOOS: linux
-        GOARCH: amd64
+      - BUILD_GOOS: linux
+        BUILD_GOARCH: amd64
         BINARY_SUFFIX: ""
-    reset_context: true
     variables:
       RepoOwner: Ensono
       BinName: eirctl
@@ -221,3 +220,15 @@ tasks:
     name: "tidy me up"
     command:
       - go mod tidy
+
+  test-var:
+    context: go1x
+    command:
+      - echo $VAR and $BAR
+    variations:
+      - VAR: "123"
+        BAR: "yo2"
+      - VAR: "456"
+        BAR: "yo3"
+      - VAR: "789"
+        BAR: "yo4"

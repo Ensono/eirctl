@@ -227,7 +227,7 @@ func Test_LoaderGit_Integration(t *testing.T) {
 	ttests := map[string]struct {
 		rawStr string
 	}{
-		"use https over git public":               {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
+		"use ssh over git public":                 {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
 		"use straight git protocol and with .git": {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
 		"ref with branch":                         {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=main"},
 		"ref with complex tag":                    {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=0.7.0"},

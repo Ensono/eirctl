@@ -3,21 +3,26 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/sirupsen/logrus"
+	"github.com/kevinburke/ssh_config"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
 
 const (
 	gitPrefix           = "git::"
 	gitPathSeparator    = "//"
-	gitConnectionString = "git@%s:%s"
+	gitConnectionString = "%s@%s:%s" // user@host:org/repo
 )
 
 var (
@@ -33,6 +38,7 @@ var (
 type GitSource struct {
 	// git storage for testing
 	repo           *git.Repository
+	gcOpts         *git.CloneOptions
 	gitCheckoutStr string
 	yamlPath       string
 	tag            string
@@ -43,8 +49,12 @@ func IsGit(raw string) bool {
 }
 
 func NewGitSource(raw string) (*GitSource, error) {
-	gs := &GitSource{}
-	logrus.Debugf("git path: %s", raw)
+	gs := &GitSource{gcOpts: &git.CloneOptions{
+		// specifically set this here so that later it is a known value
+		RemoteName: "origin",
+		Depth:      0,
+	}}
+
 	gitImportParts := gitRegexp.FindStringSubmatch(raw)
 	if len(gitImportParts) != 5 {
 		return gs, fmt.Errorf("import %s, %w", raw, ErrIncorrectlyFormattedGit)
@@ -53,11 +63,17 @@ func NewGitSource(raw string) (*GitSource, error) {
 	switch gitImportParts[1] {
 	case "ssh":
 		p1 := strings.Split(gitImportParts[2], "/")
-		gs.gitCheckoutStr = fmt.Sprintf(gitConnectionString, p1[0], strings.Join(p1[1:], "/"))
+		// auth using ssh_config
+		auth, user, err := getGitSSHAuth(p1[0])
+		if err != nil {
+			return nil, err
+		}
+		gs.gcOpts.URL = fmt.Sprintf(gitConnectionString, user, p1[0], strings.Join(p1[1:], "/"))
+		gs.gcOpts.Auth = auth
 	case "http", "https":
-		gs.gitCheckoutStr = "https://" + gitImportParts[2]
+		gs.gcOpts.URL = "https://" + gitImportParts[2]
 	case "file":
-		gs.gitCheckoutStr = gitImportParts[2]
+		gs.gcOpts.URL = gitImportParts[2]
 	default:
 		return nil, fmt.Errorf("must specify a protocol (ssh|https|file)\n%w", ErrIncorrectlyFormattedGit)
 	}
@@ -68,16 +84,9 @@ func NewGitSource(raw string) (*GitSource, error) {
 	return gs, nil
 }
 
-// Clone calls
-func (gs *GitSource) Clone() error {
-	// default opts
-	gcOpts := &git.CloneOptions{
-		URL:        gs.gitCheckoutStr,
-		RemoteName: "origin", // specifically set this here so that later it is a known value
-		Depth:      0,
-	}
-	var err error
-	if gs.repo, err = git.Clone(memory.NewStorage(), nil, gcOpts); err != nil {
+// Clone calls the git clone operation
+func (gs *GitSource) Clone() (err error) {
+	if gs.repo, err = git.Clone(memory.NewStorage(), nil, gs.gcOpts); err != nil {
 		return err
 	}
 	return nil
@@ -88,7 +97,7 @@ func (gs *GitSource) YamlPath() string {
 }
 
 func (gs *GitSource) GitCheckoutStr() string {
-	return gs.gitCheckoutStr
+	return gs.gcOpts.URL
 }
 
 func (gs *GitSource) Tag() string {
@@ -158,4 +167,47 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 		return nil, fmt.Errorf("get HEAD: %w", err)
 	}
 	return r.CommitObject(ref.Hash())
+}
+
+// Git Auth
+func getSSHConfig(hostname string) (string, string, error) {
+	sshUser := ssh_config.Get(hostname, "User")
+	identityFile := ssh_config.Get(hostname, "IdentityFile")
+	if identityFile == "" {
+		// go through the user default identity files
+		for _, f := range []string{"id_rsa", "id_ed25519"} {
+			identityFile = filepath.Join(utils.MustGetUserHomeDir(), ".ssh", f)
+			if utils.FileExists(identityFile) {
+				return sshUser, identityFile, nil
+			}
+		}
+		return "", "", fmt.Errorf("%w\nfailed to identify a default identity file for host", ErrGitOperation)
+	}
+	return sshUser, identityFile, nil
+}
+func getGitSSHAuth(host string) (*gitssh.PublicKeys, string, error) {
+	user, keyPath, err := getSSHConfig(host)
+	if err != nil {
+		return nil, "", err
+	}
+	if user == "" {
+		user = "git"
+	}
+
+	key, err := os.ReadFile(utils.NormalizeHome(keyPath))
+	if err != nil {
+		return nil, "", fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+	}
+
+	return &gitssh.PublicKeys{
+		User:   user,
+		Signer: signer,
+		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		},
+	}, user, nil
 }
