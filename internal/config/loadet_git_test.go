@@ -231,6 +231,7 @@ func Test_LoaderGit_Integration(t *testing.T) {
 		"use straight git protocol and with .git": {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
 		"ref with branch":                         {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=main"},
 		"ref with complex tag":                    {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=0.7.0"},
+		"ref with sha1":                           {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=2f7bd79dc9b88a328f536bd97b8358c37d7abb9e"},
 	}
 
 	for name, tt := range ttests {

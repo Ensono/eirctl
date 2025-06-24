@@ -74,7 +74,7 @@ func (gs *GitSource) Clone() error {
 	gcOpts := &git.CloneOptions{
 		URL:        gs.gitCheckoutStr,
 		RemoteName: "origin", // specifically set this here so that later it is a known value
-		Depth:      1,
+		Depth:      0,
 	}
 	var err error
 	if gs.repo, err = git.Clone(memory.NewStorage(), nil, gcOpts); err != nil {
@@ -126,32 +126,30 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 	return cm, nil
 }
 
+type getCommitFunc func(r *git.Repository, tag string) (*object.Commit, error)
+
+var getCommitFuncFallback []getCommitFunc = []getCommitFunc{
+	func(r *git.Repository, tag string) (*object.Commit, error) {
+		rev, err := r.ResolveRevision(plumbing.Revision(tag))
+		if err != nil {
+			return nil, fmt.Errorf("%w, gone through all fallbacks.", ErrGitTagBranchRevisionWrong)
+		}
+		return r.CommitObject(plumbing.NewHashReference("", *rev).Hash())
+	},
+	func(r *git.Repository, tag string) (*object.Commit, error) {
+		return r.CommitObject(plumbing.NewHash(tag))
+	},
+}
+
 func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 	// If tag or branch was specified, check out the correct commit
 	if gs.tag != "" {
-		// Try as branch first
-		// currently hardcoding to "origin"
-		// but it shouldn't cause an issuse as the in-memory clone is controlled
-		ref, err := r.Reference(plumbing.NewRemoteReferenceName("origin", gs.tag), true)
-		if err != nil {
-			// Fallback to tag
-			ref, err = r.Reference(plumbing.NewTagReferenceName(gs.tag), true)
-			if err != nil {
-				// Try as revision (commit or tag/branch fallback)
-				rev, err := r.ResolveRevision(plumbing.Revision(gs.tag))
-				if err != nil {
-					return nil, fmt.Errorf("%w, gone through all fallbacks.", ErrGitTagBranchRevisionWrong)
-				}
-				return r.CommitObject(plumbing.NewHashReference("", *rev).Hash())
+		for _, fn := range getCommitFuncFallback {
+			if c, e := fn(r, gs.tag); e == nil && c != nil {
+				return c, nil
 			}
-			// ref exists based on tag - let's make sure it's not a complex tag with an annotation and hash reference
-			return resolveToCommit(r, ref.Hash())
-			// if tag, err := r.TagObject(ref.Hash()); err == nil {
-			// 	// de-reference the commit from tag
-			// 	return tag.Commit()
-			// }
 		}
-		return r.CommitObject(ref.Hash())
+		return nil, fmt.Errorf("%w, gone through all fallbacks.", ErrGitTagBranchRevisionWrong)
 	}
 	// use default current head
 	// Get file content from HEAD commit - as a default commit
@@ -159,35 +157,5 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get HEAD: %w", err)
 	}
-	commit, err := r.CommitObject(ref.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("get HEAD commit: %w", err)
-	}
-
-	return commit, nil
-}
-
-func resolveToCommit(repo *git.Repository, hash plumbing.Hash) (*object.Commit, error) {
-	// Try directly as a commit
-	if commit, err := repo.CommitObject(hash); err == nil {
-		return commit, nil
-	}
-
-	// Try as annotated tag
-	tagObj, err := repo.TagObject(hash)
-	if err != nil {
-		return nil, fmt.Errorf("not a commit or tag: %w", err)
-	}
-
-	// Recursively resolve the tag's target
-	target := tagObj.Target
-	switch tagObj.TargetType {
-	case plumbing.CommitObject:
-		return repo.CommitObject(target)
-	case plumbing.TagObject:
-		// Nested tag (tag of tag): recurse
-		return resolveToCommit(repo, target)
-	default:
-		return nil, fmt.Errorf("unsupported target type: %v", tagObj.TargetType)
-	}
+	return r.CommitObject(ref.Hash())
 }

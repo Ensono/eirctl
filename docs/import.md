@@ -3,7 +3,7 @@
 Eirctl supports merging of various configuration files from both local and remote sources.
 
 ```yaml
-# yaml-language-server: $schema=/Users/dusannitschneider/git/ensono/eirctl/schemas/schema_v1.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
 
 import:
   - https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/shared/infra/tf.yaml
