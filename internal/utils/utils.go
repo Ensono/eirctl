@@ -24,6 +24,7 @@ import (
 func IsURL(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil {
+		logrus.Debugf("is not (%s) a URL", s)
 		return false
 	}
 

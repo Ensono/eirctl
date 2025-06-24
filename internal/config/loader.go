@@ -17,6 +17,8 @@ import (
 var ErrConfigNotFound = errors.New("config file not found")
 
 // Loader reads and parses config files
+//
+// It recursively imports file/urls/git-paths via the import statement
 type Loader struct {
 	dst           *Config
 	imports       map[string]bool
@@ -151,23 +153,59 @@ func (cl *Loader) reset() {
 	cl.imports = make(map[string]bool)
 }
 
+type ConfigFunc func(cl *Loader, file string) (bool, *ConfigDefinition, error)
+
+// maintain the order of the slice as it's being loaded/validated
+var getGetConfigFunc []ConfigFunc = []ConfigFunc{
+	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
+		if utils.IsURL(file) {
+			logrus.Debugf("import (%s) is a URL", file)
+			cfg, err := cl.readURL(file)
+			return cfg != nil && err == nil, cfg, err
+		}
+		return false, nil, nil
+	},
+	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
+		if IsGit(file) {
+			logrus.Debugf("import (%s) is a git path", file)
+			gs, err := NewGitSource(file)
+			if errors.Is(err, ErrIncorrectlyFormattedGit) {
+				return false, nil, nil
+			}
+			if err := gs.Clone(); err != nil {
+				return false, nil, err
+			}
+			cfg, err := gs.Config()
+			return cfg != nil && err == nil, cfg, err
+		}
+		return false, nil, nil
+	},
+	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
+		if !utils.FileExists(file) {
+			return false, nil, fmt.Errorf("%s: %w", file, ErrConfigNotFound)
+		}
+		cfg, err := cl.readFile(file)
+		return cfg != nil && err == nil, cfg, err
+	},
+}
+
 // load is called with the base eirctl.yaml|json|toml files for the first time
 // recursively called by other imports if they exist and their imports
-func (cl *Loader) load(file string) (config *ConfigDefinition, err error) {
+func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 	// ensures a recursive forever loop does not occur and set file to visited
 	cl.imports[file] = true
-
-	if utils.IsURL(file) {
-		config, err = cl.readURL(file)
-	} else {
-		if !utils.FileExists(file) {
-			return config, fmt.Errorf("%s: %w", file, ErrConfigNotFound)
+	config := &ConfigDefinition{}
+	for _, fn := range getGetConfigFunc {
+		ok, cfg, err := fn(cl, file)
+		if err != nil {
+			return nil, err
 		}
-		config, err = cl.readFile(file)
+		if ok && cfg != nil {
+			config = cfg
+			break
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
+
 	// the config will be cumulatively built over the imports
 	// NOTE: we want to fail on duplicate keys detected
 	if err := cl.parseImports(config, filepath.Dir(file)); err != nil {
@@ -183,6 +221,22 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 		// switch val := v.(type) {
 		// case string:
 		if utils.IsURL(val) {
+			if cl.imports[val] {
+				// already visited and parsed import file
+				// continuing to next
+				continue
+			}
+			importedConfig, err := cl.load(val)
+			if err != nil {
+				return fmt.Errorf("load import error: %v", err)
+			}
+			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+				return err
+			}
+			// iterate through next import
+			continue
+		}
+		if IsGit(val) {
 			if cl.imports[val] {
 				// already visited and parsed import file
 				// continuing to next
@@ -237,7 +291,7 @@ var ErrImportKeyClash = errors.New("imported file contains a clash")
 //
 // NOTE: perhaps change this in the future or allow overwriting
 func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, path string) error {
-	// merge tasks - fail on
+	// merge tasks - fail on already defined tasks
 	for name, val := range importedConfig.Tasks {
 		if baseConfig.Tasks == nil {
 			baseConfig.Tasks = map[string]*TaskDefinition{}
@@ -248,7 +302,7 @@ func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, pat
 		baseConfig.Tasks[name] = val
 	}
 
-	// merge pipelines - fail on
+	// merge pipelines - fail on already defined pipelines
 	for name, val := range importedConfig.Pipelines {
 		if baseConfig.Pipelines == nil {
 			baseConfig.Pipelines = map[string][]*PipelineDefinition{}
@@ -259,7 +313,7 @@ func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, pat
 		}
 		baseConfig.Pipelines[name] = val
 	}
-	// merge contexts - fail on
+	// merge contexts - fail on already defined contexts
 	for name, val := range importedConfig.Contexts {
 		if baseConfig.Contexts == nil {
 			baseConfig.Contexts = map[string]*ContextDefinition{}

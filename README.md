@@ -26,11 +26,12 @@ Key concepts, see below for more details.
 - [task](#tasks) => defines a series of commands and their possible variations which compile down to a [job]()
 - [contexts](#contexts)
 - [pipelines](#pipelines)
+- [imports](./docs/import.md)
 
 Additional concepts:
 
 - execution graphs can be seen [here in more detail.](./docs/graph-implementation.md)
-- native container support [here](#docker-context)
+- [native container support](#docker-context)
 
 ### CLI
 
