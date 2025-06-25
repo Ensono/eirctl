@@ -1,6 +1,7 @@
 package cmdutils
 
 import (
+	"context"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -156,14 +157,14 @@ func newDelegateKeyMap() *delegateKeyMap {
 	}
 }
 
-func TuiRun(initialModel TuiModel) (string, error) {
-	final, err := tea.NewProgram(initialModel, tea.WithAltScreen()).Run()
+func TuiRun(ctx context.Context, initialModel TuiModel) (string, error) {
+	final, err := tea.NewProgram(initialModel, tea.WithAltScreen(), tea.WithContext(ctx)).Run()
 	if err != nil {
 		return "", err
 	}
+
 	if m, ok := final.(TuiModel); ok && m.quitting {
 		return m.selected, nil
 	}
-
 	return "", nil
 }

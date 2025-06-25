@@ -54,9 +54,13 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			}
 			// display selector if nothing is supplied
 			if len(args) == 0 {
-				selected, err := cmdutils.DisplayTaskSelection(conf, false)
+				selected, err := cmdutils.DisplayTaskSelection(rootCmd.ctx, conf, false)
 				if err != nil {
 					return err
+				}
+				if selected == "" {
+					logrus.Debug("no selection made, exiting...")
+					return nil
 				}
 				args = append([]string{selected}, args[0:]...)
 			}

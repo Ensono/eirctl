@@ -9,6 +9,7 @@ import (
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/internal/genci"
 	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -33,9 +34,13 @@ func newGenerateCmd(rootCmd *EirCtlCmd) {
 			}
 			// display selector if nothing is supplied
 			if len(args) == 0 {
-				selected, err := cmdutils.DisplayTaskSelection(conf, true)
+				selected, err := cmdutils.DisplayTaskSelection(rootCmd.ctx, conf, true)
 				if err != nil {
 					return err
+				}
+				if selected == "" {
+					logrus.Debug("no selection made, exiting...")
+					return nil
 				}
 				args = append([]string{selected}, args[0:]...)
 			}

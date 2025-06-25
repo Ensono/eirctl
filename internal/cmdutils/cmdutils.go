@@ -2,6 +2,7 @@
 package cmdutils
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -22,7 +23,7 @@ const (
 	BOLD_TERMINAL    string = "\x1b[1m%s"
 )
 
-func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (string, error) {
+func DisplayTaskSelection(ctx context.Context, conf *config.Config, showPipelineOnly bool) (string, error) {
 	initItems := []list.Item{}
 
 	pipelines := utils.MapKeys(conf.Pipelines)
@@ -51,7 +52,7 @@ func DisplayTaskSelection(conf *config.Config, showPipelineOnly bool) (string, e
 			initItems = append(initItems, NewItem(task.Name, "Task: "+desc))
 		}
 	}
-	return TuiRun(NewTuiModel(initItems))
+	return TuiRun(ctx, NewTuiModel(initItems))
 }
 
 // printSummary is a TUI helper

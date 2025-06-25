@@ -188,12 +188,11 @@ func getSSHConfig(sshCfg *ssh_config.Config, hostname string) (SSHConfigAuth, er
 		sc.Port = ssh_config.Default("Port")
 	}
 	if sc.User == "" {
-		sc.User = ssh_config.Default("User")
+		sc.User = "git"
 	}
 	if sc.Hostname == "" {
 		sc.Hostname = hostname
 	}
-
 	if sc.IdentityFile == "" {
 		// go through the user default identity files
 		for _, f := range []string{"id_rsa", "id_ed25519"} {
