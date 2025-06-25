@@ -71,6 +71,36 @@ func createTestRepo(t *testing.T, files map[string]string, branch string, refNam
 	return repo
 }
 
+var oh = os.Getenv("HOME")
+
+func createDummySshConf(t *testing.T) func() {
+	t.Helper()
+	tmpHomeDir, _ := os.MkdirTemp("", "ssh-conf-*")
+	tmpSShNew := filepath.Join(tmpHomeDir, ".ssh")
+	_ = os.Mkdir(tmpSShNew, 0777)
+	sshConfFile, _ := os.Create(filepath.Join(tmpSShNew, "config"))
+	_, _ = sshConfFile.Write([]byte(`
+Host github.com
+    Hostname ssh.github.com
+    Port 443
+    User git
+`))
+	sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
+	sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
+`))
+	os.Setenv("HOME", tmpHomeDir)
+	return func() {
+		os.RemoveAll(tmpHomeDir)
+		os.Setenv("HOME", oh)
+	}
+}
+
 func Test_NewGitSource_ValidInput(t *testing.T) {
 	ttests := map[string]struct {
 		rawString             string
@@ -105,29 +135,8 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			// t.Parallel()
-			tmpSShNew := filepath.Join(os.TempDir(), ".ssh")
-			_ = os.Mkdir(tmpSShNew, 0777)
-			sshConfFile, _ := os.Create(filepath.Join(tmpSShNew, "config"))
-			_, _ = sshConfFile.Write([]byte(`
-Host github.com
-    Hostname ssh.github.com
-    Port 443
-    User git
-`))
-			sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
-			sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
-kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
-AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
-wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
------END OPENSSH PRIVATE KEY-----
-`))
-			oh := os.Getenv("HOME")
-			os.Setenv("HOME", os.TempDir())
-			defer os.Setenv("HOME", oh)
-			defer os.RemoveAll(tmpSShNew)
+			cleanUp := createDummySshConf(t)
+			defer cleanUp()
 			gs, err := config.NewGitSource(tt.rawString)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -144,8 +153,10 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 		})
 	}
 }
+
 func TestGitSource_Config_FromHead(t *testing.T) {
-	t.Parallel()
+	cleanUp := createDummySshConf(t)
+	defer cleanUp()
 	dummyConfig := &config.ConfigDefinition{
 		Contexts: map[string]*config.ContextDefinition{
 			"foo": {Container: &utils.Container{Name: "bar.io/qux"}},
