@@ -36,11 +36,10 @@ var (
 )
 
 type GitSource struct {
-	repo           *git.Repository
-	gcOpts         *git.CloneOptions
-	gitCheckoutStr string
-	yamlPath       string
-	tag            string
+	repo     *git.Repository
+	gcOpts   *git.CloneOptions
+	yamlPath string
+	tag      string
 }
 
 func IsGit(raw string) bool {
