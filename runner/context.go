@@ -165,8 +165,7 @@ func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 //
 // Special consideration will be put on `~` and replaced by HOME variable
 func expandVolumeString(vol string) string {
-	home, _ := os.UserHomeDir()
-	return os.ExpandEnv(strings.Replace(vol, `~`, home, 1))
+	return os.ExpandEnv(utils.NormalizeHome(vol))
 }
 
 func (c *ContainerContext) Volumes() map[string]struct{} {

@@ -24,6 +24,7 @@ import (
 func IsURL(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil {
+		logrus.Debugf("is not (%s) a URL", s)
 		return false
 	}
 
@@ -249,7 +250,19 @@ func escapeWinPaths(path string) string {
 	return strings.NewReplacer(`\`, `\\`).Replace(path)
 }
 
-// MustGetUserHomeDir returns current working directory.
+func NormalizeHome(v string) string {
+	home := MustGetUserHomeDir()
+	os.Expand(v, func(s string) string {
+		if s == "HOME" {
+			return home
+		}
+		return s
+	})
+	v = strings.Replace(v, `~`, home, 1)
+	return v
+}
+
+// MustGetUserHomeDir returns current user's home directory.
 // Panics is os.UserHomeDir() returns error
 func MustGetUserHomeDir() string {
 	hd, err := os.UserHomeDir()
