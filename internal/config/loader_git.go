@@ -168,17 +168,39 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 }
 
 type SSHConfigAuth struct {
-	User         string
 	IdentityFile string
+	User         string
 	Port         string
 	Hostname     string
 }
 
+func getSshConfigFile() (identityFile, configFile string) {
+	homeDir := filepath.Join(utils.MustGetUserHomeDir())
+	for _, cf := range []string{
+		filepath.Join(homeDir, ".ssh", "config"),
+		filepath.Join("/", "etc", "ssh", "ssh_config"),
+	} {
+		if utils.FileExists(cf) {
+			configFile = cf
+			break
+		}
+	}
+	for _, idf := range []string{
+		filepath.Join(homeDir, ".ssh", "id_rsa"),
+		filepath.Join(homeDir, ".ssh", "id_ed25519"),
+	} {
+		if utils.FileExists(idf) {
+			identityFile = idf
+			break
+		}
+	}
+	return identityFile, configFile
+}
+
+// processSSHConfig extracts the relevant info from a config dile
 // Git Auth
-func getSSHConfig(sshCfg *ssh_config.Config, hostname string) (SSHConfigAuth, error) {
-
+func processSSHConfig(sshCfg *ssh_config.Config, hostname string, defaultIdentityFile string) (SSHConfigAuth, error) {
 	sc := SSHConfigAuth{}
-
 	sc.User, _ = sshCfg.Get(hostname, "User")
 	sc.Port, _ = sshCfg.Get(hostname, "Port")
 	sc.Hostname, _ = sshCfg.Get(hostname, "Hostname")
@@ -194,31 +216,34 @@ func getSSHConfig(sshCfg *ssh_config.Config, hostname string) (SSHConfigAuth, er
 		sc.Hostname = hostname
 	}
 	if sc.IdentityFile == "" {
-		// go through the user default identity files
-		for _, f := range []string{"id_rsa", "id_ed25519"} {
-			identityFile := filepath.Join(utils.MustGetUserHomeDir(), ".ssh", f)
-			if utils.FileExists(identityFile) {
-				sc.IdentityFile = identityFile
-				return sc, nil
-			}
+		if defaultIdentityFile == "" {
+			return sc, fmt.Errorf("%w\nfailed to identify a default identity file for host", ErrGitOperation)
 		}
-		return sc, fmt.Errorf("%w\nfailed to identify a default identity file for host", ErrGitOperation)
+		sc.IdentityFile = defaultIdentityFile
 	}
 	return sc, nil
 }
 
 func getGitSSHAuth(host string) (*gitssh.PublicKeys, SSHConfigAuth, error) {
-	cfgPath := filepath.Join(utils.MustGetUserHomeDir(), ".ssh", "config")
-	f, err := os.Open(cfgPath)
-	if err != nil {
-		return nil, SSHConfigAuth{}, err
+	identityFile, cfgFile := getSshConfigFile()
+	if identityFile == "" && cfgFile == "" {
+		return nil, SSHConfigAuth{}, fmt.Errorf("%w\nneither default identity files nor a ssh_config were found at the desired locations", ErrGitOperation)
 	}
-	defer f.Close()
-	cfg, err := ssh_config.Decode(f)
-	if err != nil {
-		return nil, SSHConfigAuth{}, err
+
+	cfg := &ssh_config.Config{}
+	if cfgFile != "" {
+		f, err := os.Open(cfgFile)
+		if err != nil {
+			return nil, SSHConfigAuth{}, err
+		}
+		defer f.Close()
+		cfg, err = ssh_config.Decode(f)
+		if err != nil {
+			return nil, SSHConfigAuth{}, err
+		}
 	}
-	sc, err := getSSHConfig(cfg, host)
+
+	sc, err := processSSHConfig(cfg, host, identityFile)
 	if err != nil {
 		return nil, sc, err
 	}
