@@ -13,6 +13,7 @@ import (
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/docker/go-connections/nat"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
@@ -23,6 +24,8 @@ var (
 		"",                              // skip any empty key names
 		`!::`, `=::`, `::=::`, `::=::\`, // this is found in a cygwin environment
 	}
+	// ipPortProtoFmt f-string for `IP:Port:Port/protocol` mapping to use with the moby nat package
+	ipPortProtoFmt string = "0.0.0.0:%s/tcp"
 )
 
 type ContainerContext struct {
@@ -42,6 +45,8 @@ type ContainerContext struct {
 	// userns specifies the NS mode in the container - e.g. private, host, container:id
 	// defaults to "" i.e. no remapping occurs
 	userns string
+	// Ports map from host to container
+	ports []string
 }
 
 // NewContainerContext accepts name of the image
@@ -94,6 +99,7 @@ func newContainerArgs(cargs []string) *containerArgs {
 	userVarFlag := &singleUseFlagString{}
 	flagSet := pflag.NewFlagSet("containerArgsTempFlags", pflag.ContinueOnError)
 	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
+	_ = flagSet.StringArrayP("port", "p", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
 	_ = flagSet.StringP("userns", "", "", "")
 	// TODO: refactor this to use first class properties
@@ -128,6 +134,22 @@ func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 		return err
 	}
 	cc.user = os.ExpandEnv(strings.TrimSpace(user))
+
+	ports, err := ca.flagSet.GetStringArray("port")
+	if err != nil {
+		return err
+	}
+	for _, v := range ports {
+		// Create a string in this format to levarage the native moby parser
+		// ip:public:private/proto
+		// Hardcoding ip as 0.0.0.0 and proto as tcp
+		//
+		// This will handle 99% of use cases - and would work well on the
+		// WSL2 backed docker on windows, some edge cases might present
+		// themselves on WSL1 (and HyperV) with Windows as the networking
+		// was handled via a VM which does its own port mapping
+		cc.ports = append(cc.ports, fmt.Sprintf(ipPortProtoFmt, v))
+	}
 
 	userns, err := ca.flagSet.GetString("userns")
 	if err != nil {
@@ -174,6 +196,14 @@ func (c *ContainerContext) Volumes() map[string]struct{} {
 
 func (c *ContainerContext) User() string {
 	return c.user
+}
+
+func (c *ContainerContext) Ports() (map[nat.Port]struct{}, map[nat.Port][]nat.PortBinding) {
+	containerPorts, hostPorts, err := nat.ParsePortSpecs(c.ports)
+	if err != nil {
+		return map[nat.Port]struct{}{}, map[nat.Port][]nat.PortBinding{}
+	}
+	return containerPorts, hostPorts
 }
 
 // BindVolume formatted for bindmount

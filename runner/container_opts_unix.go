@@ -29,6 +29,8 @@ func platformPullOptions(ctx context.Context, containerConf *container.Config) (
 }
 
 func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
+	containerPorts, hostPorts := containerContext.Ports()
+
 	containerConfig := &container.Config{
 		Image:      containerContext.Image,
 		Entrypoint: containerContext.Entrypoint,
@@ -42,14 +44,16 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		// OpenStdin: ,
 		// WorkingDir in a container will always be /eirctl
 		// will append any job specified paths to the default working
-		WorkingDir: wd,
-		User:       containerContext.User(),
+		WorkingDir:   wd,
+		User:         containerContext.User(),
+		ExposedPorts: containerPorts,
 	}
 
 	hostConfig := &container.HostConfig{
-		Mounts:     []mount.Mount{},
-		Binds:      []string{},
-		UsernsMode: container.UsernsMode(containerContext.userns),
+		Mounts:       []mount.Mount{},
+		Binds:        []string{},
+		UsernsMode:   container.UsernsMode(containerContext.userns),
+		PortBindings: hostPorts,
 	}
 	for _, volume := range containerContext.BindMounts() {
 		if containerContext.BindMount {
