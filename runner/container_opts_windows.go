@@ -46,6 +46,7 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		Mounts:       []mount.Mount{},
 		UsernsMode:   container.UsernsMode(containerContext.userns),
 		PortBindings: hostPorts,
+		AutoRemove:   true,
 	}
 	// only mount of type bind  can be used on windows
 	for _, volume := range containerContext.BindMounts() {

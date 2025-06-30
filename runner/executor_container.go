@@ -174,7 +174,6 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 	// create local context for container tasks not bound to the parent
 	executeCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	// createdContainer
 	createdContainer, err := e.createContainer(executeCtx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -240,8 +239,6 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	mutateShellContainerConfig(containerConfig)
-
-	hostConfig.AutoRemove = true
 
 	logrus.Debugf("creating with config %+v", containerConfig)
 
