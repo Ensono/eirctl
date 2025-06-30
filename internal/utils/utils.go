@@ -252,8 +252,8 @@ func escapeWinPaths(path string) string {
 
 func NormalizeHome(v string) string {
 	home := MustGetUserHomeDir()
-	os.Expand(v, func(s string) string {
-		if s == "HOME" {
+	v = os.Expand(v, func(s string) string {
+		if strings.ToLower(s) == "home" {
 			return home
 		}
 		return s

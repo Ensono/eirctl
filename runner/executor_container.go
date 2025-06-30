@@ -400,7 +400,13 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 
 func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
 	resp, err := e.cc.ContainerInspect(ctx, containerId)
+	logrus.Debugf("checkExitStatus: %v", resp)
 	if err != nil {
+		// as moby does not have properly typed errors
+		// we need to fall back to string comparison in the error
+		if strings.Contains(err.Error(), "no such container") {
+			return nil
+		}
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
 		return interp.NewExitStatus(125)
 	}
