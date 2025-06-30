@@ -37,6 +37,7 @@ type mockContainerClient struct {
 	resize  func(ctx context.Context, containerID string, options container.ResizeOptions) error
 	logs    func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	inspect func(ctx context.Context, containerID string) (container.InspectResponse, error)
+	stop    func(ctx context.Context, containerID string, options container.StopOptions) error
 }
 
 func (mc mockContainerClient) Close() error {
@@ -55,10 +56,14 @@ func (mc mockContainerClient) ContainerStart(ctx context.Context, containerID st
 	return mc.start(ctx, containerID, options)
 }
 
+func (mc mockContainerClient) ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error {
+	return mc.stop(ctx, containerID, options)
+}
+
 func (mc mockContainerClient) ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
 	return mc.wait(ctx, containerID, condition)
-
 }
+
 func (mc mockContainerClient) ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
 	return mc.logs(ctx, containerID, options)
 }
@@ -514,6 +519,9 @@ func Test_ContainerExecutor_execute(t *testing.T) {
 			resize: func(ctx context.Context, containerID string, options container.ResizeOptions) error {
 				return nil
 			},
+			stop: func(ctx context.Context, containerID string, options container.StopOptions) error {
+				return nil
+			},
 		}
 
 		ce, _ := mockClientHelper(t, mcc)
@@ -623,13 +631,6 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if !errors.Is(err, runner.ErrContainerCreate) {
 			t.Errorf("got %v, wanted %T", err, runner.ErrContainerCreate)
 		}
-		// if len(se.String()) == 0 {
-		// 	t.Errorf("got error (%v), expected error\n\n", se.String())
-		// }
-
-		// if len(so.String()) > 0 {
-		// 	t.Errorf("got (%s) no output, expected stdout\n\n", se.String())
-		// }
 	})
 	t.Run("error on image create", func(t *testing.T) {
 		mcc := mockContainerClient{
@@ -691,6 +692,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 				return nil
 			},
 			resize: func(ctx context.Context, containerID string, options container.ResizeOptions) error {
+				return nil
+			},
+			stop: func(ctx context.Context, containerID string, options container.StopOptions) error {
 				return nil
 			},
 		}

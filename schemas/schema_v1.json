@@ -152,7 +152,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the only the -v|--volume and -u|--user args get parsed."
+          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the only the -v|--volume and -u|--user -p|--port args get parsed."
         },
         "shell": {
           "type": "string",

@@ -45,6 +45,7 @@ type ContainerExecutorIface interface {
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
@@ -167,27 +168,40 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 }
 
 func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
-
-	logrus.Debugf("%+v", containerConfig)
+	// debug config
+	logrus.Debugf("ContainerConfig: %+v", containerConfig)
+	logrus.Debugf("HostConfig: %+v", hostConfig)
+	// create local context for container tasks not bound to the parent
+	executeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// createdContainer
-	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
+	createdContainer, err := e.createContainer(executeCtx, containerConfig, hostConfig, job)
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
 
-	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(executeCtx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
 	// streamLogs
 	errExecCh := make(chan error)
 	doneReadingCh := make(chan struct{})
-	if err = e.streamLogs(ctx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
+	if err = e.streamLogs(executeCtx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
 		return nil, err
 	}
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
+	defer func() {
+		if err := e.cc.ContainerStop(executeCtx, createdContainer.ID, container.StopOptions{
+			Timeout: func(v int) *int { return &v }(5),
+			Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+		}); err != nil {
+			logrus.Debugf("container (%s) stopping error: %v", createdContainer.ID, err)
+		}
+	}()
+
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(executeCtx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
@@ -197,6 +211,13 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 		if err != nil {
 			return nil, err
 		}
+	case <-ctx.Done():
+		err := ctx.Err()
+		if errors.Is(err, context.Canceled) {
+			return []byte{}, nil
+		}
+		logrus.Debugf("ctx err message: %v", err)
+		return nil, err
 	case <-statusWaitCh:
 		// even though the container is technically finished
 		// in some case the buffer might still be copied in to.
@@ -212,7 +233,7 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 			logrus.Debug("timed out waiting on buffer to drain completely...")
 		}
 	}
-	return []byte{}, e.checkExitStatus(ctx, createdContainer.ID)
+	return []byte{}, e.checkExitStatus(executeCtx, createdContainer.ID)
 }
 
 // shell runs the interactive mode for a given context

@@ -302,6 +302,14 @@ contexts:
     container:
       name: alpine:latest
       enable_dind: false
+      container_args:
+        - -u 1000:1000
+        - -v $HOME/foo:/foo
+        - -v ~/bar:/bar
+        - -p 10000:80
+      shell: sh
+      shell_args:
+        - -c
 
   # the executable property will not be removed
   # as it's handy for a lot of other use cases - see above
