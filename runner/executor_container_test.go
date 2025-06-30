@@ -417,11 +417,10 @@ func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerE
 
 func Test_ContainerExecutor_shell(t *testing.T) {
 	t.Run("correctly gets output", func(t *testing.T) {
-
+		t.Parallel()
 		stdin := bytes.NewBufferString("")
 		stdout := output.NewSafeWriter(new(bytes.Buffer))
 		stderr := output.NewSafeWriter(&bytes.Buffer{})
-
 		respCh := make(chan container.WaitResponse)
 		errCh := make(chan error)
 		conn := NewMockConn()
@@ -451,6 +450,81 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			t.Errorf("got: %q, wanted output to contain 'hello'", output)
 		}
 	})
+
+	t.Run("fails to start container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+		mcc.start = func(ctx context.Context, containerID string, options container.StartOptions) error {
+			return fmt.Errorf("fail")
+		}
+
+		ce, configContext := mockClientHelper(t, mcc)
+
+		go func() {
+			_, _ = conn.Write([]byte("hello\n"))
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(err, runner.ErrContainerStart) {
+			t.Errorf("got wrong type of error (%v), wanted %v", err, runner.ErrContainerStart)
+		}
+	})
+
+	t.Run("fails to attach container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+		mcc.attach = func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error) {
+			return types.HijackedResponse{}, fmt.Errorf("faile")
+		}
+
+		ce, configContext := mockClientHelper(t, mcc)
+
+		go func() {
+			_, _ = conn.Write([]byte("hello\n"))
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(err, runner.ErrContainerAttach) {
+			t.Errorf("got wrong type of error (%v), wanted %v", err, runner.ErrContainerAttach)
+		}
+	})
+
 }
 
 type errWriter struct {

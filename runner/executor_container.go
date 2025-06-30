@@ -32,6 +32,7 @@ var (
 	ErrImagePull                        = errors.New("failed to pull container image")
 	ErrRegistryAuth                     = errors.New("failed to auth to registry")
 	ErrContainerCreate                  = errors.New("failed to create container")
+	ErrContainerAttach                  = errors.New("failed to attach container")
 	ErrContainerStart                   = errors.New("failed to start container")
 	ErrContainerWait                    = errors.New("failed to wait for container")
 	ErrContainerLogs                    = errors.New("failed to get container logs")
@@ -257,7 +258,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		Logs:   false,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w\n%v", ErrContainerAttach, err)
 	}
 	defer attachedResp.Close()
 
