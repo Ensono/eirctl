@@ -222,27 +222,21 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 		return nil, err
 	}
 
-	defer func() {
-		if err := e.cc.ContainerStop(executeCtx, createdContainer.ID, container.StopOptions{
-			Timeout: func(v int) *int { return &v }(5),
-			Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
-		}); err != nil {
-			logrus.Debugf("container (%s) stopping error: %v", createdContainer.ID, err)
-		}
-	}()
-
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(executeCtx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
 		if err != nil {
+			e.stop(executeCtx, createdContainer.ID)
 			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
 	case err := <-errExecCh:
 		if err != nil {
+			e.stop(executeCtx, createdContainer.ID)
 			return nil, err
 		}
 	case <-ctx.Done():
 		err := ctx.Err()
+		e.stop(executeCtx, createdContainer.ID)
 		if errors.Is(err, context.Canceled) {
 			return []byte{}, nil
 		}
@@ -356,6 +350,16 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 			Height: uint(height),
 			Width:  uint(width),
 		})
+	}
+}
+
+func (e *ContainerExecutor) stop(ctx context.Context, containerId string) {
+	logrus.Debugf("container (%s) stopping...", containerId)
+	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
+		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
+		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+	}); err != nil {
+		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
 	}
 }
 
