@@ -152,6 +152,39 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return e.execute(ctx, containerConfig, hostConfig, job)
 }
 
+// Container pull images - all contexts that have a container property
+func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
+	logrus.Debugf("pulling image: %s", containerConf.Image)
+	pullOpts, err := platformPullOptions(ctx, containerConf)
+	if err != nil {
+		logrus.Debugf("platformPullOptions err: %v", err)
+		return err
+	}
+	// 120 seconds is an arbitrary time limit beyond which the program won't wait
+	// In case of slow internet or extremely large layers this may be hit.
+	// TODO: make this configurable
+	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
+	if err != nil {
+		logrus.Debugf("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
+		return fmt.Errorf("%v\n%w", err, ErrImagePull)
+	}
+
+	defer reader.Close()
+	// container.ImagePull is asynchronous.
+	// The reader needs to be read completely for the pull operation to complete.
+	// If stdout is not required, consider using io.Discard instead of os.Stdout.
+	// Debug log pull image output
+	b := &bytes.Buffer{}
+	if _, err := io.Copy(b, reader); err != nil {
+		return err
+	}
+	logrus.Debug(b.String())
+	return nil
+}
+
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
 
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
@@ -169,9 +202,6 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 }
 
 func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
-	// debug config
-	logrus.Debugf("ContainerConfig: %+v", containerConfig)
-	logrus.Debugf("HostConfig: %+v", hostConfig)
 	// create local context for container tasks not bound to the parent
 	executeCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -240,8 +270,6 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	mutateShellContainerConfig(containerConfig)
-
-	logrus.Debugf("creating with config %+v", containerConfig)
 
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
@@ -329,39 +357,6 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 			Width:  uint(width),
 		})
 	}
-}
-
-// Container pull images - all contexts that have a container property
-func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
-	logrus.Debugf("pulling image: %s", containerConf.Image)
-	pullOpts, err := platformPullOptions(ctx, containerConf)
-	if err != nil {
-		logrus.Debugf("platformPullOptions err: %v", err)
-		return err
-	}
-	// 120 seconds is an arbitrary time limit beyond which the program won't wait
-	// In case of slow internet or extremely large layers this may be hit.
-	// TODO: make this configurable
-	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
-
-	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
-	if err != nil {
-		logrus.Debugf("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
-		return fmt.Errorf("%v\n%w", err, ErrImagePull)
-	}
-
-	defer reader.Close()
-	// container.ImagePull is asynchronous.
-	// The reader needs to be read completely for the pull operation to complete.
-	// If stdout is not required, consider using io.Discard instead of os.Stdout.
-	// Debug log pull image output
-	b := &bytes.Buffer{}
-	if _, err := io.Copy(b, reader); err != nil {
-		return err
-	}
-	logrus.Debug(b.String())
-	return nil
 }
 
 func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan<- error, doneReadingCh chan<- struct{}, job *Job) error {

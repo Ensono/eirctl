@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/sirupsen/logrus"
 )
 
 func platformPullOptions(ctx context.Context, containerConf *container.Config) (image.PullOptions, error) {
@@ -77,7 +78,9 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		}
 		hostConfig.Binds = append(hostConfig.Binds, fmt.Sprintf("%s:%s:rw", volume.SourcePath, volume.TargetPath))
 	}
-
+	// debug config
+	logrus.Debugf("ContainerConfig: %+v", containerConfig)
+	logrus.Debugf("HostConfig: %+v", hostConfig)
 	return containerConfig, hostConfig
 }
 
@@ -88,6 +91,8 @@ func mutateShellContainerConfig(containerConfig *container.Config) {
 	containerConfig.AttachStdout = true
 	containerConfig.AttachStderr = true
 	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
+	// debug config
+	logrus.Debugf("Shell Mutated Unix ContainerConfig: %+v", containerConfig)
 }
 
 func resizeSignal() chan os.Signal {
