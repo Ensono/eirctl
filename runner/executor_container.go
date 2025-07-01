@@ -47,6 +47,7 @@ type ContainerExecutorIface interface {
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
@@ -205,6 +206,8 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 	// create local context for container tasks not bound to the parent
 	executeCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// ensure we do a manual clean up of containers
+	hostConfig.AutoRemove = false
 	// createdContainer
 	createdContainer, err := e.createContainer(executeCtx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -225,18 +228,18 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(executeCtx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
+		e.cleanupContainer(ctx, createdContainer.ID)
 		if err != nil {
-			e.stop(executeCtx, createdContainer.ID)
 			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
 	case err := <-errExecCh:
+		e.cleanupContainer(ctx, createdContainer.ID)
 		if err != nil {
-			e.stop(executeCtx, createdContainer.ID)
 			return nil, err
 		}
 	case <-ctx.Done():
+		e.cleanupContainer(ctx, createdContainer.ID)
 		err := ctx.Err()
-		e.stop(executeCtx, createdContainer.ID)
 		if errors.Is(err, context.Canceled) {
 			return []byte{}, nil
 		}
@@ -264,7 +267,6 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	mutateShellContainerConfig(containerConfig)
-
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -353,16 +355,6 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 	}
 }
 
-func (e *ContainerExecutor) stop(ctx context.Context, containerId string) {
-	logrus.Debugf("container (%s) stopping...", containerId)
-	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
-		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
-		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
-	}); err != nil {
-		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
-	}
-}
-
 func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan<- error, doneReadingCh chan<- struct{}, job *Job) error {
 	out, err := e.cc.ContainerLogs(ctx, containerId, container.LogsOptions{
 		ShowStdout: true,
@@ -393,17 +385,38 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		}
 		doneReadingCh <- struct{}{}
 	}()
-
 	return nil
 }
 
+func (e *ContainerExecutor) cleanupContainer(ctx context.Context, containerId string) {
+	logrus.Debugf("container clean up (%s) stopping...", containerId)
+	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
+		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
+		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+	}); err != nil {
+		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
+	}
+	logrus.Debugf("removing container (%s)...", containerId)
+	if err := e.cc.ContainerRemove(ctx, containerId, container.RemoveOptions{
+		Force:         true,
+		RemoveVolumes: true,
+	}); err != nil {
+		logrus.Debugf("Failed to remove container (%s): %v", containerId, err)
+	}
+}
+
+// checkExitStatus is called once a container runs to completion
+// this can be an errored output or successful execution
+//
+// containers that have an error
 func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
 	resp, err := e.cc.ContainerInspect(ctx, containerId)
 	logrus.Debugf("checkExitStatus: %v", resp)
 	if err != nil {
 		// as moby does not have properly typed errors
 		// we need to fall back to string comparison in the error
-		if strings.Contains(err.Error(), "no such container") {
+		if client.IsErrNotFound(err) || strings.Contains(err.Error(), "no such container") {
+			logrus.Debugf("container %s was auto-removed; skipping exit code check", containerId)
 			return nil
 		}
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
@@ -413,5 +426,6 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Image, resp.Config.Cmd)
 		return interp.NewExitStatus(uint8(resp.State.ExitCode))
 	}
+	e.cleanupContainer(ctx, containerId)
 	return nil
 }

@@ -36,6 +36,7 @@ type mockContainerClient struct {
 	resize  func(ctx context.Context, containerID string, options container.ResizeOptions) error
 	logs    func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	inspect func(ctx context.Context, containerID string) (container.InspectResponse, error)
+	remove  func(ctx context.Context, containerID string, options container.RemoveOptions) error
 	stop    func(ctx context.Context, containerID string, options container.StopOptions) error
 }
 
@@ -53,6 +54,10 @@ func (mc mockContainerClient) ContainerCreate(ctx context.Context, config *conta
 
 func (mc mockContainerClient) ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error {
 	return mc.start(ctx, containerID, options)
+}
+
+func (mc mockContainerClient) ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error {
+	return mc.remove(ctx, containerID, options)
 }
 
 func (mc mockContainerClient) ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error {
@@ -377,6 +382,9 @@ func mockContainerClientHelper(t *testing.T, respCh <-chan container.WaitRespons
 			return nil
 		},
 		resize: func(ctx context.Context, containerID string, options container.ResizeOptions) error {
+			return nil
+		},
+		remove: func(ctx context.Context, containerID string, options container.RemoveOptions) error {
 			return nil
 		},
 		stop: func(ctx context.Context, containerID string, options container.StopOptions) error {
