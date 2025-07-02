@@ -185,8 +185,9 @@ func parseGitSshCommandEnv() (string, string) {
 	flagSet := pflag.NewFlagSet("gitsshcommand", pflag.ContinueOnError)
 	_ = flagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
 	_ = flagSet.StringP("file", "F", "", "config file override")
-	if err := flagSet.Parse(strings.Fields(os.Getenv(GitSshCommandVar))); err != nil {
-		logrus.Debugf("")
+	gsc := os.Getenv(GitSshCommandVar)
+	if err := flagSet.Parse(strings.Fields(gsc)); err != nil {
+		logrus.Debugf("%s: %s", GitSshCommandVar, gsc)
 	}
 	identityFile, _ := flagSet.GetString("identity")
 	configFile, _ := flagSet.GetString("file")

@@ -848,3 +848,74 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		}
 	})
 }
+
+func Test_ContainerExecutor_Execute_Cancelled_CleanUp(t *testing.T) {
+	t.Parallel()
+	respCh := make(chan container.WaitResponse)
+	errCh := make(chan error)
+	pr, pw := io.Pipe()
+	outStreamer := &safeReaderWriter{mu: sync.Mutex{}, LogsReader: pr, LogsWriter: pw}
+
+	cmdOut := []string{"/eirctl", "hello, iteration 1", "hello, iteration 2", "hello, iteration 3", "hello, iteration 4", "hello, iteration 5", "hello, iteration 6", "hello, iteration 7", "hello, iteration 8", "hello, iteration 9", "hello, iteration 10"}
+
+	so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		cancel()
+	}()
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+	}()
+	go func() {
+		for _, v := range cmdOut {
+			outStreamer.Write(multiplexFrame(1, fmt.Append([]byte(v), "\n")))
+		}
+		outStreamer.Write([]byte(`\r\n`))
+	}()
+	mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
+
+	rmCalled, stopCalled := 0, 0
+	// ensure ctx is not cancelled - but parent context is cancelled and hence performing clean up
+	mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+		rmCalled++
+		if cancelCtx.Err() == nil {
+			t.Error("parent context should be cancelled")
+		}
+		if ctx.Err() != nil {
+			t.Error("current context should be active")
+		}
+		return nil
+	}
+	mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+		stopCalled++
+		if cancelCtx.Err() == nil {
+			t.Error("parent context should be cancelled")
+		}
+		if ctx.Err() != nil {
+			t.Error("current context should be active")
+		}
+		return nil
+	}
+
+	ce, _ := mockClientHelper(t, mcc)
+
+	_, err := ce.Execute(cancelCtx, &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
+		Env:    variables.NewVariables(),
+		Vars:   variables.NewVariables(),
+		Stdout: so,
+		Stderr: se,
+		Stdin:  nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(se.String()) > 0 {
+		t.Errorf("got error %v, expected nil\n\n", se.String())
+	}
+	if rmCalled+stopCalled != 2 {
+		t.Errorf("stop and remove functions were not called")
+	}
+}

@@ -398,7 +398,7 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		// check to see if the env matches an invalid variable, if it does
 		// move onto the next item in the  loop
 		if slices.Contains(invalidEnvVarKeys, varName) {
-			logrus.Debugf("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
+			logrus.Tracef("Skipping invalid env var: %s=%v\n'%s' is not a valid key", varName, varValue, varName)
 			continue
 		}
 
@@ -471,7 +471,7 @@ func (c *ExecutionContext) modifyName(varName string) string {
 //
 // TODO: run serviceCommand in the same context as the command slice
 func (c *ExecutionContext) runServiceCommand(command string) (err error) {
-	logrus.Debugf("running context service command: %s", command)
+	logrus.Tracef("running context service command: %s", command)
 	ex, err := newDefaultExecutor(nil, io.Discard, io.Discard)
 	if err != nil {
 		return err
