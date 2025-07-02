@@ -99,6 +99,9 @@
         "summary": {
           "type": "boolean"
         },
+        "verbose": {
+          "type": "boolean"
+        },
         "output": {
           "type": "string",
           "enum": [
