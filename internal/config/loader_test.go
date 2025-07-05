@@ -113,8 +113,8 @@ tasks:
 		t.Fatal(err)
 	}
 	_, _ = f.Write([]byte(testYaml))
-	defer os.Remove(dir)
-	defer os.Remove(f.Name())
+	defer os.RemoveAll(dir)
+	defer os.RemoveAll(f.Name())
 
 	cl := config.NewConfigLoader(config.NewConfig())
 	cfg, err := cl.Load(f.Name())
