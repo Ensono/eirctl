@@ -9,14 +9,141 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 )
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
+
+// createFilesystemTestRepo creates a real, filesystem-backed Git repo in a tmp dir.
+func createFilesystemTestRepo(t *testing.T, files map[string]string, branch string) (repo *git.Repository, dir string) {
+	t.Helper()
+
+	// Create temp directory for the repo
+	dir, err := os.MkdirTemp("", "testrepo")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	fs := osfs.New(dir)
+	dot := osfs.New(filepath.Join(dir, ".git"))
+	storer := filesystem.NewStorage(dot, &cache.ObjectLRU{})
+
+	repo, err = git.Init(storer, fs)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	for path, content := range files {
+		fullPath := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("failed to create file dirs: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write file: %v", err)
+		}
+		if _, err := wt.Add(path); err != nil {
+			t.Fatalf("failed to add file to index: %v", err)
+		}
+	}
+
+	commitHash, err := wt.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "tester",
+			Email: "tester@example.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	if branch != "" && branch != "master" {
+		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), commitHash)
+		if err := repo.Storer.SetReference(ref); err != nil {
+			t.Fatalf("failed to set branch ref: %v", err)
+		}
+	}
+
+	return repo, dir
+}
+
+func TestLoader_Load_Git(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, dir := createFilesystemTestRepo(t, map[string]string{"eirctl.yaml": `
+contexts:
+  local_wth_quote:
+    quote: "'"
+tasks:
+  task:git:
+    command:
+      - echo "from git"
+`}, "")
+
+	testYaml := fmt.Sprintf(`import:
+  - git::file://%s//%s
+
+tasks:
+  task1:
+    command:
+      - echo true
+`, dir, "eirctl.yaml")
+
+	f, err := os.CreateTemp("", "test-yaml-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.Write([]byte(testYaml))
+	defer os.Remove(dir)
+	defer os.Remove(f.Name())
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cfg, err := cl.Load(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tasks["task1"] == nil || cfg.Tasks["task1"].Commands[0] != "echo true" {
+		t.Error("yaml parsing failed")
+	}
+
+	if cfg.Contexts["local_wth_quote"].Quote != `'` {
+		t.Error("context's quote parsing failed")
+	}
+
+	cl = config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(filepath.Join(cwd, "testdata", "nested"))
+	cfg, err = cl.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Tasks["test-task"]; !ok {
+		t.Error("yaml parsing failed")
+	}
+
+	_, err = cl.LoadGlobalConfig()
+	if err != nil {
+		t.Fatal()
+	}
+}
 
 func TestLoader_Load(t *testing.T) {
 	cwd, err := os.Getwd()
@@ -442,8 +569,8 @@ func Test_Loader_Validate(t *testing.T) {
 		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
-				"foo":         &task.Task{Context: "exists"},
-				"no_ctx_task": &task.Task{Name: "no_ctx_task", Context: ""},
+				"foo":         {Context: "exists"},
+				"no_ctx_task": {Name: "no_ctx_task", Context: ""},
 			},
 			Contexts: map[string]*runner.ExecutionContext{
 				"exists": runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
@@ -459,7 +586,7 @@ func Test_Loader_Validate(t *testing.T) {
 		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
-				"foo": &task.Task{Name: "foo", Context: "not_found"},
+				"foo": {Name: "foo", Context: "not_found"},
 			},
 			Contexts: map[string]*runner.ExecutionContext{
 				"exists": runner.NewExecutionContext(nil, "", variables.NewVariables(), nil, nil, nil, nil, nil),
