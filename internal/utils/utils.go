@@ -252,8 +252,8 @@ func escapeWinPaths(path string) string {
 
 func NormalizeHome(v string) string {
 	home := MustGetUserHomeDir()
-	os.Expand(v, func(s string) string {
-		if s == "HOME" {
+	v = os.Expand(v, func(s string) string {
+		if strings.ToLower(s) == "home" {
 			return home
 		}
 		return s
@@ -282,7 +282,7 @@ func ReaderFromPath(envfile *Envfile) (io.ReadCloser, bool) {
 	if fi, err := os.Stat(envfile.PathValue); fi != nil && err == nil {
 		f, err := os.Open(envfile.PathValue)
 		if err != nil {
-			logrus.Debugf("unable to open %s", envfile.PathValue)
+			logrus.Tracef("unable to open %s", envfile.PathValue)
 			return nil, false
 		}
 		return f, true
@@ -333,13 +333,13 @@ func DefaultTaskctlEnv() *variables.Variables {
 	if fi, err := os.Stat(EIRCTL_ENV_FILE); fi != nil && err == nil {
 		f, err := os.Open(fi.Name()) // this will always be relative to the executable
 		if err != nil {
-			logrus.Debug("unable to open default eirctl.env")
+			logrus.Trace("unable to open default eirctl.env")
 			return defaultVars
 		}
 
 		m, err := ReadEnvFile(f)
 		if err != nil {
-			logrus.Debug("unable to read default eirctl.env")
+			logrus.Trace("unable to read default eirctl.env")
 			return defaultVars
 		}
 		return defaultVars.Merge(variables.FromMap(m))

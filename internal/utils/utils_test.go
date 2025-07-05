@@ -634,3 +634,29 @@ MULTI=somekey=someval`))},
 		}
 	})
 }
+
+func Test_NormalizeHome(t *testing.T) {
+	os.Setenv("HOME", "/foo/bar")
+	defer os.Unsetenv("HOME")
+	ttests := map[string]struct {
+		volStr string
+		want   string
+	}{
+		"$HOME": {
+			volStr: "$HOME/baz:/usr/share/nginx/html",
+			want:   "/foo/bar/baz:/usr/share/nginx/html",
+		},
+		"${HOME}": {
+			volStr: "${HOME}/baz:/usr/share/nginx/html",
+			want:   "/foo/bar/baz:/usr/share/nginx/html",
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			got := utils.NormalizeHome(tt.volStr)
+			if got != tt.want {
+				t.Errorf("failed to normalize - got %s, wanted %s\n", got, tt.want)
+			}
+		})
+	}
+}

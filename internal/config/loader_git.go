@@ -15,6 +15,8 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/kevinburke/ssh_config"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +25,7 @@ const (
 	gitPrefix              = "git::"
 	gitPathSeparator       = "//"
 	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
+	GitSshCommandVar       = "GIT_SSH_COMMAND"
 )
 
 var (
@@ -36,10 +39,19 @@ var (
 )
 
 type GitSource struct {
-	repo     *git.Repository
-	gcOpts   *git.CloneOptions
-	yamlPath string
-	tag      string
+	repo      *git.Repository
+	gcOpts    *git.CloneOptions
+	yamlPath  string
+	tag       string
+	SshConfig SSHConfigAuth
+}
+
+type SSHConfigAuth struct {
+	IdentityFile string
+	ConfigFile   string
+	User         string
+	Port         string
+	Hostname     string
 }
 
 func IsGit(raw string) bool {
@@ -62,11 +74,11 @@ func NewGitSource(raw string) (*GitSource, error) {
 	case "ssh":
 		p1 := strings.Split(gitImportParts[2], "/")
 		// auth using ssh_config
-		auth, sshConf, err := getGitSSHAuth(p1[0])
+		auth, err := gs.getGitSSHAuth(p1[0])
 		if err != nil {
 			return nil, err
 		}
-		gs.gcOpts.URL = fmt.Sprintf(sshGitConnectionString, sshConf.User, sshConf.Hostname, sshConf.Port, strings.Join(p1[1:], "/"))
+		gs.gcOpts.URL = fmt.Sprintf(sshGitConnectionString, gs.SshConfig.User, gs.SshConfig.Hostname, gs.SshConfig.Port, strings.Join(p1[1:], "/"))
 		gs.gcOpts.Auth = auth
 	case "http", "https":
 		gs.gcOpts.URL = "https://" + gitImportParts[2]
@@ -167,31 +179,46 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 	return r.CommitObject(ref.Hash())
 }
 
-type SSHConfigAuth struct {
-	IdentityFile string
-	User         string
-	Port         string
-	Hostname     string
+// parseGitSshCommandEnv looks for the conventional GIT_SSH_COMMAND variable
+// if set it will use the values for identity and/or config file
+func parseGitSshCommandEnv() (string, string) {
+	flagSet := pflag.NewFlagSet("gitsshcommand", pflag.ContinueOnError)
+	_ = flagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
+	_ = flagSet.StringP("file", "F", "", "config file override")
+	gsc := os.Getenv(GitSshCommandVar)
+	if err := flagSet.Parse(strings.Fields(gsc)); err != nil {
+		logrus.Debugf("%s: %s", GitSshCommandVar, gsc)
+	}
+	identityFile, _ := flagSet.GetString("identity")
+	configFile, _ := flagSet.GetString("file")
+	return identityFile, configFile
 }
 
 func getSshConfigFile() (identityFile, configFile string) {
+	identityFile, configFile = parseGitSshCommandEnv()
 	homeDir := filepath.Join(utils.MustGetUserHomeDir())
-	for _, cf := range []string{
-		filepath.Join(homeDir, ".ssh", "config"),
-		filepath.Join("/", "etc", "ssh", "ssh_config"),
-	} {
-		if utils.FileExists(cf) {
-			configFile = cf
-			break
+	if configFile == "" {
+		// try default location if not specified via GIT_SSH_COMMAND
+		for _, cf := range []string{
+			filepath.Join(homeDir, ".ssh", "config"),
+			filepath.Join("/", "etc", "ssh", "ssh_config"),
+		} {
+			if utils.FileExists(cf) {
+				configFile = cf
+				break
+			}
 		}
 	}
-	for _, idf := range []string{
-		filepath.Join(homeDir, ".ssh", "id_rsa"),
-		filepath.Join(homeDir, ".ssh", "id_ed25519"),
-	} {
-		if utils.FileExists(idf) {
-			identityFile = idf
-			break
+	if identityFile == "" {
+		// try default location if not specified via GIT_SSH_COMMAND
+		for _, idf := range []string{
+			filepath.Join(homeDir, ".ssh", "id_rsa"),
+			filepath.Join(homeDir, ".ssh", "id_ed25519"),
+		} {
+			if utils.FileExists(idf) {
+				identityFile = idf
+				break
+			}
 		}
 	}
 	return identityFile, configFile
@@ -224,43 +251,45 @@ func processSSHConfig(sshCfg *ssh_config.Config, hostname string, defaultIdentit
 	return sc, nil
 }
 
-func getGitSSHAuth(host string) (*gitssh.PublicKeys, SSHConfigAuth, error) {
+func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 	identityFile, cfgFile := getSshConfigFile()
 	if identityFile == "" && cfgFile == "" {
-		return nil, SSHConfigAuth{}, fmt.Errorf("%w\nneither default identity files nor a ssh_config were found at the desired locations", ErrGitOperation)
+		return nil, fmt.Errorf("%w\nneither default identity files nor a ssh_config were found at the desired locations", ErrGitOperation)
 	}
 
 	cfg := &ssh_config.Config{}
 	if cfgFile != "" {
 		f, err := os.Open(cfgFile)
 		if err != nil {
-			return nil, SSHConfigAuth{}, err
+			return nil, err
 		}
 		defer f.Close()
 		cfg, err = ssh_config.Decode(f)
 		if err != nil {
-			return nil, SSHConfigAuth{}, err
+			return nil, err
 		}
 	}
 
 	sc, err := processSSHConfig(cfg, host, identityFile)
 	if err != nil {
-		return nil, sc, err
+		return nil, err
 	}
+	sc.ConfigFile = cfgFile
+	gs.SshConfig = sc
+
 	key, err := os.ReadFile(utils.NormalizeHome(sc.IdentityFile))
 	if err != nil {
-		return nil, sc, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
 	}
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		return nil, sc, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
 	}
-
 	return &gitssh.PublicKeys{
 		User:   sc.User,
 		Signer: signer,
 		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		},
-	}, sc, nil
+	}, nil
 }

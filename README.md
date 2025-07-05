@@ -17,6 +17,8 @@ EirCtl is a build tool alternative to GNU Make, as with some of the others like 
 
 Whilst it is built within the Ensono ecosystem and is used within the Ensono Independent Runner and Ensono Stacks, **it can and is used in isolation**.
 
+## [Installation](./docs/installation.md)
+
 ## Configuration
 
 The configuration is driven through YAML which has its [schema](https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json) published and maintained. For an easier developer experience it can integrated into your IDE.
@@ -302,6 +304,14 @@ contexts:
     container:
       name: alpine:latest
       enable_dind: false
+      container_args:
+        - -u 1000:1000
+        - -v $HOME/foo:/foo
+        - -v ~/bar:/bar
+        - -p 10000:80
+      shell: sh
+      shell_args:
+        - -c
 
   # the executable property will not be removed
   # as it's handy for a lot of other use cases - see above

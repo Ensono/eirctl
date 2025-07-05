@@ -26,8 +26,8 @@ type Config struct {
 	Tasks      map[string]*task.Task
 	Watchers   map[string]*watch.Watcher
 
-	Quiet, Debug, DryRun, Summary bool
-	Output                        output.OutputEnum
+	Quiet, Debug, Verbose, DryRun, Summary bool
+	Output                                 output.OutputEnum
 
 	Variables *variables.Variables
 	// Options are computed cli or other API inputs
@@ -122,6 +122,7 @@ func buildFromDefinition(def *ConfigDefinition, lc *loaderContext) (cfg *Config,
 
 	cfg.Import = def.Import
 	cfg.Debug = def.Debug
+	cfg.Verbose = def.Verbose
 	cfg.Output = output.OutputEnum(def.Output)
 	cfg.Variables = cfg.Variables.Merge(variables.FromMap(def.Variables))
 	cfg.Summary = def.Summary

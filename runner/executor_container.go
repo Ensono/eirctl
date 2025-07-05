@@ -32,6 +32,7 @@ var (
 	ErrImagePull                        = errors.New("failed to pull container image")
 	ErrRegistryAuth                     = errors.New("failed to auth to registry")
 	ErrContainerCreate                  = errors.New("failed to create container")
+	ErrContainerAttach                  = errors.New("failed to attach container")
 	ErrContainerStart                   = errors.New("failed to start container")
 	ErrContainerWait                    = errors.New("failed to wait for container")
 	ErrContainerLogs                    = errors.New("failed to get container logs")
@@ -45,6 +46,8 @@ type ContainerExecutorIface interface {
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
@@ -150,6 +153,39 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	return e.execute(ctx, containerConfig, hostConfig, job)
 }
 
+// Container pull images - all contexts that have a container property
+func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
+	logrus.Tracef("pulling image: %s", containerConf.Image)
+	pullOpts, err := platformPullOptions(ctx, containerConf)
+	if err != nil {
+		logrus.Debugf("platformPullOptions err: %v", err)
+		return err
+	}
+	// 120 seconds is an arbitrary time limit beyond which the program won't wait
+	// In case of slow internet or extremely large layers this may be hit.
+	// TODO: make this configurable
+	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
+	if err != nil {
+		logrus.Tracef("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
+		return fmt.Errorf("%v\n%w", err, ErrImagePull)
+	}
+
+	defer reader.Close()
+	// container.ImagePull is asynchronous.
+	// The reader needs to be read completely for the pull operation to complete.
+	// If stdout is not required, consider using io.Discard instead of os.Stdout.
+	// Debug log pull image output
+	b := &bytes.Buffer{}
+	if _, err := io.Copy(b, reader); err != nil {
+		return err
+	}
+	logrus.Trace(b.String())
+	return nil
+}
+
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
 
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
@@ -167,36 +203,48 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 }
 
 func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
-
-	logrus.Debugf("%+v", containerConfig)
-
+	// create local context for container tasks not bound to the parent
+	executeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// ensure we do a manual clean up of containers
+	hostConfig.AutoRemove = false
 	// createdContainer
-	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
+	createdContainer, err := e.createContainer(executeCtx, containerConfig, hostConfig, job)
 	if err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
 
-	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
+	if err := e.cc.ContainerStart(executeCtx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
 	// streamLogs
 	errExecCh := make(chan error)
 	doneReadingCh := make(chan struct{})
-	if err = e.streamLogs(ctx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
+	if err = e.streamLogs(executeCtx, createdContainer.ID, errExecCh, doneReadingCh, job); err != nil {
 		return nil, err
 	}
 
-	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
+	statusWaitCh, errWaitCh := e.cc.ContainerWait(executeCtx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
+		e.cleanupContainer(executeCtx, createdContainer.ID)
 		if err != nil {
 			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
 	case err := <-errExecCh:
+		e.cleanupContainer(executeCtx, createdContainer.ID)
 		if err != nil {
 			return nil, err
 		}
+	case <-ctx.Done():
+		e.cleanupContainer(executeCtx, createdContainer.ID)
+		err := ctx.Err()
+		if errors.Is(err, context.Canceled) {
+			return []byte{}, nil
+		}
+		logrus.Tracef("execute ctx.Done err message: %v", err)
+		return nil, err
 	case <-statusWaitCh:
 		// even though the container is technically finished
 		// in some case the buffer might still be copied in to.
@@ -207,23 +255,18 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 		defer timer.Stop()
 		select {
 		case <-doneReadingCh:
-			logrus.Debug("fully drained logs after exit")
+			logrus.Tracef("fully drained logs after exit")
 		case <-timer.C:
-			logrus.Debug("timed out waiting on buffer to drain completely...")
+			logrus.Tracef("timed out waiting on buffer to drain completely...")
 		}
 	}
-	return []byte{}, e.checkExitStatus(ctx, createdContainer.ID)
+	return []byte{}, e.checkExitStatus(executeCtx, createdContainer.ID)
 }
 
 // shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
 
 	mutateShellContainerConfig(containerConfig)
-
-	hostConfig.AutoRemove = true
-
-	logrus.Debugf("creating with config %+v", containerConfig)
-
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -239,14 +282,14 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 		Logs:   false,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w\n%v", ErrContainerAttach, err)
 	}
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
 	fd := int(os.Stdin.Fd())
 	if e.Term.IsTerminal(fd) {
-		logrus.Debug("Making Terminal Raw")
+		logrus.Tracef("Making Terminal Raw")
 		oldState, err := e.Term.MakeRaw(fd)
 		if err != nil {
 			return nil, err
@@ -267,7 +310,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	sigCh := resizeSignal()
 	go func() {
 		for range sigCh {
-			logrus.Debug("terminal window resized")
+			logrus.Tracef("terminal window resized")
 			e.resizeShellTTY(ctx, fd, createdContainer.ID)
 		}
 	}()
@@ -275,14 +318,14 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	// Start copying stdin -> container Connection
 	go func() {
 		if _, err := io.Copy(attachedResp.Conn, job.Stdin); err != nil {
-			logrus.Debug(err)
+			logrus.Trace(err)
 		}
 	}()
 
 	// container stdout and terminal/host -> stdout
 	go func() {
 		if _, err := io.Copy(job.Stdout, attachedResp.Conn); err != nil {
-			logrus.Debug(err)
+			logrus.Trace(err)
 		}
 	}()
 
@@ -293,7 +336,7 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
 	case <-statusWaitCh:
-		logrus.Debug("exiting container...")
+		logrus.Trace("exiting container...")
 	}
 	return []byte{}, nil
 }
@@ -302,7 +345,7 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 	if e.Term.IsTerminal(fd) {
 		width, height, err := e.Term.GetSize(fd)
 		if err != nil {
-			logrus.Debugf("failed to get terminal size: %v", err)
+			logrus.Tracef("failed to get terminal size: %v", err)
 			return
 		}
 		_ = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
@@ -310,39 +353,6 @@ func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containe
 			Width:  uint(width),
 		})
 	}
-}
-
-// Container pull images - all contexts that have a container property
-func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
-	logrus.Debugf("pulling image: %s", containerConf.Image)
-	pullOpts, err := platformPullOptions(ctx, containerConf)
-	if err != nil {
-		logrus.Debugf("platformPullOptions err: %v", err)
-		return err
-	}
-	// 120 seconds is an arbitrary time limit beyond which the program won't wait
-	// In case of slow internet or extremely large layers this may be hit.
-	// TODO: make this configurable
-	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
-
-	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
-	if err != nil {
-		logrus.Debugf("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
-		return fmt.Errorf("%v\n%w", err, ErrImagePull)
-	}
-
-	defer reader.Close()
-	// container.ImagePull is asynchronous.
-	// The reader needs to be read completely for the pull operation to complete.
-	// If stdout is not required, consider using io.Discard instead of os.Stdout.
-	// Debug log pull image output
-	b := &bytes.Buffer{}
-	if _, err := io.Copy(b, reader); err != nil {
-		return err
-	}
-	logrus.Debug(b.String())
-	return nil
 }
 
 func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, errCh chan<- error, doneReadingCh chan<- struct{}, job *Job) error {
@@ -375,19 +385,47 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 		}
 		doneReadingCh <- struct{}{}
 	}()
-
 	return nil
 }
 
+func (e *ContainerExecutor) cleanupContainer(ctx context.Context, containerId string) {
+	logrus.Debugf("container clean up (%s) stopping...", containerId)
+	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
+		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
+		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+	}); err != nil {
+		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
+	}
+	logrus.Debugf("removing container (%s)...", containerId)
+	if err := e.cc.ContainerRemove(ctx, containerId, container.RemoveOptions{
+		Force:         true,
+		RemoveVolumes: true,
+	}); err != nil {
+		logrus.Debugf("Failed to remove container (%s): %v", containerId, err)
+	}
+}
+
+// checkExitStatus is called once a container runs to completion
+// this can be an errored output or successful execution
+//
+// containers that have an error
 func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId string) error {
 	resp, err := e.cc.ContainerInspect(ctx, containerId)
+	logrus.Tracef("checkExitStatus: %v", resp)
 	if err != nil {
+		// as moby does not have properly typed errors
+		// we need to fall back to string comparison in the error
+		if client.IsErrNotFound(err) || strings.Contains(err.Error(), "no such container") {
+			logrus.Tracef("container %s was auto-removed; skipping exit code check", containerId)
+			return nil
+		}
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
 		return interp.NewExitStatus(125)
 	}
 	if resp.State.ExitCode != 0 {
-		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Image, resp.Config.Cmd)
+		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Config.Image, resp.Config.Cmd)
 		return interp.NewExitStatus(uint8(resp.State.ExitCode))
 	}
+	e.cleanupContainer(ctx, containerId)
 	return nil
 }

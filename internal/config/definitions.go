@@ -33,6 +33,7 @@ type ConfigDefinition struct {
 	Debug    bool                          `json:"debug,omitempty"`
 	DryRun   bool                          `json:"dry_run,omitempty"`
 	Summary  bool                          `json:"summary,omitempty"`
+	Verbose  bool                          `json:"verbose,omitempty"`
 	// Output sets globally the output type for all tasks and pipelines
 	//
 	Output string `mapstructure:"output" yaml:"output" json:"output,omitempty" jsonschema:"enum=raw,enum=cockpit,enum=prefixed"`

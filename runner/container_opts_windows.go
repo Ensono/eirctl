@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/sirupsen/logrus"
 )
 
 func platformPullOptions(ctx context.Context, containerConf *container.Config) (image.PullOptions, error) {
@@ -25,6 +26,8 @@ func platformPullOptions(ctx context.Context, containerConf *container.Config) (
 }
 
 func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
+	containerPorts, hostPorts := containerContext.Ports()
+
 	containerConfig := &container.Config{
 		Image:       containerContext.Image,
 		Entrypoint:  containerContext.Entrypoint,
@@ -35,13 +38,16 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		// OpenStdin: ,
 		// WorkingDir in a container will always be /eirctl
 		// will append any job specified paths to the default working
-		WorkingDir: wd,
-		User:       containerContext.User(),
+		WorkingDir:   wd,
+		User:         containerContext.User(),
+		ExposedPorts: containerPorts,
 	}
 
 	hostConfig := &container.HostConfig{
-		Mounts:     []mount.Mount{},
-		UsernsMode: container.UsernsMode(containerContext.userns),
+		Mounts:       []mount.Mount{},
+		UsernsMode:   container.UsernsMode(containerContext.userns),
+		PortBindings: hostPorts,
+		AutoRemove:   true,
 	}
 	// only mount of type bind  can be used on windows
 	for _, volume := range containerContext.BindMounts() {
@@ -60,6 +66,9 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 			// TmpfsOptions:  &mount.TmpfsOptions{},
 		})
 	}
+	// debug config
+	logrus.Debugf("ContainerConfig: %+v", containerConfig)
+	logrus.Debugf("HostConfig: %+v", hostConfig)
 	return containerConfig, hostConfig
 }
 
@@ -71,6 +80,8 @@ func mutateShellContainerConfig(containerConfig *container.Config) {
 	containerConfig.AttachStderr = true
 	containerConfig.Cmd = []string{containerConfig.Cmd[0]}
 	containerConfig.Env = append(containerConfig.Env, []string{"COLUMNS=120", "LINES=40"}...)
+	logrus.Debugf("Shell Mutated Windows ContainerConfig: %+v", containerConfig)
+
 }
 
 func resizeSignal() chan os.Signal {

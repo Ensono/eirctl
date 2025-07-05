@@ -73,8 +73,11 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	_ = tc.viperConf.BindPFlag("config", tc.Cmd.PersistentFlags().Lookup("config"))
 
 	// flag toggles
-	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Debug, "debug", "d", false, "enable debug")
+	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Debug, "debug", "d", false, "enable debug level logging")
 	_ = tc.viperConf.BindPFlag("debug", tc.Cmd.PersistentFlags().Lookup("debug")) // EIRCTL_DEBUG
+
+	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Debug, "verbose", "", false, "enable trace level logging")
+	_ = tc.viperConf.BindPFlag("verbose", tc.Cmd.PersistentFlags().Lookup("debug")) // EIRCTL_DEBUG
 
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.DryRun, "dry-run", "", false, "dry run")
 	_ = tc.viperConf.BindPFlag("dry-run", tc.Cmd.PersistentFlags().Lookup("dry-run"))
@@ -152,6 +155,14 @@ func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 
 	if conf.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
+	}
+	// parsed from theconfig file
+	if tc.viperConf.GetBool("verbose") {
+		conf.Verbose = tc.viperConf.GetBool("verbose") // this is bound to viper env flag
+	}
+
+	if conf.Verbose {
+		logrus.SetLevel(logrus.TraceLevel)
 	}
 
 	// if default config keys were set to false
