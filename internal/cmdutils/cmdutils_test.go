@@ -2,13 +2,17 @@ package cmdutils_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/scheduler"
+	"github.com/Ensono/eirctl/task"
 )
 
-func TestPrintSummary(t *testing.T) {
+func Test_PrintSummary(t *testing.T) {
 	t.Run("no stages run", func(t *testing.T) {
 		out := bytes.Buffer{}
 		cmdutils.PrintSummary(&scheduler.ExecutionGraph{}, &out, true)
@@ -30,4 +34,30 @@ func TestPrintSummary(t *testing.T) {
 			t.Fatal("got 0, wanted bytes written")
 		}
 	})
+}
+
+func Test_DisplayTaskSelection_cancelled(t *testing.T) {
+
+	sut := config.NewConfig()
+	graph, _ := scheduler.NewExecutionGraph("t1")
+	stage := scheduler.NewStage("foo", func(s *scheduler.Stage) {
+	})
+
+	stage.UpdateStatus(scheduler.StatusDone)
+	graph.AddStage(stage)
+
+	sut.Pipelines["foo"] = graph
+	sut.Tasks["bar"] = task.NewTask("qux")
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(1 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := cmdutils.DisplayTaskSelection(ctx, sut, false)
+	// the error needs to be either unable to attach/open a TTY or context cancelled
+	// This is an example of a test for the sake of testing
+	if err == nil {
+		t.Error(err)
+	}
 }
