@@ -338,8 +338,8 @@ func Test_ContainerContext_Volume_BindMounts(t *testing.T) {
 			}
 		})
 	}
-
 }
+
 func Test_ContainerContext_ParseArgs_env_replacement(t *testing.T) {
 	ttests := map[string]struct {
 		containerArgs []string
@@ -461,6 +461,61 @@ func Test_ContainerContext_UserArgs(t *testing.T) {
 
 				if got != tt.want {
 					t.Errorf("incorrect user mapping, got: %s, wanted: %s\n", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_PortArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs     []string
+		wantContainerPort []string
+		wantHostPort      []string
+		expectErr         bool
+	}{
+		"--user foo": {
+			containerArgs:     []string{"-v /foo/bar:/in", "-v /foo/baz:/two", "--port 3000:3000", "--userns private"},
+			wantContainerPort: []string{"3000"},
+			wantHostPort:      []string{"3000"},
+			expectErr:         false,
+		},
+		"-p 1111:80 --port 2222:8080": {
+			containerArgs:     []string{"-v $PWD/bar:/in", "--volume /foo/baz:/two", "-p 1111:80", "-p 2222:8080"},
+			wantContainerPort: []string{"80", "8080"},
+			wantHostPort:      []string{"1111", "2222"},
+			expectErr:         false,
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			if err != nil && !tt.expectErr {
+				t.Errorf("not expecting an error: %s", err)
+				t.FailNow()
+			}
+
+			gotPorts, gotPortMaps := cc.Ports()
+
+			if len(gotPorts) < 1 {
+				t.Fatal("expecting at least 1 BindMount...")
+			}
+
+			for port, _ := range gotPorts {
+				if !slices.Contains(tt.wantContainerPort, port.Port()) {
+					t.Errorf("incorrect container expose port translation, got: %s, wanted: %v\n", port.Port(), tt.wantContainerPort)
+				}
+			}
+
+			for _, portBinding := range gotPortMaps {
+				for _, pb := range portBinding {
+					if !slices.Contains(tt.wantHostPort, pb.HostPort) {
+						t.Errorf("incorrect host port translation, got: %s, wanted: %v\n",
+							pb.HostPort, tt.wantHostPort)
+					}
 				}
 			}
 		})

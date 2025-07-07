@@ -72,7 +72,7 @@ type Container struct {
 	// Args like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock
 	// will be removed.
 	//
-	// Currently the only the -v|--volume and -u|--user args get parsed.
+	// Currently the only the -v|--volume and -u|--user -p|--port args get parsed.
 	ContainerArgs []string `mapstructure:"container_args" yaml:"container_args,omitempty" json:"container_args,omitempty"`
 	// Shell will be used to run the command in a specific shell on the container
 	//

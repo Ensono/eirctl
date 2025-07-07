@@ -154,6 +154,121 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 	}
 }
 
+func Test_NewGitSource_ValidInput_withSSH_COMMAND(t *testing.T) {
+	ttests := map[string]struct {
+		rawString             string
+		wantCheckoutStr       string
+		wantTag, wantYamlPath string
+		cleanUp               func() (string, string, func())
+	}{
+		"use default ssh config": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				return "", "", func() {}
+			},
+		},
+		"specify identity over GIT_SSH_COMMAND": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				tempFile, _ := os.CreateTemp("", "id-rando-*")
+				tempFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
+		`))
+				os.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
+				return tempFile.Name(), "", func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(tempFile.Name())
+				}
+			},
+		},
+		"specify config over GIT_SSH_COMMAND": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@ssh.github.com:4443/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				tempFile, _ := os.CreateTemp("", "config-rando-*")
+				tempFile.Write([]byte(`Host github.com
+		Hostname ssh.github.com
+		Port 4443
+		`))
+				os.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
+				return "", tempFile.Name(), func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(tempFile.Name())
+				}
+			},
+		},
+		"specify identiy and config over GIT_SSH_COMMAND": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				sshConfFile, _ := os.CreateTemp("", "config-rando-*")
+				sshConfFile.Write([]byte(`Host github.com
+		Port 443
+		Hostname ssh.github.com
+		`))
+				sshIdFile, _ := os.CreateTemp("", "id-rando-*")
+				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
+		`))
+				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
+				return sshIdFile.Name(), sshConfFile.Name(), func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(sshConfFile.Name())
+					os.Remove(sshIdFile.Name())
+				}
+			},
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			cleanUp := createDummySshConf(t)
+			defer cleanUp()
+			idfile, configFile, setupClean := tt.cleanUp()
+			defer setupClean()
+
+			gs, err := config.NewGitSource(tt.rawString)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gs.Tag() != tt.wantTag {
+				t.Errorf("Tag got '%s', wanted: %s", gs.Tag(), tt.wantTag)
+			}
+			if gs.GitCheckoutStr() != tt.wantCheckoutStr {
+				t.Errorf("GitCheckoutStr got '%s', wanted: %s", gs.GitCheckoutStr(), tt.wantCheckoutStr)
+			}
+			if gs.YamlPath() != tt.wantYamlPath {
+				t.Errorf("YamlPath got '%s', wanted: %s", gs.YamlPath(), tt.wantYamlPath)
+			}
+			if idfile != "" && gs.SshConfig.IdentityFile != idfile {
+				t.Errorf("identity file incorrect, got %s\nwanted %s", gs.SshConfig.IdentityFile, idfile)
+			}
+			if configFile != "" && gs.SshConfig.ConfigFile != configFile {
+				t.Errorf("config file incorrect, got %s\nwanted %s", gs.SshConfig.IdentityFile, configFile)
+			}
+		})
+	}
+}
+
 func TestGitSource_Config_FromHead(t *testing.T) {
 	cleanUp := createDummySshConf(t)
 	defer cleanUp()

@@ -118,7 +118,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 
 	execContext, err := r.contextForTask(t)
 	if err != nil {
-		logrus.Debugf("err in execContext: %s\n", err.Error())
+		logrus.Tracef("err in execContext: %s\n", err.Error())
 		return err
 	}
 
@@ -198,7 +198,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	err = r.execute(r.ctx, t, job)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			logrus.Debugf("err is cancelled: %s\n", err.Error())
+			logrus.Tracef("err is cancelled: %s\n", err.Error())
 		}
 		return err
 	}
@@ -407,7 +407,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 		}
 		nextJob.Command = cmd
 		if _, err := exec.Execute(ctx, nextJob); err != nil {
-			logrus.Debug(err.Error())
+			logrus.Trace(err.Error())
 			if status, ok := IsExitStatus(err); ok {
 				t.WithExitCode(int16(status))
 				if t.AllowFailure {
