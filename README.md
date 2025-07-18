@@ -1,6 +1,6 @@
-![eirctl logo](./docs/eirctl-logo.svg)
-
 # eirctl - concurrent task and container runner
+
+![eirctl logo](./docs/eirctl-logo.svg)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ensono/eirctl)](https://goreportcard.com/report/github.com/Ensono/eirctl)
@@ -12,7 +12,9 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 
-EirCtl is a build tool alternative to GNU Make, as with some of the others like it's inspiration [taskctl]() and taskfile and others it is cross platform so works on windows.
+EirCtl is a build tool alternative to GNU Make, as with some of the others like it's inspiration [taskctl](https://github.com/taskctl/taskctl) and taskfile and others it is cross platform so works on windows.
+
+> [!NOTE]
 > As with most things windows, this comes with a few caveats
 
 Whilst it is built within the Ensono ecosystem and is used within the Ensono Independent Runner and Ensono Stacks, **it can and is used in isolation**.
@@ -25,7 +27,7 @@ The configuration is driven through YAML which has its [schema](https://raw.gith
 
 Key concepts, see below for more details.
 
-- [task](#tasks) => defines a series of commands and their possible variations which compile down to a [job]()
+- [task](#tasks) => defines a series of commands and their possible variations which compile down to a [job](#job)
 - [contexts](#contexts)
 - [pipelines](#pipelines)
 - [imports](./docs/import.md)
@@ -63,7 +65,9 @@ The CLI offers a range of commands, each of them needs a valid config file.
 - `run`
 
   Runs a pipeline or a task, see `eirctl run -h` for more options.
-  > :info: eirctl <pipeline|task> will behave as `eirctl run pipeline|task`
+  
+> [!INFO]
+> eirctl <pipeline|task> will behave as `eirctl run pipeline|task`
 
 - `shell [beta]`
   
@@ -118,7 +122,7 @@ lint2:
 
 the resulting command is:
 
-```
+```sh
 $ eirctl lint1 -- package.go
 # go lint package.go
 
@@ -134,6 +138,7 @@ The computational check happens at runtime and not compile time - currently - th
 
 This comes with potential delay of catching of issues, the current implementation will collect all errors before returning to avoid back and forth.
 
+> [!IMPORTANT]
 > Potentially some aspects of this could be moved to the validate subcomand.
 
 ```yaml
@@ -147,12 +152,14 @@ This comes with potential delay of catching of issues, the current implementatio
 
 `REQUIRED_ENV=isSet eirctl run task task:requiredVar --set SetMe=thats-right`
 
+> [!TIP]
 > When running this task in an eirctl pipeline, `REQUIRED_ENV` can be set in a previous task, in global env, in an envfile, via a direct assignment the parent pipline(s).
 
 ### Storing task's output
 
 For more information about storing the task output and picking it up by another task see the [artifacts](./docs/artifacts.md) for more details.
 
+> [!NOTE]
 > Future iteration should include a custom remote backend like S3, GCS, etc...
 
 ### Tasks variations
@@ -249,9 +256,10 @@ eirctl has several output formats:
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 
-The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline > task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
 
-> _evnfile_ property on the context allows for further customization of the injected envirnoment.
+> [!NOTE]
+> _evnfile_ property on the context allows for further customization of the injected environment.
 > It can merge env from a file or mutate/include/exclude existing environment - see the [schema](./schemas/schema_v1.json) for more details
 
 _Tasks running without a context_ will be run in a [cross platform shell](https://github.com/mvdan/sh). You can follow any issues on the project site with GNU tool conversion of host->mvdan emulator shell mapping.
@@ -294,6 +302,7 @@ context:
 
 It uses the native Go API for OCI compliant runtimes (docker, podman, containerd, etc...) and offers further enhancements like the command [shell](#cli).
 
+> [!IMPORTANT]
 > This means you don't need the docker cli installed
 
 There are however _three_ ways of achieving the same thing
@@ -355,7 +364,8 @@ _some downsides of the `old:container` context_
 
 - Using the CLI directly limits can be hit with the number of env variables you can inject in.
 
-> NOTE: if using private registries and are running in an environment where a separate docker config file is generated - e.g. in CI where there is no access to HOME or similar
+> [!NOTE]
+> if using private registries and are running in an environment where a separate docker config file is generated - e.g. in CI where there is no access to HOME or similar
 
 - set an `REGISTRY_AUTH_FILE` env variable to point to the registry auth and other docker config settings
 
@@ -379,8 +389,9 @@ Thank you!
 
 This project is licensed under the GNU GPLv3 - see the [LICENSE.md](LICENSE.md) file for details
 
-## Acknowlegdments
+## Acknowledgments
 
 The [original inspiration](https://github.com/taskctl/taskctl) for this project.
 
+> [!IMPORTANT]
 > As it is still using parts of the original code, this project is also under the GPLv3
