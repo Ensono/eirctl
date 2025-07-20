@@ -16,20 +16,6 @@ pipelines:
     # govet is run as part of golint
     # - task: govet
 
-  test:unit:
-    - task: clean
-    - task: test_prereqs
-    - task: test
-      depends_on:
-        - clean
-        - test_prereqs
-
-  show:coverage:
-    - pipeline: test:unit
-    - task: show_coverage
-      depends_on:
-        - test:unit
-
   build:binary:
     - task: clean
     - task: build
@@ -130,11 +116,6 @@ tasks:
     #   #   SCHEMA: ./internal/z_generated/schema/sources/github.json
     #   - CI_TARGET: gitlab
     #     SCHEMA: ./internal/z_generated/schema/sources/gitlab.json # https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json
-
-  show_coverage:
-    command:
-      - echo "Opening coverage html page"
-      - go tool cover -html=.coverage/out
 
   show_docs:
     command:
