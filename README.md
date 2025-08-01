@@ -41,7 +41,7 @@ Additional concepts:
 
 The CLI offers a range of commands, each of them needs a valid config file.
 
-> [!INFORMATION]
+> [!NOTE]
 > eirctl <pipeline|task> will behave as `eirctl run pipeline|task`
 
 - `completion`: Generate the autocompletion script for the specified shell (`bash`, `fish`, `powershell` or `zsh`).
