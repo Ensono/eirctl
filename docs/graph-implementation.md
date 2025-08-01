@@ -57,7 +57,7 @@ The general flow of inheritance is from the more general to the more specific, i
 > [!NOTE]
 > Presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
 > [!TIP]
-envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers.
+> envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers.
 
 As the file is scanned line by line any referenced vars need to be specified after their declaration. See below for an example.
 
