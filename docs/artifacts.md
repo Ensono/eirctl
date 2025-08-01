@@ -1,17 +1,19 @@
 # Artifacts
 
+> [!NOTE]
 > Removed the scrape of stdout as a default Output storage after every task
 
-Any task can assign outputs in a form of files or a special dotenv format output which is then added to the tascktl runner and available to all the subsequent tasks.
+Any task can assign outputs in a form of files or a special dotenv format output which is then added to the taskctl runner and available to all the subsequent tasks.
 
 ## Dotenv
 
-The artifacts are only usefil inside pipelines, ensuring you provide a depends on will make sure the variables are ready.
+The artifacts are only useful inside pipelines, ensuring you provide a depends on will make sure the variables are ready.
 
 The outputs are available across contexts.
 
 Example below uses the default context to generate some stored artifact and then it is used in a container context.
 
+> [!TIP]
 > after commands are not stored as artifacts
 
 ```yaml
@@ -60,9 +62,10 @@ tasks:
 
 ## Env [Experimental]
 
-When writing a command and a bash style setting of a variable or export is placed in the command along with a artifacts capture specified as `env` the downstream tasks in a pipeline are able to pick them up as environmnent variables
+When writing a command and a bash style setting of a variable or export is placed in the command along with a artifacts capture specified as `env` the downstream tasks in a pipeline are able to pick them up as environment variables
 
-> Experimental - take care when using in production. currently there is no prefixing of variables across tasks in pipelines so the runner environment will just be overwritten with newly set variables
+> [!IMPORTANT]
+> **Experimental** - take care when using in production. currently there is no prefixing of variables across tasks in pipelines so the runner environment will just be overwritten with newly set variables
 
 Using the prefix of `EIRCTL_TASK_OUTPUT_`
 
@@ -89,4 +92,5 @@ pipelines:
       depends_on: run:container:nouveau
 ```
 
+> [!NOTE]
 > Current limitation is that it has to be set directly in the task command and _NOT_ in a script called from command

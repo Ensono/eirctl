@@ -16,12 +16,14 @@ import:
 
 When importing over HTTPS make sure the link returns the contents directly - e.g. on Github use a `raw.githubusercontent.com` snippet.
 
-> ideally it should be a .yaml extension
+> [!NOTE]
+> Ideally it should be a .yaml extension
 
 ## GIT
 
 When importing over Git - ideally you should use SSH with any private repositories and can use git over https with public ones if the provider does not support raw content urls like GH.
 
+> [!IMPORTANT]
 > Pattern must follow this regex `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`
 
 Below protocols supported with Git
@@ -30,6 +32,7 @@ Below protocols supported with Git
 - HTTPS
 - FILE
 
+> [!TIP]
 > Optional ref can be set to either point to a branch/tag/commit_sha
 
 ## FILESYSTEM
