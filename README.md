@@ -56,7 +56,7 @@ The CLI offers a range of commands, most of them needs a valid config file.
 - `run`: Runs a pipeline or a task, see `eirctl run -h` for more options.
 - `shell`: Shell into the supplied container-context, works only with the native container context. (Beta Feature)
 - `show`: Shows task's details.
-- `validate` Validates config file.
+- `validate`: Validates config file.
 - `watch`: Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.md)).
 
 ## Tasks
