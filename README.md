@@ -57,7 +57,7 @@ The CLI offers a range of commands, most of them needs a valid config file.
 - `shell`: Shell into the supplied container-context, works only with the native container context. (Beta Feature)
 - `show` Shows task's details.
 - `validate` Validates config file.
-- `watch` Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.md)).
+- `watch`: Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.md)).
 
 ## Tasks
 
