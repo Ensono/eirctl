@@ -23,7 +23,7 @@ curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-a
 curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
 ```
 
-For Linux and Mac users these files can be installed system wide by placing them in `/usr/local/bin` this should be in the pat for any normal user:
+For Linux and Mac users these files can be installed system wide by placing them in `/usr/local/bin` this should be in the path for any normal user:
 
 ```bash
 chmod +x eirctl
@@ -36,6 +36,9 @@ It is also possible to install on a per-user basis by copying to `~/.local/bin`:
 chmod +x eirctl
 mv eirctl $HOME/.local/bin
 ```
+
+> [!CAUTION]
+> Some distributions don't automatically add `$HOME/.local/bin` to the `$PATH`, ensure that it exists and has restrictive permissions, i.e. `750` and restart your shell as this path is only added to the `$PATH` if it exists when your `.profile` is executed.
 
 #### Windows Binary
 
