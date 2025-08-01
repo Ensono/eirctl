@@ -27,7 +27,7 @@ The configuration is driven through YAML which has its [schema](https://raw.gith
 
 Key concepts, see below for more details.
 
-- [task](#tasks) => defines a series of commands and their possible variations which compile down to a [job](#job)
+- [task](#tasks) => defines a series of commands and their possible variations which compile down to a job
 - [contexts](#contexts)
 - [pipelines](#pipelines)
 - [imports](./docs/import.md)
@@ -41,49 +41,19 @@ Additional concepts:
 
 The CLI offers a range of commands, each of them needs a valid config file.
 
-- `completion`
-  
-  Generate the autocompletion script for the specified shell
-- `generate`
-  
-  Generates a CI definition in a target implementation from a Eirctl pipeline definition.
-
-- `graph`
-  
-  Visualizes pipeline execution graph
-- `help`
-  
-  Help about any command
-- `init`
-  
-  Initializes the directory with a- sample config file
-
-- `list`
-  
-  Lists contexts, pipelines, tasks- and watchers
-
-- `run`
-
-  Runs a pipeline or a task, see `eirctl run -h` for more options.
-  
-> [!INFO]
+> [!INFORMATION]
 > eirctl <pipeline|task> will behave as `eirctl run pipeline|task`
 
-- `shell [beta]`
-  
-  Shell into the supplied container-context, works only with the native container context
-
-- `show`
-  
-  Shows task's details
-
-- `validate`
-  
-  Validates config file
-
-- `watch`
-  
-  Watches changes in directories to perform certain tasks [WATCHERS...]
+- `completion`: Generate the autocompletion script for the specified shell (`bash`, `fish`, `powershell` or `zsh`).
+- `generate`: Generates a CI definition in a target implementation from a `eirctl` pipeline definition.
+- `graph`: Visualizes pipeline execution graph.
+- `init`: Initializes the directory with a sample config file.
+- `list`: Lists contexts, pipelines, tasks and watchers.
+- `run`: Runs a pipeline or a task, see `eirctl run -h` for more options.
+- `shell`: Shell into the supplied container-context, works only with the native container context. (Beta Feature)
+- `show` Shows task's details.
+- `validate` Validates config file.
+- `watch` Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.md)).
 
 ## Tasks
 
@@ -91,7 +61,7 @@ The CLI offers a range of commands, each of them needs a valid config file.
 
 Each task, stage and context has variables to be used to render task's fields  - `command`, `dir`.
 Along with globally predefined, variables can be set in a task's definition.
-You can use those variables according to `text/template` [documentation](https://golang.org/pkg/text/template/).
+You can use those variables according to `text/template` [documentation](https://pkg.go.dev/text/template).
 
 Predefined variables are:
 
@@ -142,12 +112,12 @@ This comes with potential delay of catching of issues, the current implementatio
 > Potentially some aspects of this could be moved to the validate subcomand.
 
 ```yaml
-  task:requiredVar:
-    command: echo "var has been set {{ .SetMe }} and required env ${REQUIRED_ENV}"
-    required:
-      env: [REQUIRED_ENV]
-      vars:
-        - SetMe
+task:requiredVar:
+  command: echo "var has been set {{ .SetMe }} and required env ${REQUIRED_ENV}"
+  required:
+    env: [REQUIRED_ENV]
+    vars:
+      - SetMe
 ```
 
 `REQUIRED_ENV=isSet eirctl run task task:requiredVar --set SetMe=thats-right`
@@ -244,7 +214,7 @@ Stage definition takes following parameters:
 - `condition` - condition to check before running stage
 - `variables` - stage's variables
 
-## output formats
+## Output formats
 
 eirctl has several output formats:
 
@@ -259,7 +229,7 @@ Contexts allow you to set up execution environment, variables, binary which will
 The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
 
 > [!NOTE]
-> _evnfile_ property on the context allows for further customization of the injected environment.
+> _envfile_ property on the context allows for further customization of the injected environment.
 > It can merge env from a file or mutate/include/exclude existing environment - see the [schema](./schemas/schema_v1.json) for more details
 
 _Tasks running without a context_ will be run in a [cross platform shell](https://github.com/mvdan/sh). You can follow any issues on the project site with GNU tool conversion of host->mvdan emulator shell mapping.

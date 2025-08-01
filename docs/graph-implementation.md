@@ -1,13 +1,14 @@
 # Graph Internals
 
 The internal processes generate, essentially, an n-ary tree.
-The tree may have nodes which themselves are other trees. 
+The tree may have nodes which themselves are other trees.
 
+> [!IMPORTANT]
 > There are never any edges between nodes in a child tree to the parent tree, i.e. only single level stages (nodes) can `depends_on` on each other.
 
 The generated graphs will have the following legend, it can also be embedded in the generated digraph by specifying the `--legend` flag.
 
-![](./svg/legend.svg)
+![Legend](./svg/legend.svg)
 
 Blue arrows are the first level stages in the pipeline, these can be direct tasks or other pipelines.
 
@@ -29,17 +30,21 @@ To illustrate the point we can see the differences below across the same "pipeli
 
 The generated tree can be viewed in both the normalized form using the graph command.
 
-`taskctl graph gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml | dot -Tsvg -o normalized.svg`
+```console
+taskctl graph gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml | dot -Tsvg -o normalized.svg
+```
 
-![](./svg/normalized.svg)
+![Normalized form of the graph output](./svg/normalized.svg)
 
 ### Denormalized
 
 When running the run command with the `--graph-only` it would generate the denormalized tree graph.
 
-`taskctl run gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml --graph-only | dot -Tsvg -o docs/svg/denormalized.svg`
+```console
+taskctl run gha:infra:sample -c ./cmd/eirctl/testdata/gha.sample.yml --graph-only | dot -Tsvg -o docs/svg/denormalized.svg
+```
 
-![](./svg/denormalized.svg)
+![Denormalized form of the graph](./svg/denormalized.svg)
 
 ## Environment Variables
 
@@ -49,9 +54,10 @@ With denormalization performed for each `run` command we can perform a hierarchi
 
 The general flow of inheritance is from the more general to the more specific, i.e. `Context < Pipeline < Task`.
 
-> NB: presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
-
-> envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers. 
+> [!NOTE]
+> Presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
+> [!TIP]
+envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers.
 
 As the file is scanned line by line any referenced vars need to be specified after their declaration. See below for an example.
 
@@ -63,7 +69,7 @@ BAZ=${FOO}
 
 That means that anything set in the context level will always be injected into the pipeline and task, unless the same key is set in the pipeline in which case it will be overwritten.
 
-Anything set in a task will overwrite previouusly set env keys.
+Anything set in a task will overwrite previously set env keys.
 
 ### Precedence
 
@@ -116,17 +122,16 @@ pipelines:
 The path to `task:four` can be achieved in the following ways:
 
 - `tester->action:one->do-this->task:four`
-    - `action:one` is a pipeline that has a child `do-this` which is another pipeline, an alias to the `wrapped` pipeline which has the `task:four` in it.
-    - `task:four` will have these values:
-        - `FOO: task-set-val-always-wins`
-        - `SOME: set-level-1`
-        - `OTHER: this-do`
-    - `SOME` would be overwritten inside the `acion:one` `do-this` pipeline.
+  - `action:one` is a pipeline that has a child `do-this` which is another pipeline, an alias to the `wrapped` pipeline which has the `task:four` in it.
+  - `task:four` will have these values:
+    - `FOO: task-set-val-always-wins`
+    - `SOME: set-level-1`
+    - `OTHER: this-do`
+  - `SOME` would be overwritten inside the `acion:one` `do-this` pipeline.
 
 - `tester->action:two->do-that->task:four`
-    - `action:two` is a pipeline that has a child `do-that` which is another pipeline, an alias to the `wrapped` pipeline which has the `task:four` in it.
-    - `task:four` will have these values:
-        - `FOO: task-set-val-always-wins`
-        - `SOME: that`
-    - `SOME` would be inherited the `tester` referenced `action:two` pipeline.
-
+  - `action:two` is a pipeline that has a child `do-that` which is another pipeline, an alias to the `wrapped` pipeline which has the `task:four` in it.
+  - `task:four` will have these values:
+    - `FOO: task-set-val-always-wins`
+    - `SOME: that`
+  - `SOME` would be inherited the `tester` referenced `action:two` pipeline.

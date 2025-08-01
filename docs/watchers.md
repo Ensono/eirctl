@@ -3,6 +3,7 @@
 ## Filesystem watchers
 
 Watcher watches for changes in files selected by provided patterns and triggers task anytime an event has occurred.
+
 ```yaml
 watchers:
   watcher1:
@@ -14,7 +15,7 @@ watchers:
 
 ### Patterns
 
-Thanks to [doublestar](https://github.com/bmatcuk/doublestar) *taskctl* supports the following special terms within include and exclude patterns:
+Thanks to [doublestar](https://github.com/bmatcuk/doublestar) *eirctl* supports the following special terms within include and exclude patterns:
 
 Special Terms | Meaning
 ------------- | -------
