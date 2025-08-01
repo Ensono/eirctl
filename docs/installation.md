@@ -51,20 +51,16 @@ Invoke-WebRequest -Uri https://github.com/Ensono/eirctl/releases/latest/download
 $env:PATH="${env:PATH};${binDir}"
 ```
 
-```sh
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-arm64.exe
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-386.exe
-```
-
 ### Verify installation
 
 ```bash
 eirctl --version
 ```
 
+Should output:
+
 ```output
-eirctl version v0.7.5-332295a31e95686cc9b20376d23a38cc98b45a00
+> eirctl version v0.7.5-332295a31e95686cc9b20376d23a38cc98b45a00
 ```
 
 ### Different Architectures
