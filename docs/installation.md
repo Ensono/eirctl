@@ -6,53 +6,80 @@ You can install a prebuilt binary for your system from Github, see below the det
 
 ### Install
 
-Major platform binaries [here](https://github.com/Ensono/eirctl/releases)
+`eirctl` is compiled for all major platforms (Windows, Mac, Linux) and architectures (`amd64`, `arm64`) and downloadable from [GitHub Releases](https://github.com/Ensono/eirctl/releases).
 
-*nix binary
+#### Linux  binary
+
+> [!TIP]
+> Windows Subsystem for Linux users can use the linux instructions from within a WSL terminal.
 
 ```bash
 curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-amd64 -o eirctl
 ```
 
-MacOS binary
+#### MacOS binary
 
 ```bash
 curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
 ```
+
+For Linux and Mac users these files can be installed system wide by placing them in `/usr/local/bin` this should be in the path for any normal user:
 
 ```bash
 chmod +x eirctl
 sudo mv eirctl /usr/local/bin
 ```
 
-Windows binaries for your platform can be downloaded manually, or via pwsh (`iwr` or similar) then moved to a `$env:PATH` on your computer.
-
-> Ideally on a path under your user, create one specifically for portable binaries e.g. `C:\Users\<yourname>\bin` or use an existing one from `$env:PATH`.
+It is also possible to install on a per-user basis by copying to `~/.local/bin`:
 
 ```sh
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-386.exe
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe
-https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-arm64.exe
+chmod +x eirctl
+mv eirctl $HOME/.local/bin
 ```
 
-Verify installation
+> [!CAUTION]
+> Some distributions don't automatically add `$HOME/.local/bin` to the `$PATH`, ensure that it exists and has restrictive permissions, i.e. `750` and restart your shell as this path is only added to the `$PATH` if it exists when your `.profile` is executed.
+
+#### Windows Binary
+
+Windows binaries for your platform can be downloaded manually, or via pwsh (`iwr` or similar) then moved to a `$env:PATH` on your computer.
+
+> [!IMPORTANT]
+> Ideally use a path under your user's home directory, create one specifically for portable binaries e.g. `C:\Users\$USERNAME\bin` or use an existing one from `$env:PATH`.
+
+```pwsh
+$binDir = "${env:HOMEDRIVE}${env:HOMEPATH}\bin";
+New-Item -Path $binDir -ItemType Directory -ErrorAction SilentlyContinue;
+Invoke-WebRequest -Uri https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe -OutFile "${binDir}\eirctl.exe";
+$env:PATH="${env:PATH};${binDir}"
+```
+
+### Verify installation
 
 ```bash
 eirctl --version
 ```
 
-Download specific version:
+Should output:
 
-_ARM_:
-
-```bash
-curl -L https://github.com/Ensono/eirctl/releases/download/0.7.2/eirctl-darwin-arm64 -o eirctl
+```output
+> eirctl version v0.7.5-332295a31e95686cc9b20376d23a38cc98b45a00
 ```
 
-_AMD_:
+### Different Architectures
+
+Ensure that you download the correct version for the target architecture: amd64 (i.e. Intel / AMD) or ARM (i.e. Mac M1), if needed adjust the command as follows:
+
+#### ARM (i.e. Mac M\[1-4\])
 
 ```bash
-curl -L https://github.com/Ensono/eirctl/releases/download/0.7.2/eirctl-darwin-amd64 -o eirctl
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
+```
+
+#### AMD (i.e. Intel Mac)
+
+```bash
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-amd64 -o eirctl
 ```
 
 ### Usage

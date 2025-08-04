@@ -20,11 +20,9 @@ flowchart TD
     E --> X(Finish pipeline x)
 ```
 
-The example above shows `pipeline x` - starting by executing tasks a,b,c in parallel. `task d` waiting for `task c` to finish. 
+The example above shows `pipeline x` - starting by executing tasks a,b,c in parallel. `task d` waiting for `task c` to finish.
 
 `task e` waits for `task a`, `task b` and `task d` to complete before running.
-
-
 
 ## Implementation
 
@@ -45,8 +43,8 @@ The list of supported generators will grow as more are added. To add an addition
 
 Currently implemented:
 
-    - Github
-    - ...
+- Github
+- ...
 
 ## Sample outputs
 
