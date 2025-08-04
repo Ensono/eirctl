@@ -12,7 +12,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 
-`eirctl` is a build tool alternative to GNU Make, like it's inspiration [taskctl](https://github.com/taskctl/taskctl), taskfile and others it is cross-platform and cross-architecture, so it works on Windows, Linux and MacOS on either `amd64` or `arm64`, as the Go source code is provided it can be compiled for any architecture supported by the language and the project dependencies.
+`eirctl` is a build tool alternative to GNU Make, like its inspiration [taskctl](https://github.com/taskctl/taskctl), taskfile and others it is cross-platform and cross-architecture, so it works on Windows, Linux and MacOS on either `amd64` or `arm64`, as the Go source code is provided it can be compiled for any architecture supported by the language and the project dependencies.
 
 > [!NOTE]
 > As with most things Windows, this comes with a few caveats:
