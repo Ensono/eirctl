@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	"github.com/Ensono/eirctl/internal/cmdutils"
 	"github.com/Ensono/eirctl/internal/config"
@@ -36,7 +35,7 @@ func Test_PrintSummary(t *testing.T) {
 	})
 }
 
-func Test_DisplayTaskSelection_cancelled(t *testing.T) {
+func Test_DisplayTaskSelection_BuildOptionsList(t *testing.T) {
 
 	sut := config.NewConfig()
 	graph, _ := scheduler.NewExecutionGraph("t1")
@@ -49,13 +48,9 @@ func Test_DisplayTaskSelection_cancelled(t *testing.T) {
 	sut.Pipelines["foo"] = graph
 	sut.Tasks["bar"] = task.NewTask("qux")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(1 * time.Millisecond)
-		cancel()
-	}()
-
 	// the error needs to be unable to attach/open a TTY
-	_, err := cmdutils.DisplayTaskSelection(ctx, sut, false)
-	t.Log(err)
+	got := cmdutils.BuildOptionsList(context.TODO(), sut, false)
+	if len(got) != 2 {
+		t.Errorf("got %v, wanted 2 items in the list", got)
+	}
 }
