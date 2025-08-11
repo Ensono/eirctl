@@ -1,0 +1,132 @@
+=== Migrating to Eirctl
+
+The `eirctl` command is the replacement tool for `taskctl` for Ensono Stacks, that being said it is not exclusive to Ensono and may be used in place of Taskctl. There are a number of changes that need to be made to a build pipeline, this section details the changes that need to be made.
+
+[cols="1a,6a",options="header"]
+|===
+| Step | Description
+| {counter:migrate_step} | Change the `taskctl.yaml` file in the root of the project to `eirctl.yaml`.
+| {counter:migrate_step} | In the `eirctl.yaml` file make the change to the following lines under `import:`:
+`- ./build/taskctl/context.yaml` -> `- ./build/eirctl/contexts.yaml`
+`- ./build/taskctl/tasks.yaml` -> `- ./build/eirctl/tasks.yaml`
+| {counter:migrate_step} | Rename the `build/taskctl` directory to `build/eirctl`
+| {counter:migrate_step} | Find all references to the `/app/` in the files in `build/eirctl` directory and replace with `/eirctl/`
+| {counter:migrate_step} | Modify the `build/eirctl/contexts.yaml` so that it has the new format.
+The following shows a context in the old format and the new, side by side. The two contexts are equivalent.
+[cols="1a,1a",frame=none,grid=none]
+!===
+!
+
+[source,yaml]
+----
+contexts:
+  buildenv:
+    executable:
+      bin: docker
+      args:
+        - run
+        - --rm
+        - -v
+        - ${PWD}:/app
+        - -w
+        - /app
+        - --env-file
+        - envfile
+        - ensono/eir-golang:1.1.224
+        - pwsh
+        - -Command
+    envfile:
+      generate: true
+      exclude:
+        - home
+        - path
+        - tmpdir
+        - gopath
+----
+!
+[source,yaml]
+----
+contexts:
+  buildenv:
+    container:
+      name: ensono/eir-golang:1.1.224
+      shell: pwsh
+      shell_args:
+        - -Command
+    envfile:
+      exclude:
+        - gopath
+----
+!===
+| {counter:migrate_step} | Rename `build/templates/install-taskctl.yml` to
+`build/templates/install-eirctl.yml`
+----
+| {counter:migrate_step} | Update the build pipeline to invoke `install-taskctl.yml`
+[source,yaml]
+----
+steps:
+ - template: ../templates/install-eirctl.yml
+   parameters:
+     EirctlVersion: ${{ variables.EirctlVersion }}
+----
+| {counter:migrate_step} | Modify the Azure DevOps template file that installs `taskctl` to install `eirctl` instead.
+Replace the contents  of `build/templates/install-taskctl.yml` with the following:
+[source,yaml]
+----
+parameters:
+  - name: EirctlVersion
+    type: string
+steps:
+  # Install Eirctl so that the tests can be run
+  - task: Bash@3
+    displayName: "Install: Eirctl"
+    inputs:
+      targetType: inline
+      script: \|
+        sudo wget https://github.com/Ensono/eirctl/releases/download/${{ parameters.EirctlVersion }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
+        sudo chmod +x /usr/local/bin/eirctl
+----
+Update `.github/workflows/workflow.yml` (or equivelent) to use
+`build/github/templates/install-eirctl`
+[source,yaml]
+name: 'Install eirctl'
+description: 'Downloads and installs eirctl'
+runs:
+  using: 'composite'
+  steps:
+    - run: |
+        rm -rf /usr/loca/bin/eirctl
+        wget https://github.com/Ensono/eirctl/releases/download/${{ parameters.EirctlVersion }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
+        chmod +x /usr/local/bin/eirctl
+      shell: bash
+----
+
+----
+| {counter:migrate_step} | Modiify the `build/ado/variables.yml` file so that the `EirctlVersion` variable is set correctly.
+[source,yaml]
+----
+  - name: EirctlVersion
+    value: 0.4.48
+----
+The following command can be used to find the latest version of `eirctl`:
+* PowerShell
+[source,powershell]
+----
+((Invoke-WebRequest https://api.github.com/repos/ensono/stacks-cli/releases/latest).content \| ConvertFrom-Json).name
+----
+* Bash
+[source,bash]
+----
+curl -s https://api.github.com/repos/ensono/stacks-cli/releases/latest \| jq -r .name
+----
+| {counter:migrate_step} | Update the pipeline so that it is using the `build/ado/templates/setup.yml` correctly.
+NOTE: This might be a new addition to the pipeline, or is might be to change the settings that are passed in.
+[source,yaml]
+----
+    # Install Eirctl for the build to run
+    - template: templates/setup.yml
+      parameters:
+        EirctlVersion: $(EirctlVersion)
+----
+|===
+
