@@ -65,7 +65,7 @@ Ensure that the public versions of the containers are in use:
 - `ensono/eir-dotnet`
 | {counter:migrate_step} | Rename `build/templates/install-taskctl.yml` to
 `build/templates/install-eirctl.yml`
-| {counter:migrate_step} | Update the build pipeline to invoke `install-taskctl.yml`
+| {counter:migrate_step} | Update the build pipeline to invoke `install-eirctl.yml`
 [source,yaml]
 ----
 steps:
