@@ -114,12 +114,12 @@ The following command can be used to find the latest version of `eirctl`:
 * PowerShell
 [source,powershell]
 ----
-((Invoke-WebRequest https://api.github.com/repos/ensono/stacks-cli/releases/latest).content \| ConvertFrom-Json).name
+((Invoke-WebRequest https://api.github.com/repos/ensono/eirctl/releases/latest).content \| ConvertFrom-Json).name
 ----
 * Bash
 [source,bash]
 ----
-curl -s https://api.github.com/repos/ensono/stacks-cli/releases/latest \| jq -r .name
+curl -s https://api.github.com/repos/ensono/eirctl/releases/latest \| jq -r .name
 ----
 | {counter:migrate_step} | Update the pipeline so that it is using the `build/ado/templates/setup.yml` correctly.
 NOTE: This might be a new addition to the pipeline, or is might be to change the settings that are passed in.
