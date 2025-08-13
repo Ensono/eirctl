@@ -130,6 +130,6 @@ NOTE: This might be a new addition to the pipeline, or is might be to change the
       parameters:
         EirctlVersion: $(EirctlVersion)
 ----
-| {counter:migrate_step} | update the TaskctlVersion environment variables in
-both GitHub and Azure DevOps
+| {counter:migrate_step} | update the TaskctlVersion environment variables in both GitHub and Azure DevOps
+| {counter:migrate_step} | add a `.terraform-version` file in the root of the repository containing a recent version of terraform i.e. `1.9.3`
 |===
