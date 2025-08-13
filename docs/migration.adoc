@@ -43,7 +43,6 @@ contexts:
         - tmpdir
         - gopath
 ----
-!
 [source,yaml]
 ----
 contexts:
@@ -58,9 +57,14 @@ contexts:
         - gopath
 ----
 !===
+| {counter:migrate_step} | If any of the powershell context's have `-NoProfile` remove it, as we have a
+reliance on the profile to setup paths and import modules.
+Ensure that the public versions of the containers are in use:
+
+- `ensono/eir-infrastructure`
+- `ensono/eir-dotnet`
 | {counter:migrate_step} | Rename `build/templates/install-taskctl.yml` to
 `build/templates/install-eirctl.yml`
-----
 | {counter:migrate_step} | Update the build pipeline to invoke `install-taskctl.yml`
 [source,yaml]
 ----
@@ -86,23 +90,21 @@ steps:
         sudo wget https://github.com/Ensono/eirctl/releases/download/${{ parameters.EirctlVersion }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
         sudo chmod +x /usr/local/bin/eirctl
 ----
-Update `.github/workflows/workflow.yml` (or equivelent) to use
-`build/github/templates/install-eirctl`
+| {counter:migrate_step} | Update `.github/workflows/workflow.yml` (or equivalent) to use `build/github/templates/install-eirctl`
 [source,yaml]
+----
 name: 'Install eirctl'
 description: 'Downloads and installs eirctl'
 runs:
   using: 'composite'
   steps:
-    - run: |
-        rm -rf /usr/loca/bin/eirctl
+    - run: \|
+        rm -rf /usr/local/bin/eirctl
         wget https://github.com/Ensono/eirctl/releases/download/${{ parameters.EirctlVersion }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
         chmod +x /usr/local/bin/eirctl
       shell: bash
 ----
-
-----
-| {counter:migrate_step} | Modiify the `build/ado/variables.yml` file so that the `EirctlVersion` variable is set correctly.
+| {counter:migrate_step} | Modify the `build/ado/variables.yml` file so that the `EirctlVersion` variable is set correctly.
 [source,yaml]
 ----
   - name: EirctlVersion
@@ -128,5 +130,6 @@ NOTE: This might be a new addition to the pipeline, or is might be to change the
       parameters:
         EirctlVersion: $(EirctlVersion)
 ----
+| {counter:migrate_step} | update the TaskctlVersion environment variables in
+both GitHub and Azure DevOps
 |===
-
