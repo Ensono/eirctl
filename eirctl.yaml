@@ -9,7 +9,7 @@ output: prefixed
 contexts:
   go1x:
     container:
-      name: golang:1.24.4-bookworm
+      name: golang:1.24.6-bookworm
       enable_dind: true
       enable_mount: true
     envfile:
@@ -108,8 +108,9 @@ tasks:
     description: Builds the binary
     command:
       - |
+        mkdir -p .deps
         ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Revision={{.Revision}}\" -extldflags -static"
-        GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
+        GOPATH=$PWD/.deps GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
     variations:
       - BUILD_GOOS: windows
         BUILD_GOARCH: amd64
