@@ -23,7 +23,7 @@ const (
 	BOLD_TERMINAL    string = "\x1b[1m%s"
 )
 
-func DisplayTaskSelection(ctx context.Context, conf *config.Config, showPipelineOnly bool) (string, error) {
+func BuildOptionsList(ctx context.Context, conf *config.Config, showPipelineOnly bool) []list.Item {
 	initItems := []list.Item{}
 
 	pipelines := utils.MapKeys(conf.Pipelines)
@@ -52,7 +52,11 @@ func DisplayTaskSelection(ctx context.Context, conf *config.Config, showPipeline
 			initItems = append(initItems, NewItem(task.Name, "Task: "+desc))
 		}
 	}
-	return TuiRun(ctx, NewTuiModel(initItems))
+	return initItems
+}
+
+func DisplayTaskSelection(ctx context.Context, conf *config.Config, showPipelineOnly bool) (string, error) {
+	return TuiRun(ctx, NewTuiModel(BuildOptionsList(ctx, conf, showPipelineOnly)))
 }
 
 // printSummary is a TUI helper
