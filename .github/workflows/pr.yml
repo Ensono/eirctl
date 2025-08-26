@@ -89,12 +89,11 @@ jobs:
         check_name: Eirctl Unit Tests
 
     - name: Analyze with SonarCloud
-      uses: SonarSource/sonarcloud-github-action@v5
+      uses: SonarSource/sonarqube-scan-action@v5
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
       with:
-        args:
+        projectBaseDir: .
+        args: >
           -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
-          -Dsonar.go.coverage.reportPaths=/github/workspace/.coverage/out
-          -Dsonar.go.tests.reportPaths=/github/workspace/.coverage/report-junit.xml

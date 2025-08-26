@@ -269,6 +269,27 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 	}
 }
 
+func Test_NewGitSource_ValidInput_withSSH_COMMAND_hostname_port(t *testing.T) {
+	cleanUp := createDummySshConf(t)
+	defer cleanUp()
+	setup := func() func() {
+		os.Setenv(config.GitSshCommandVar, "ssh -oHostname=altssh.github.org -oPort=443")
+		return func() {
+			os.Unsetenv(config.GitSshCommandVar)
+		}
+	}
+	setupClean := setup()
+	defer setupClean()
+
+	gs, err := config.NewGitSource("git::ssh://github.com/example/repo//config.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gs.SshConfig.Hostname != "altssh.github.org" {
+		t.Errorf("got %s, wanted: altssh.github.org", gs.SshConfig.Hostname)
+	}
+}
+
 func TestGitSource_Config_FromHead(t *testing.T) {
 	cleanUp := createDummySshConf(t)
 	defer cleanUp()
