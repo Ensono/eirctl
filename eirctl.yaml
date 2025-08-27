@@ -6,29 +6,8 @@ output: prefixed
 # variables:
 #   foo: 1
 
-contexts:
-  go1x:
-    container:
-      name: golang:1.24.4-bookworm
-      enable_dind: true
-      enable_mount: true
-    envfile:
-      exclude:
-        - GO
-        - CXX
-        - CGO
-
-  golint:
-    container:
-      name: golangci/golangci-lint:v2.1.6-alpine
-      enable_mount: true
-    envfile:
-      exclude:
-        - GO
-        - CXX
-        - CGO
-        - PATH
-        - HOME
+import:
+  - shared/build/go/eirctl.yaml
 
 pipelines:
   lints:
@@ -36,22 +15,6 @@ pipelines:
     - task: vuln:check
     # govet is run as part of golint
     # - task: govet
-
-  test:unit:
-    - task: clean
-    - task: test_prereqs
-    - task: test
-      # env:
-      #   DOCKER_HOST: unix:///var/run/docker.sock
-      depends_on:
-        - clean
-        - test_prereqs
-
-  show:coverage:
-    - pipeline: test:unit
-    - task: show_coverage
-      depends_on:
-        - test:unit
 
   build:binary:
     - task: clean
@@ -63,53 +26,14 @@ pipelines:
         BinName: eirctl
 
 tasks:
-  clean:
-    command:
-      - echo "running clean"
-      - |
-        rm -rf bin/*
-        rm -rf dist/*
-        rm -rf vendor/*
-        rm -rf .coverage
-  test_prereqs:
-    command:
-      - echo "running test pre-requisites"
-      - |
-        mkdir -p .coverage
-        go install github.com/jstemmer/go-junit-report@v0.9.1 && \
-        go install github.com/axw/gocov/gocov@v1.0.0 && \
-        go install github.com/AlekSi/gocov-xml@v1.0.0
-    allow_failure: true
-
-  vuln:check:
-    context: go1x
-    description: |
-      Runs a vulnerability scan against the code base
-    command:
-      - |
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
-
-  test:
-    command:
-      - |
-        mkdir -p .coverage
-        go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -buildvcs=false -coverprofile=.coverage/out -count=1 -run=$GO_TEST_RUN_ARGS | tee .coverage/test.out
-        cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
-        gocov convert .coverage/out | gocov-xml > .coverage/report-cobertura.xml
-    env:
-      # TODO: bug when exclude is set up on the context it should allow task level overwrites
-      GOFLAGS: -buildvcs=false
-      # GO_TEST_RUN_ARGS: "Test_ImagePull"
-    allow_failure: true
-
   build:
     context: go1x
-    description: Builds the binary
+    description: Builds Go binary
     command:
       - |
+        mkdir -p .deps
         ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Revision={{.Revision}}\" -extldflags -static"
-        GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
+        GOPATH=$PWD/.deps GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
     variations:
       - BUILD_GOOS: windows
         BUILD_GOARCH: amd64
@@ -139,17 +63,6 @@ tasks:
   build:container:
     description: Builds the docker image
     command: docker build --build-arg Version={{.Version}} --build-arg Revision={{.Revision}} -t eirctl:{{.Version}} .
-
-  golint:
-    # in CI it is run
-    context: golint
-    description: Runs the linter and go vet and other default static checks
-    allow_failure: false
-    command:
-      # echo "lint ran with exit code: $?"
-      # pwd && ls -lat
-      - |
-        golangci-lint run
 
   goreleaser:
     command:
@@ -204,11 +117,6 @@ tasks:
     #   #   SCHEMA: ./internal/z_generated/schema/sources/github.json
     #   - CI_TARGET: gitlab
     #     SCHEMA: ./internal/z_generated/schema/sources/gitlab.json # https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json
-
-  show_coverage:
-    command:
-      - echo "Opening coverage html page"
-      - go tool cover -html=.coverage/out
 
   show_docs:
     command:

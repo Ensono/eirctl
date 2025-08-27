@@ -12,10 +12,12 @@ bin/
 # Random
 local/
 
+
 # Generated outputs
 .coverage/
 .taskctl/
 .eirctl/
+.deps/
 # local env files
 *.env
 # prof outputs
