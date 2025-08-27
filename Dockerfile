@@ -1,7 +1,7 @@
 ARG Version
 ARG Revision
 
-FROM docker.io/golang:1.24.4-bookworm AS builder
+FROM docker.io/golang:1-trixie AS builder
 
 ARG Version=0.0.1
 ARG Revision=beta01
