@@ -1,7 +1,7 @@
 contexts:
   go1x:
     container:
-      name: golang:1.24.6-bookworm
+      name: golang:1-trixie
       enable_dind: true
       enable_mount: true
     envfile:
