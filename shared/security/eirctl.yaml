@@ -1,0 +1,144 @@
+# This template provides
+contexts:
+  yamllint:
+    container:
+      name: public.ecr.aws/h4c5c8l1/yamllint:latest
+      entrypoint: /usr/bin/env
+    envfile:
+      exclude:
+        - PATH
+        - HOME
+        - which_declare
+        - BASH_FUNC_
+
+  trufflehog:
+    container:
+      # Do we want to use latest instead
+      # AWS ECR only has unofficial and slowly updated
+      # name: public.ecr.aws/zomato/trufflesecurity/trufflehog:3.85.0-multiarch
+      name: mirror.gcr.io/trufflesecurity/trufflehog:3.89.2
+      entrypoint: /usr/bin/env
+      container_args:
+        - "-v ~/.ssh:/root/.ssh"
+        - "${EIRCTL_CONTAINER_ARG}"
+
+  trivy:container:
+    container:
+      # Do we want to use latest instead
+      name: public.ecr.aws/aquasecurity/trivy:0.65.0
+      entrypoint: /usr/bin/env
+      container_args:
+        - "-v ~/.aws:/root/.aws"
+        - "-v ~/.ssh:/root/.ssh"
+        - "${EIRCTL_CONTAINER_ARG}"
+        # This could be done here
+        # NOTE: needs an integration test on Windows OS
+        # before:
+        #   - mkdir -p .trivy
+
+  sonar:
+    container:
+      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:11.3.1.1910_7.1.0
+      entrypoint: /usr/bin/env
+    envfile:
+      exclude:
+        - HOME
+        - JAVA_HOME
+        - PATH
+
+tasks:
+  lint:yaml:
+    context: yamllint
+    description: |
+      Perform YAML Linting pass additiona arguments via -- stdin
+
+      By default the utility uses `yamllint.conf` in the current dire
+    command:
+      - yamllint -s -c {{ or (index . "YamlLintConf") "yamllint.conf" }} . {{ .Args }}
+
+  trivy:file:system:scan:
+    context: trivy:container
+    description: |
+      Run Trivy vulnerability scan for the file system
+
+      .trivyignore.yaml can be used to specify temporary overrides
+    command:
+      - |
+        trivy filesystem --format table --scanners vuln,secret,misconfig,license --show-suppressed --exit-code=1 --ignorefile .trivyignore.yaml --severity HIGH,CRITICAL . {{ if .ArgsList }}{{ .Args }}{{ end }}
+
+  trivy:file:system:sbom:
+    context: trivy:container
+    description: |
+      Run Trivy vulnerability SBOM scan for the file system
+
+      .trivyignore.yaml can be used to specify temporary overrides
+    command:
+      - |
+        mkdir -p .trivy
+        trivy filesystem --show-suppressed --format cyclonedx --output .trivy/fs-sbom-file.json . {{ if .ArgsList }}{{ .Args }}{{ end }}
+        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 1 --format table .trivy/fs-sbom-file.json
+
+  trivy:container:scan:
+    context: trivy:container
+    description: |
+      Run Trivy vulnerability scan for docker container
+
+      .trivyignore.yaml can be used to specify temporary overrides
+    command:
+      - |
+        trivy image --show-suppressed --exit-code 1 --ignorefile .trivyignore.yaml --severity HIGH,CRITICAL --format table "${IMAGE_REPOSITORY_URI}:${EXTRA_TAGS}"
+    required:
+      env:
+        - IMAGE_REPOSITORY_URI
+        - EXTRA_TAGS
+
+  trivy:container:sbom:
+    context: trivy:container
+    description: |
+      Run Trivy vulnerability sbom scan
+
+      Reports are generated under .trivy
+    command:
+      - |
+        mkdir -p .trivy
+        # Create SBOM
+        trivy image --format cyclonedx --output .trivy/sbom-file.json "${IMAGE_REPOSITORY_URI}:${EXTRA_TAGS}"
+        # Scan SBOM - we do this twice here to show the output of surpressed at the lower severities
+        # This is currently an experimental feature in trivy when it's stable - the second run can be removed
+        echo "---"
+        echo "📊 \e[1;96mFull output\e[0m \e[90m\e[0m \e[1;93mwithout severity filters\e[0m"
+        echo "---"
+        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 0 --format table .trivy/sbom-file.json
+        echo "---"
+        echo "📊 \e[1;96mFinal output\e[0m \e[90m\e[0m \e[1;93mwith severity filters\e[0m"
+        echo "---"
+        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 1 --severity HIGH,CRITICAL --format table .trivy/sbom-file.json
+    required:
+      env:
+        - IMAGE_REPOSITORY_URI
+        - EXTRA_TAGS
+
+  trufflehog:fs:
+    description: Runs trufflehog filesystem scan against the current directory and any other files / supplied
+    context: trufflehog
+    command:
+      - trufflehog filesystem . {{ if .ArgsList }}{{ .Args }}{{ end }}
+
+  sonar:scanner:cli:
+    context: sonar
+    description: |
+      Sonar Task can can be overridden with Args or Environment variables.
+
+      e.g. `SONAR_TOKEN=$SONAR_TOKEN eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13 -Dsonar.scm.revision=0.0.13`
+    command:
+      - sonar-scanner {{ .Args }}
+    after:
+      - rm -rf .scannerwork
+    required:
+      env:
+        - SONAR_TOKEN
+
+pipelines:
+  trivy:fs:scan:sbom:
+    - task: trivy:file:system:sbom
+    - task: trivy:file:system:scan
