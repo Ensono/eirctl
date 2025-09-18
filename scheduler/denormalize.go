@@ -149,8 +149,10 @@ func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*Ex
 				peekStage.Name = originalNode.Name
 				peekStage.WithEnv(originalNode.Env())
 				peekStage.WithVariables(originalNode.Variables())
+				peekStage.WithEnvFile(originalNode.envfile)
 				clonedStage.WithEnv(peekStage.Env())
 				clonedStage.WithVariables(peekStage.Variables())
+				clonedStage.WithEnvFile(peekStage.envfile)
 				originalNode = peekStage
 			}
 		}

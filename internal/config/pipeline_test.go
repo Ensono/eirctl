@@ -177,7 +177,7 @@ tasks:
 		if val.EnvFile == nil {
 			t.Fatal("failed to read the env file")
 		}
-		if val.EnvFile.PathValue != tmpEnv.Name() {
+		if val.EnvFile.PathValue[0] != tmpEnv.Name() {
 			t.Error("incorrect env file name")
 		}
 	})

@@ -194,7 +194,7 @@ func Test_Generate_Env_file(t *testing.T) {
 		envVars := osEnvVars.Merge(userEnvVars)
 
 		execContext := runner.NewExecutionContext(nil, "", envVars, utils.NewEnvFile(func(e *utils.Envfile) {
-			e.PathValue = outputFilePath
+			e.PathValue = []string{outputFilePath}
 			e.Exclude = append(e.Exclude, []string{"excld1", "exclude3", "userSuppliedButExcluded"}...)
 			e.Include = append(e.Include, "incld1")
 		}), []string{}, []string{}, []string{}, []string{})

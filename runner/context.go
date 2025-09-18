@@ -388,10 +388,13 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 	// iterate through all of the environment variables and add the selected ones to the builder
 	// env container at this point should already include all the merged variables by precedence
 	// if envfile path was provided it is merged with Env and inject as a whole into the container
-	if reader, found := utils.ReaderFromPath(c.Envfile); reader != nil && found {
-		if envFileMap, err := utils.ReadEnvFile(reader); envFileMap != nil && err == nil {
-			// overwriting env from OS < env property with the file
-			env = variables.FromMap(envFileMap).Merge(env)
+	if readers, found := utils.ReaderFromPath(c.Envfile); readers != nil && found {
+		// the last one wins
+		for _, reader := range readers {
+			if envFileMap, err := utils.ReadEnvFile(reader); envFileMap != nil && err == nil {
+				// overwriting env from OS < env property with the file
+				env = variables.FromMap(envFileMap).Merge(env)
+			}
 		}
 	}
 	for varName, varValue := range env.Map() {

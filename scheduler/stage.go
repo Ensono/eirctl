@@ -38,6 +38,7 @@ type Stage struct {
 	AllowFailure bool
 	status       *atomic.Int32
 	env          *variables.Variables
+	envfile      *utils.Envfile
 	variables    *variables.Variables
 	start        time.Time
 	end          time.Time
@@ -56,6 +57,7 @@ func NewStage(name string, opts ...StageOpts) *Stage {
 		// Name:      name,
 		variables: variables.NewVariables(),
 		env:       variables.NewVariables(),
+		envfile:   utils.NewEnvFile(),
 	}
 	// Apply options if any
 	for _, o := range opts {
@@ -85,12 +87,9 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 		tsk.FromTask(originalStage.Task)
 		// Add additional vars from the pipeline
 		tsk.Env = tsk.Env.Merge(variables.FromMap(existingGraph.Env))
-		if originalStage.Task.EnvFile != nil {
-			ef := utils.NewEnvFile()
-			if err := mergo.Merge(ef, originalStage.Task.EnvFile); err != nil {
-				logrus.Error("failed to dereference task")
-			}
-			tsk.EnvFile = ef
+		// we want to overwrite any values in the task with values specified in the stage
+		if err := mergo.Merge(tsk.EnvFile, originalStage.EnvFile()); err != nil {
+			logrus.Error("failed to dereference task")
 		}
 
 		s.Task = tsk
@@ -101,6 +100,8 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 			utils.CascadeName(ancestralParents, originalStage.Pipeline.Name()),
 		)
 		pipeline.Env = utils.ConvertToMapOfStrings(variables.FromMap(existingGraph.Env).Merge(variables.FromMap(originalStage.Pipeline.Env)).Map())
+		// merge envfile.path []
+		pipeline.EnvFile = originalStage.Pipeline.EnvFile
 		s.Pipeline = pipeline
 	}
 
@@ -117,6 +118,18 @@ func (s *Stage) WithEnv(v *variables.Variables) {
 
 func (s *Stage) Env() *variables.Variables {
 	return s.env
+}
+
+func (s *Stage) WithEnvFile(v *utils.Envfile) {
+	s.envfile = v
+}
+
+func (s *Stage) EnvFile() *utils.Envfile {
+	if s.envfile != nil {
+		return s.envfile
+	}
+	s.envfile = utils.NewEnvFile()
+	return s.envfile
 }
 
 func (s *Stage) WithVariables(v *variables.Variables) {

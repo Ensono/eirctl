@@ -140,6 +140,12 @@ func (s *Scheduler) runStage(stage *Stage) error {
 	// Precedence setter of env and vars
 	// Context > Pipeline > Task
 	t.Env = t.Env.Merge(stage.Env())
+	// currently not merging the envfile
+	// NOTE: so when you specify the envfile on the task - it will take precedence
+	// if it's specified on the stage (i.e. a pipeline or a task in another pipeline) it will be appendeded
+	if t.EnvFile == nil {
+		t.EnvFile = stage.EnvFile()
+	}
 	t.Variables = t.Variables.Merge(stage.Variables())
 
 	return s.taskRunner.Run(t)

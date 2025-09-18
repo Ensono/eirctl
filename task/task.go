@@ -165,6 +165,7 @@ func (t *Task) FromTask(task *Task) {
 	}
 	// merge vars from preceeding higher contexts
 	t.Env = t.Env.Merge(task.Env)
+	t.EnvFile = task.EnvFile
 	t.Variables = t.Variables.Merge(task.Variables)
 }
 

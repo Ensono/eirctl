@@ -51,6 +51,7 @@ func buildPipeline(g *scheduler.ExecutionGraph, stages []*PipelineDefinition, cf
 			stage.Alias = def.Pipeline
 		}
 		stage.WithEnv(variables.FromMap(def.Env))
+		stage.WithEnvFile(def.Envfile)
 		vars := variables.FromMap(def.Variables)
 		vars.Set(".Stage.Name", def.Name)
 		stage.WithVariables(vars)

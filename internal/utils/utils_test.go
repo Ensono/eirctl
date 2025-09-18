@@ -430,7 +430,7 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	}
 	defer os.Remove(tf.Name())
 	ef := utils.NewEnvFile()
-	ef.WithPath(tf.Name())
+	ef.WithPath([]string{tf.Name()})
 	r, success := utils.ReaderFromPath(ef)
 	if !success {
 		t.Error("reader failed to create")
@@ -438,7 +438,11 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	if r == nil {
 		t.Fatal("reader empty")
 	}
-	b, err := io.ReadAll(r)
+	b := []byte{}
+	for _, reader := range r {
+		out, _ := io.ReadAll(reader)
+		b = append(b, out...)
+	}
 	if string(b) != `FOO=bar` {
 		t.Error("wrong data written")
 	}

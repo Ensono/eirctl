@@ -191,7 +191,7 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// on program start up from Config - os.Environ are merged into contexts
 		dockerCtx := runner.NewExecutionContext(nil, "/", variables.FromMap(map[string]string{"ADDED": "/old/foo", "NEW_STUFF": "/old/bar"}),
 			utils.NewEnvFile(func(e *utils.Envfile) {
-				e.PathValue = tf.Name()
+				e.PathValue = []string{tf.Name()}
 				e.Exclude = append(config.DefaultContainerExcludes, "ADDED")
 			}), []string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(executable))
 
@@ -429,7 +429,7 @@ BAZ=quzxxx`))
 	}
 	task := taskpkg.NewTask("test:with:env")
 	task.Env = task.Env.Merge(variables.FromMap(map[string]string{"ONE": "two"}))
-	task.EnvFile = utils.NewEnvFile().WithPath(tf.Name())
+	task.EnvFile = utils.NewEnvFile().WithPath([]string{tf.Name()})
 	task.Commands = []string{"true"}
 
 	err = tr.Run(task)
