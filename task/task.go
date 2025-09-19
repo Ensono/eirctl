@@ -150,6 +150,7 @@ func NewTask(name string) *Task {
 	return &Task{
 		Name:           name,
 		Env:            variables.NewVariables(),
+		EnvFile:        utils.NewEnvFile(),
 		Variables:      variables.NewVariables(),
 		Required:       &RequiredInput{},
 		exitCode:       -1,

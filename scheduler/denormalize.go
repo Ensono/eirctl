@@ -4,7 +4,9 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/sirupsen/logrus"
 )
 
 // StageTable is a simple hash table of denormalized stages into a flat hash table (map)
@@ -74,8 +76,7 @@ func (graph *ExecutionGraph) Flatten(nodeName string, ancestralParentNames []str
 		clonedStage := NewStage(uniqueName)
 		// Task or stage needs adding
 		// Dereference the new stage from the original node
-		clonedStage.FromStage(originalNode, graph, ancestralParentNames)
-		flattenedStage[uniqueName] = clonedStage
+		flattenedStage[uniqueName] = clonedStage.FromStage(originalNode, graph, ancestralParentNames)
 
 		// If the node has a subgraph, recursively clone it with a new prefix
 		if originalNode.Pipeline != nil {
@@ -119,6 +120,8 @@ func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
 			if stage.Task != nil {
 				stage.Task.Env = stage.env.Merge(stage.Task.Env)
 				stage.env = stage.env.Merge(stage.Task.Env)
+				// we want to merge and overwrite any values in the pipeline with values specified in the stage
+				envfileMerge(stage.envfile, v.EnvFile())
 			}
 		}
 		// Check err just in case the denormalized graph has cyclical dependancies
@@ -158,4 +161,31 @@ func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*Ex
 		}
 	}
 	return subGraphClone, originalNode
+}
+
+func envfileMerge(dst, src *utils.Envfile) {
+	// need to clone the slice as re-assigning simply creates a new pointer and length but not the data array
+	dstEnvFilePath, srcEnvFilePath := slices.Clone(dst.PathValue), slices.Clone(src.PathValue)
+	// we want to merge and overwrite any values in the pipeline with values specified in the stage
+	if err := mergo.Merge(dst, src, func(c *mergo.Config) {
+		c.AppendSlice = true
+		mergo.WithSliceDeepCopy(c)
+	}); err != nil {
+		logrus.Error("failed to dereference task")
+	}
+	// when there are additional source Paths
+	// we extend the existing destination Paths
+	for _, envfile := range srcEnvFilePath {
+		// destEnvFile would have already been built this way
+		// so there should be no duplicates in the dest
+		//
+		// NOTE: this is a bit rudimentary
+		// potential future state is to remove the envfile from dest at that index
+		// and append it at a new index from the source
+		// existingIdx := slices.Index(dstEnvFilePath, envfile)
+		if !slices.Contains(dstEnvFilePath, envfile) {
+			dstEnvFilePath = append(dstEnvFilePath, envfile)
+		}
+	}
+	dst.PathValue = dstEnvFilePath
 }

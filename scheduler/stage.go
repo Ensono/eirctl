@@ -5,11 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
-	"github.com/sirupsen/logrus"
 )
 
 // Stage statuses
@@ -69,7 +67,7 @@ func NewStage(name string, opts ...StageOpts) *Stage {
 	return s
 }
 
-func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, ancestralParents []string) {
+func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, ancestralParents []string) *Stage {
 	s.Condition = originalStage.Condition
 	s.Dir = originalStage.Dir
 	s.AllowFailure = originalStage.AllowFailure
@@ -88,11 +86,7 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 		// Add additional vars from the pipeline
 		tsk.Env = tsk.Env.Merge(variables.FromMap(existingGraph.Env))
 		// we want to overwrite any values in the task with values specified in the stage
-		if err := mergo.Merge(tsk.EnvFile, originalStage.EnvFile(), func(c *mergo.Config) {
-			mergo.WithSliceDeepCopy(c)
-		}); err != nil {
-			logrus.Error("failed to dereference task")
-		}
+		envfileMerge(tsk.EnvFile, originalStage.EnvFile())
 
 		s.Task = tsk
 	}
@@ -103,16 +97,24 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 			utils.CascadeName(ancestralParents, originalStage.Pipeline.Name()),
 		)
 		pipeline.Env = utils.ConvertToMapOfStrings(variables.FromMap(existingGraph.Env).Merge(variables.FromMap(originalStage.Pipeline.Env)).Map())
-		// merge envfile.path []
+
 		pipeline.EnvFile = originalStage.Pipeline.EnvFile
+		if originalStage.Pipeline.EnvFile == nil {
+			pipeline.EnvFile = utils.NewEnvFile()
+		}
+		// we want to merge and overwrite any values in the pipeline with values specified in the stage
+		envfileMerge(pipeline.EnvFile, originalStage.EnvFile())
 		s.Pipeline = pipeline
 	}
 
+	s.WithEnvFile(originalStage.EnvFile())
 	s.DependsOn = []string{}
 
 	for _, v := range originalStage.DependsOn {
 		s.DependsOn = append(s.DependsOn, utils.CascadeName(ancestralParents, v))
 	}
+
+	return s
 }
 
 func (s *Stage) WithEnv(v *variables.Variables) {

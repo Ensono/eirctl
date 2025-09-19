@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/scheduler"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
@@ -77,6 +78,61 @@ func TestExecutionGraph_Flatten(t *testing.T) {
 	}
 }
 
+func Test_Denormalize_correct_stage_definitions(t *testing.T) {
+	t1 := task.FromCommands("t1", "/usr/bin/true")
+	t1.EnvFile = utils.NewEnvFile(func(e *utils.Envfile) {
+		e.PathValue = []string{"taskEnvFile.Name()"}
+	})
+	stage1 := scheduler.NewStage("stage1", func(s *scheduler.Stage) {
+		s.Task = t1
+		s.WithEnvFile(utils.NewEnvFile(func(e *utils.Envfile) {
+			e.PathValue = []string{"stageEnvFile.Name()"}
+		}))
+	})
+
+	t2 := task.FromCommands("t2", "/usr/bin/false")
+	stage2 := scheduler.NewStage("stage2", func(s *scheduler.Stage) {
+		s.Task = t2
+	})
+
+	g2, _ := scheduler.NewExecutionGraph("g2", stage2)
+	stage3 := scheduler.NewStage("stage3", func(s *scheduler.Stage) {
+		s.Pipeline = g2
+		s.DependsOn = []string{"stage1"}
+		s.WithEnvFile(utils.NewEnvFile(func(e *utils.Envfile) {
+			e.PathValue = []string{"stageEnvFile.Name()"}
+		}))
+	})
+
+	stage4 := scheduler.NewStage("stage4", func(s *scheduler.Stage) {
+		s.Task = task.FromCommands("t3", "true")
+		s.DependsOn = []string{"stage3"}
+	})
+
+	graph, err := scheduler.NewExecutionGraph("g1", stage1, stage2, stage3, stage4)
+	if err != nil || graph.Error() != nil {
+		t.Fatal(err)
+	}
+	ng, err := graph.Denormalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g1stage1, _ := ng.Node("g1->stage1")
+	if len(g1stage1.Task.EnvFile.PathValue) != 2 {
+		t.Errorf("got %v, wanted 2", len(g1stage1.Task.EnvFile.PathValue))
+	}
+
+	nodeg1stage3, _ := ng.Node("g1->stage3")
+	if nodeg1stage3.Pipeline == nil {
+		t.Fatal()
+	}
+	ng1stage3g2stage2, _ := nodeg1stage3.Pipeline.Node("g1->stage3->stage2")
+
+	if len(ng1stage3g2stage2.EnvFile().PathValue) != 1 {
+		t.Errorf("nested pipeline task not inherited the envfile path - got %v, want 1", len(ng1stage3g2stage2.EnvFile().PathValue))
+	}
+}
+
 func TestExecutionGraph_EnvFileMerge(t *testing.T) {
 	t.Parallel()
 
@@ -91,12 +147,19 @@ func TestExecutionGraph_EnvFileMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	node, _ := dg.Node("p1->one")
-	if node == nil {
+	p1one, _ := dg.Node("p1->one")
+	if p1one == nil {
 		t.Fatal()
 	}
-	if len(node.Task.EnvFile.PathValue) != 3 {
-		t.Errorf("envfile paths - got %v wanted 3", len(node.Task.EnvFile.PathValue))
+	if len(p1one.Task.EnvFile.PathValue) != 3 {
+		t.Fatalf("envfile paths - got %v wanted 3", len(p1one.Task.EnvFile.PathValue))
+	}
+	want := map[int]string{0: "one.env", 1: "local/envfile/one.env", 2: "local/envfile/two.env"}
+
+	for idx, val := range p1one.Task.EnvFile.PathValue {
+		if val != want[idx] {
+			t.Errorf("envfile paths, incorrectly sequenced - got %s, wanted %s", val, want[idx])
+		}
 	}
 }
 
@@ -341,16 +404,16 @@ pipelines:
 func helperGraph(t *testing.T, name string, inputBytes []byte) *scheduler.ExecutionGraph {
 	t.Helper()
 
-	tf, err := os.CreateTemp("", "graph-*.yml")
+	tempconfigfile, err := os.CreateTemp("", "graph-*.yml")
 	if err != nil {
 		t.Fatal("failed to create a temp file")
 	}
-	defer os.Remove(tf.Name())
-	if _, err := tf.Write(inputBytes); err != nil {
+	defer os.Remove(tempconfigfile.Name())
+	if _, err := tempconfigfile.Write(inputBytes); err != nil {
 		t.Fatal(err)
 	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
-	cfg, err := cl.Load(tf.Name())
+	cfg, err := cl.Load(tempconfigfile.Name())
 	return cfg.Pipelines[name]
 }
