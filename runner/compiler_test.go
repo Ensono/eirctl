@@ -19,8 +19,6 @@ var shBin = utils.Binary{
 var envFile = utils.NewEnvFile()
 
 func TestTaskCompiler_CompileTask_WithRequired_Runtime(t *testing.T) {
-	t.Parallel()
-
 	t.Run("required env has been set", func(t *testing.T) {
 
 		tc := runner.NewTaskCompiler()

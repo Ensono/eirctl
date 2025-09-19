@@ -319,7 +319,6 @@ func Test_ContainerContext_Volume_BindMounts(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			// t.Parallel()
 			cc := runner.NewContainerContext("image:latest")
 			cc.WithVolumes(tt.volumes...)
 			got := cc.BindMounts()

@@ -489,7 +489,6 @@ func TestLoader_contexts_with_containerArgs(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			dir, _ := os.MkdirTemp(os.TempDir(), "context*")
 			fname := filepath.Join(dir, "context.yaml")
 
@@ -546,7 +545,6 @@ func TestLoader_contexts_with_containerArgs_errors(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			dir, _ := os.MkdirTemp(os.TempDir(), "context*")
 			fname := filepath.Join(dir, "context.yaml")
 
@@ -564,9 +562,7 @@ func TestLoader_contexts_with_containerArgs_errors(t *testing.T) {
 }
 
 func Test_Loader_Validate(t *testing.T) {
-
 	t.Run("correctly references config", func(t *testing.T) {
-		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
 				"foo":         {Context: "exists"},
@@ -583,7 +579,6 @@ func Test_Loader_Validate(t *testing.T) {
 	})
 
 	t.Run("errors on missing context reference", func(t *testing.T) {
-		t.Parallel()
 		mcfg := &config.Config{
 			Tasks: map[string]*task.Task{
 				"foo": {Name: "foo", Context: "not_found"},
