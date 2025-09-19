@@ -274,13 +274,14 @@
               "type": "array"
             }
           ],
-          "description": "PathValue points to the file to read in and compute using the modify/include/exclude instructions."
+          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions."
         },
         "replace_char": {
           "type": "string"
         },
         "quote": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Quote specify the quote character to use"
         },
         "modify": {
           "items": {
