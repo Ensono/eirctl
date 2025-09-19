@@ -53,10 +53,11 @@ type Envfile struct {
 	// Both of these will be skipped
 	Exclude []string `mapstructure:"exclude" yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	Include []string `mapstructure:"include" yaml:"include,omitempty" json:"include,omitempty"`
-	// PathValue points to the file to read in and compute using the modify/include/exclude instructions.
+	// Path points to the file to read in and compute using the modify/include/exclude instructions.
 	PathValue   schema.StringSlice `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty" jsonschema:"oneof_type=string;array"`
 	ReplaceChar string             `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
-	Quote       bool               `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
+	// Quote specify the quote character to use
+	Quote bool `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
 	// Modify specifies the modifications to make to each env var and whether it meets the criteria
 	// example:
 	// - pattern: "^(?P<keyword>TF_VAR_)(?P<varname>.*)"

@@ -88,12 +88,15 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 		// Add additional vars from the pipeline
 		tsk.Env = tsk.Env.Merge(variables.FromMap(existingGraph.Env))
 		// we want to overwrite any values in the task with values specified in the stage
-		if err := mergo.Merge(tsk.EnvFile, originalStage.EnvFile()); err != nil {
+		if err := mergo.Merge(tsk.EnvFile, originalStage.EnvFile(), func(c *mergo.Config) {
+			mergo.WithSliceDeepCopy(c)
+		}); err != nil {
 			logrus.Error("failed to dereference task")
 		}
 
 		s.Task = tsk
 	}
+
 	if originalStage.Pipeline != nil {
 		// error can be ignored as we have already checked it
 		pipeline, _ := NewExecutionGraph(

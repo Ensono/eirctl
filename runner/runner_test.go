@@ -183,7 +183,12 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// Arrange
 		executable := runner.NewContainerContext("alpine:3.21.3")
 
-		tf, err := os.CreateTemp("", "exclude-*.env")
+		envfileTemp1, err := os.CreateTemp("", "exclude-*.env")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		envfileTemp2, err := os.CreateTemp("", "exclude2-*.env")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,13 +196,16 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// on program start up from Config - os.Environ are merged into contexts
 		dockerCtx := runner.NewExecutionContext(nil, "/", variables.FromMap(map[string]string{"ADDED": "/old/foo", "NEW_STUFF": "/old/bar"}),
 			utils.NewEnvFile(func(e *utils.Envfile) {
-				e.PathValue = []string{tf.Name()}
+				e.PathValue = []string{envfileTemp1.Name(), envfileTemp2.Name()}
 				e.Exclude = append(config.DefaultContainerExcludes, "ADDED")
 			}), []string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(executable))
 
-		tf.Write([]byte(`FOO=bar
+		envfileTemp1.Write([]byte(`FOO=bar
 BAZ=wqiyh
 QUX=looopar`))
+		envfileTemp2.Write([]byte(`FOO=should_overwrite_bar
+BAR=123
+LUX=foobar`))
 
 		me := mockExecutor{
 			reset: func(b bool) {},
@@ -208,8 +216,8 @@ QUX=looopar`))
 					t.Error("should have skipped adding var")
 				}
 
-				for _, v := range [][2]string{{"FOO", "bar"}, {"QUX", "looopar"},
-					{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}} {
+				for _, v := range [][2]string{{"FOO", "should_overwrite_bar"}, {"QUX", "looopar"},
+					{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}, {"BAR", "123"}, {"LUX", "foobar"}} {
 					val, ok := got[v[0]]
 					if !ok {
 						t.Errorf("key %s not present", v[0])

@@ -35,7 +35,7 @@ func TestStageFrom_originalToNew(t *testing.T) {
 func TestExecutionGraph_Flatten(t *testing.T) {
 	t.Parallel()
 
-	g := helperGraph(t, "graph:pipeline1")
+	g := helperGraph(t, "graph:pipeline1", ymlInputTester)
 	if g == nil {
 		t.Fatal("graph not found")
 	}
@@ -77,8 +77,31 @@ func TestExecutionGraph_Flatten(t *testing.T) {
 	}
 }
 
+func TestExecutionGraph_EnvFileMerge(t *testing.T) {
+	t.Parallel()
+
+	g := helperGraph(t, "p1", ymlTesterEnvFilePath)
+	if g == nil {
+		t.Fatal("graph not found")
+	}
+	if len(g.Nodes()) != 3 {
+		t.Errorf("top level graph does not have correct number of top level jobs, got %v wanted %v", len(g.Nodes()), 8)
+	}
+	dg, err := g.Denormalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, _ := dg.Node("p1->one")
+	if node == nil {
+		t.Fatal()
+	}
+	if len(node.Task.EnvFile.PathValue) != 3 {
+		t.Errorf("envfile paths - got %v wanted 3", len(node.Task.EnvFile.PathValue))
+	}
+}
+
 func TestStageTable_ops(t *testing.T) {
-	g := helperGraph(t, "graph:pipeline1")
+	g := helperGraph(t, "graph:pipeline1", ymlInputTester)
 	flattenedStages := map[string]*scheduler.Stage{}
 	g.Flatten(scheduler.RootNodeName, []string{g.Name()}, flattenedStages)
 	// add the root stage just for testing
@@ -131,7 +154,7 @@ func TestStageTable_ops(t *testing.T) {
 
 func TestExecutionGraph_Denormalize(t *testing.T) {
 	t.Parallel()
-	g := helperGraph(t, "graph:pipeline1")
+	g := helperGraph(t, "graph:pipeline1", ymlInputTester)
 
 	t.Run("check sample graph", func(t *testing.T) {
 		got, err := g.Denormalize()
@@ -286,7 +309,36 @@ tasks:
       FOO: task2
 `)
 
-func helperGraph(t *testing.T, name string) *scheduler.ExecutionGraph {
+var ymlTesterEnvFilePath = []byte(`
+tasks:
+  one: 
+    command: 
+      - |
+        echo one
+        echo "$SET_IN_PIPELINE"
+    envfile:
+      path:
+        - one.env
+  two: 
+    command: 
+      - | 
+        echo two
+        echo "$SET_IN_PIPELINE"
+  
+pipelines:
+  p1: 
+    - task: one
+      envfile:
+        path:
+          - local/envfile/one.env
+          - local/envfile/two.env
+    - task: two
+      envfile:
+        path:
+          - local/envfile/two.env
+`)
+
+func helperGraph(t *testing.T, name string, inputBytes []byte) *scheduler.ExecutionGraph {
 	t.Helper()
 
 	tf, err := os.CreateTemp("", "graph-*.yml")
@@ -294,7 +346,7 @@ func helperGraph(t *testing.T, name string) *scheduler.ExecutionGraph {
 		t.Fatal("failed to create a temp file")
 	}
 	defer os.Remove(tf.Name())
-	if _, err := tf.Write(ymlInputTester); err != nil {
+	if _, err := tf.Write(inputBytes); err != nil {
 		t.Fatal(err)
 	}
 
