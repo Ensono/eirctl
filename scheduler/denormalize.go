@@ -12,6 +12,38 @@ import (
 // NOTE: used for read only at this point
 type StageTable map[string]*Stage
 
+// NthLevelChildren retrieves the nodes by prefix and depth specified
+//
+// removing the base prefix and looking at the depth of the keyprefix per stage
+func (st StageTable) NthLevelChildren(prefix string, depth int) []*Stage {
+	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
+	stages := []*Stage{}
+	for key, stageVal := range st {
+		if strings.HasPrefix(key, prefix) && key != prefix {
+			keyParts := strings.Split(key, utils.PipelineDirectionChar)
+			if len(keyParts[len(prefixParts):]) == depth {
+				stages = append(stages, stageVal)
+			}
+		}
+	}
+	return stages
+}
+
+// RecurseParents walks all the parents recursively
+// and appends to the list in revers order
+func (st StageTable) RecurseParents(prefix string) []*Stage {
+	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
+	stages := []*Stage{}
+	for i := 1; i < len(prefixParts); i++ {
+		parentKey := strings.Join(prefixParts[0:len(prefixParts)-i], utils.PipelineDirectionChar)
+		if stageVal, ok := st[parentKey]; ok {
+			stages = append(stages, stageVal)
+		}
+	}
+	slices.Reverse(stages)
+	return stages
+}
+
 // Denormalize performs a recursive DFS traversal on the ExecutionGraph from the root node and creates a new stage reference.
 //
 // In order to be able to call the same pipeline from another pipeline, we want to create a new
@@ -30,6 +62,37 @@ func (g *ExecutionGraph) Denormalize() (*ExecutionGraph, error) {
 		return nil, err
 	}
 	return dg, nil
+}
+
+// Flatten is a recursive helper function to clone nodes with unique paths.
+//
+// Each new instance will have a separate memory address allocation. Will be used for denormalization.
+func (graph *ExecutionGraph) Flatten(nodeName string, ancestralParentNames []string, flattenedStage map[string]*Stage) {
+	uniqueName := utils.CascadeName(ancestralParentNames, nodeName)
+	if nodeName != RootNodeName {
+		originalNode, _ := graph.Node(nodeName)
+		clonedStage := NewStage(uniqueName)
+		// Task or stage needs adding
+		// Dereference the new stage from the original node
+		clonedStage.FromStage(originalNode, graph, ancestralParentNames)
+		flattenedStage[uniqueName] = clonedStage
+
+		// If the node has a subgraph, recursively clone it with a new prefix
+		if originalNode.Pipeline != nil {
+			var subGraphClone *ExecutionGraph
+			subGraphClone, originalNode = graphClone(originalNode, clonedStage, uniqueName)
+			// use alias or name
+			for subNode := range originalNode.Pipeline.Nodes() {
+				originalNode.Pipeline.Flatten(subNode, append(ancestralParentNames, originalNode.Name), flattenedStage)
+			}
+			clonedStage.Pipeline = subGraphClone
+		}
+	}
+
+	// Clone each child node, creating unique names based on the current path
+	for _, child := range graph.Children(nodeName) {
+		graph.Flatten(child.Name, ancestralParentNames, flattenedStage)
+	}
 }
 
 // rebuildFromDenormalized rebuilds the whole tree from scratch using the denormalized stages as input
@@ -65,69 +128,6 @@ func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
 		}
 	}
 	return nil
-}
-
-// NthLevelChildren retrieves the nodes by prefix and depth specified
-//
-// removing the base prefix and looking at the depth of the keyprefix per stage
-func (st StageTable) NthLevelChildren(prefix string, depth int) []*Stage {
-	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
-	stages := []*Stage{}
-	for key, stageVal := range st {
-		if strings.HasPrefix(key, prefix) && key != prefix {
-			keyParts := strings.Split(key, utils.PipelineDirectionChar)
-			if len(keyParts[len(prefixParts):]) == depth {
-				stages = append(stages, stageVal)
-			}
-		}
-	}
-	return stages
-}
-
-// RecurseParents walks all the parents recursively
-// and appends to the list in revers order
-func (st StageTable) RecurseParents(prefix string) []*Stage {
-	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
-	stages := []*Stage{}
-	for i := 1; i < len(prefixParts); i++ {
-		parentKey := strings.Join(prefixParts[0:len(prefixParts)-i], utils.PipelineDirectionChar)
-		if stageVal, ok := st[parentKey]; ok {
-			stages = append(stages, stageVal)
-		}
-	}
-	slices.Reverse(stages)
-	return stages
-}
-
-// Flatten is a recursive helper function to clone nodes with unique paths.
-//
-// Each new instance will have a separate memory address allocation. Will be used for denormalization.
-func (graph *ExecutionGraph) Flatten(nodeName string, ancestralParentNames []string, flattenedStage map[string]*Stage) {
-	uniqueName := utils.CascadeName(ancestralParentNames, nodeName)
-	if nodeName != RootNodeName {
-		originalNode, _ := graph.Node(nodeName)
-		clonedStage := NewStage(uniqueName)
-		// Task or stage needs adding
-		// Dereference the new stage from the original node
-		clonedStage.FromStage(originalNode, graph, ancestralParentNames)
-		flattenedStage[uniqueName] = clonedStage
-
-		// If the node has a subgraph, recursively clone it with a new prefix
-		if originalNode.Pipeline != nil {
-			var subGraphClone *ExecutionGraph
-			subGraphClone, originalNode = graphClone(originalNode, clonedStage, uniqueName)
-			// use alias or name
-			for subNode := range originalNode.Pipeline.Nodes() {
-				originalNode.Pipeline.Flatten(subNode, append(ancestralParentNames, originalNode.Name), flattenedStage)
-			}
-			clonedStage.Pipeline = subGraphClone
-		}
-	}
-
-	// Clone each child node, creating unique names based on the current path
-	for _, child := range graph.Children(nodeName) {
-		graph.Flatten(child.Name, ancestralParentNames, flattenedStage)
-	}
 }
 
 func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*ExecutionGraph, *Stage) {
