@@ -294,13 +294,6 @@ func Test_Scheduler_Error_Required(t *testing.T) {
 
 func Test_Scheduler_EnvFile_path_precedence_after_denormalization(t *testing.T) {
 
-	// t.Run("correctly cascades and overwrites variables", func(t *testing.T) {
-	// Arrange
-	contextEnvfile, err := os.CreateTemp("", "ctx-*.env")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(contextEnvfile.Name())
 	taskEnvFile, err := os.CreateTemp("", "task-*.env")
 	if err != nil {
 		t.Fatal(err)
@@ -313,9 +306,6 @@ func Test_Scheduler_EnvFile_path_precedence_after_denormalization(t *testing.T) 
 	}
 	defer os.RemoveAll(stageEnvFile.Name())
 
-	contextEnvfile.Write([]byte(`FOO=bar
-BAZ=wqiyh
-QUX=looopar`))
 	taskEnvFile.Write([]byte(`FOO=should_overwrite_context_from_task
 BAR=123
 LUX=foobar`))
@@ -336,10 +326,13 @@ LUX_STAGE=baz`))
 	})
 
 	t2 := task.FromCommands("t2", "/usr/bin/false")
+	t2.EnvFile = utils.NewEnvFile(func(e *utils.Envfile) {
+		e.PathValue = []string{taskEnvFile.Name()}
+	})
+
 	stage2 := scheduler.NewStage("stage2", func(s *scheduler.Stage) {
 		s.Task = t2
 	})
-
 	g2, _ := scheduler.NewExecutionGraph("g2", stage2)
 	stage3 := scheduler.NewStage("stage3", func(s *scheduler.Stage) {
 		s.Pipeline = g2
@@ -368,12 +361,20 @@ LUX_STAGE=baz`))
 			}
 			if receivedTask.Name == "g1->stage3->t2" {
 				if len(receivedTask.EnvFile.Path()) != 2 {
-					t.Errorf("incorrectly merged env file paths when called from a nested pipeline into a task\ngot %v, wanted 1", receivedTask.EnvFile)
+					t.Errorf("incorrectly merged env file paths when called from a nested pipeline into a task\ngot %v, wanted 2", receivedTask.EnvFile.Path())
+				}
+				wantOrder := map[int]string{0: taskEnvFile.Name(), 1: stageEnvFile.Name()}
+				// check order is correct
+				for idx, got := range receivedTask.EnvFile.Path() {
+					if got != wantOrder[idx] {
+						t.Errorf("wrong order got: %s wanted: %s", got, wantOrder[idx])
+					}
 				}
 			}
 			return nil
 		},
 	}
+
 	ng, err := graph.Denormalize()
 	if err != nil {
 		t.Fatal(err)
@@ -384,8 +385,6 @@ LUX_STAGE=baz`))
 	if err := schdlr.Schedule(ng); err != nil {
 		t.Fatal(err)
 	}
-	// })
-
 }
 
 func ExampleScheduler_Schedule() {
