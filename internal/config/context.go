@@ -159,7 +159,7 @@ func checkForbiddenContainerArgs(cargs []string) []string {
 	// need to iterate over the list of forbidden values in pairs
 	// since we want to search for a partial match. this loop is required
 	for _, verbotenPair := range forbiddenContainerArgsPairs {
-		slices.ContainsFunc(cargs, func(s string) bool {
+		_ = slices.ContainsFunc(cargs, func(s string) bool {
 			if strings.Contains(s, verbotenPair) {
 				idx := slices.Index(cargs, s)
 				// when looking for pairs need to append both the flag and flag value
