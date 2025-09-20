@@ -29,7 +29,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     container:
-      image: golang:1-trixie
+      image: public.ecr.aws/docker/library/golang:1-trixie
     needs: set-version-tag
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}

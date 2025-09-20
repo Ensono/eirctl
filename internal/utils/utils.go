@@ -54,6 +54,8 @@ type Envfile struct {
 	Exclude []string `mapstructure:"exclude" yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	Include []string `mapstructure:"include" yaml:"include,omitempty" json:"include,omitempty"`
 	// Path points to the file to read in and compute using the modify/include/exclude instructions.
+	//
+	// Path supports both a single value or a list specification
 	PathValue   schema.StringSlice `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty" jsonschema:"oneof_type=string;array"`
 	ReplaceChar string             `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
 	// Quote specify the quote character to use

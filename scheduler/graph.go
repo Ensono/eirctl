@@ -38,9 +38,7 @@ type ExecutionGraph struct {
 	// parent holds the children reference of the node
 	parent map[string][]string
 	// children points back children the parent reference
-	children map[string][]string
-	// index for an indexed tree lookup
-	index      map[string]*Stage
+	children   map[string][]string
 	start, end time.Time
 	mu         sync.Mutex
 }
@@ -61,7 +59,6 @@ func NewExecutionGraph(name string, stages ...*Stage) (*ExecutionGraph, error) {
 		errors:   []GraphError{},
 		nodes:    nodes,
 		name:     name,
-		index:    make(map[string]*Stage),
 		parent:   make(map[string][]string),
 		children: make(map[string][]string),
 	}
@@ -192,7 +189,6 @@ func (g *ExecutionGraph) BFSNodesFlattened(nodeName string) StageList {
 // addNode adds a new node to the map (index of nodes)
 func (g *ExecutionGraph) addNode(name string, stage *Stage) {
 	g.nodes[name] = stage
-	g.index[name] = stage
 }
 
 // addEdge adds a new edge to the graph

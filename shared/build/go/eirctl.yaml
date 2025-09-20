@@ -1,7 +1,7 @@
 contexts:
   go1x:
     container:
-      name: public.ecr.aws/docker/library/golang:1-trixie
+      name: public.ecr.aws/docker/library/golang:1.25-trixie
       enable_dind: true
       enable_mount: true
     envfile:

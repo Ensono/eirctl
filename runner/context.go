@@ -393,12 +393,13 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		// the last one wins
 		for _, reader := range readers {
 			if envFile, err := utils.ReadEnvFile(reader); envFile != nil && err == nil {
-				// overwriting env from OS < env property with the file
 				envfileEnv = envfileEnv.Merge(variables.FromMap(envFile))
 			}
 		}
 	}
 
+	// env from OS > env property with the file
+	// i.e. envfile keys do not overwrite OS or directly set env properties
 	env = envfileEnv.Merge(env)
 	for varName, varValue := range env.Map() {
 		// check to see if the env matches an invalid variable, if it does
