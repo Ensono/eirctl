@@ -285,7 +285,7 @@ func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	}
 	readers := []io.ReadCloser{}
 	for _, envfilepath := range envfile.PathValue {
-		if fi, err := os.Stat(envfilepath); fi != nil && err == nil {
+		if fileinfo, err := os.Stat(envfilepath); fileinfo != nil && err == nil {
 			f, err := os.Open(envfilepath)
 			if err != nil {
 				logrus.Tracef("unable to open %s in %v", envfilepath, envfile.PathValue)
