@@ -274,7 +274,7 @@
               "type": "array"
             }
           ],
-          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions."
+          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions.\n\nPath supports both a single value or a list specification"
         },
         "replace_char": {
           "type": "string"
