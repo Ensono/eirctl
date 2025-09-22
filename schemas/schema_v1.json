@@ -265,14 +265,23 @@
           "type": "array"
         },
         "path": {
-          "type": "string",
-          "description": "PathValue points to the file to read in and compute using the modify/include/exclude instructions."
+          "$ref": "#/$defs/StringSlice",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array"
+            }
+          ],
+          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions.\n\nPath supports both a single value or a list specification"
         },
         "replace_char": {
           "type": "string"
         },
         "quote": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Quote specify the quote character to use"
         },
         "modify": {
           "items": {
@@ -378,6 +387,10 @@
         "env": {
           "$ref": "#/$defs/EnvVarMapType",
           "description": "Env is the Key: Value map of env vars to inject into the tasks within this pipeline"
+        },
+        "envfile": {
+          "$ref": "#/$defs/Envfile",
+          "description": "EnvFile definition to set on the stage (eirctl pipeline)\n\nIf a list is supplied than the order in which they are supplied will be respected\nlater elements in the list will overwrite keys specified previously"
         },
         "variables": {
           "$ref": "#/$defs/EnvVarMapType",

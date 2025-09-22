@@ -280,7 +280,6 @@ fdsggfd gdf`},
 }
 
 func TestUtils_ConvertToMapOfStrings(t *testing.T) {
-	t.Parallel()
 	in := make(map[string]any)
 	in["str"] = "string"
 	in["int"] = 123
@@ -336,7 +335,6 @@ func TestUtils_ConvertToMachineFriendly(t *testing.T) {
 }
 
 func TestUtils_TailExtractName(t *testing.T) {
-	t.Parallel()
 	ttests := map[string]struct {
 		input  string
 		expect string
@@ -356,6 +354,7 @@ func TestUtils_TailExtractName(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			got := utils.TailExtract(tt.input)
 			if got != tt.expect {
 				t.Errorf("TailExtract error: got %s, wanted %s\n", got, tt.expect)
@@ -365,7 +364,6 @@ func TestUtils_TailExtractName(t *testing.T) {
 }
 
 func TestUtils_CascadeName(t *testing.T) {
-	t.Parallel()
 	ttests := map[string]struct {
 		parents []string
 		curr    string
@@ -430,7 +428,7 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	}
 	defer os.Remove(tf.Name())
 	ef := utils.NewEnvFile()
-	ef.WithPath(tf.Name())
+	ef.WithPath([]string{tf.Name()})
 	r, success := utils.ReaderFromPath(ef)
 	if !success {
 		t.Error("reader failed to create")
@@ -438,7 +436,11 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	if r == nil {
 		t.Fatal("reader empty")
 	}
-	b, err := io.ReadAll(r)
+	b := []byte{}
+	for _, reader := range r {
+		out, _ := io.ReadAll(reader)
+		b = append(b, out...)
+	}
 	if string(b) != `FOO=bar` {
 		t.Error("wrong data written")
 	}

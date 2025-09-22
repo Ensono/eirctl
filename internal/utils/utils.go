@@ -16,6 +16,7 @@ import (
 	"sync"
 	"text/template"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 )
@@ -52,10 +53,13 @@ type Envfile struct {
 	// Both of these will be skipped
 	Exclude []string `mapstructure:"exclude" yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	Include []string `mapstructure:"include" yaml:"include,omitempty" json:"include,omitempty"`
-	// PathValue points to the file to read in and compute using the modify/include/exclude instructions.
-	PathValue   string `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty"`
-	ReplaceChar string `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
-	Quote       bool   `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
+	// Path points to the file to read in and compute using the modify/include/exclude instructions.
+	//
+	// Path supports both a single value or a list specification
+	PathValue   schema.StringSlice `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty" jsonschema:"oneof_type=string;array"`
+	ReplaceChar string             `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
+	// Quote specify the quote character to use
+	Quote bool `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
 	// Modify specifies the modifications to make to each env var and whether it meets the criteria
 	// example:
 	// - pattern: "^(?P<keyword>TF_VAR_)(?P<varname>.*)"
@@ -111,14 +115,14 @@ func NewEnvFile(opts ...EnvFileOpts) *Envfile {
 	return e
 }
 
-func (e *Envfile) WithPath(path string) *Envfile {
+func (e *Envfile) WithPath(path []string) *Envfile {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.PathValue = path
 	return e
 }
 
-func (e *Envfile) Path() string {
+func (e *Envfile) Path() []string {
 	return e.PathValue
 }
 
@@ -275,19 +279,22 @@ func MustGetUserHomeDir() string {
 
 // ReaderFromPath returns an io.ReaderCloser from provided path
 // Returning false if the file does not exist or is unable to read it
-func ReaderFromPath(envfile *Envfile) (io.ReadCloser, bool) {
+func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	if envfile == nil {
 		return nil, false
 	}
-	if fi, err := os.Stat(envfile.PathValue); fi != nil && err == nil {
-		f, err := os.Open(envfile.PathValue)
-		if err != nil {
-			logrus.Tracef("unable to open %s", envfile.PathValue)
-			return nil, false
+	readers := []io.ReadCloser{}
+	for _, envfilepath := range envfile.PathValue {
+		if fileinfo, err := os.Stat(envfilepath); fileinfo != nil && err == nil {
+			f, err := os.Open(envfilepath)
+			if err != nil {
+				logrus.Tracef("unable to open %s in %v", envfilepath, envfile.PathValue)
+				return nil, false
+			}
+			readers = append(readers, f)
 		}
-		return f, true
 	}
-	return nil, false
+	return readers, true
 }
 
 // ReadEnvFile reads env file inv `k=v` format

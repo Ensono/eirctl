@@ -2,7 +2,7 @@
 
 debug: false
 output: prefixed
-# TODO: top level variables are not being munged int
+# TODO: top level variables are not being munged in
 # variables:
 #   foo: 1
 
@@ -10,12 +10,6 @@ import:
   - shared/build/go/eirctl.yaml
 
 pipelines:
-  lints:
-    - task: golint
-    - task: vuln:check
-    # govet is run as part of golint
-    # - task: govet
-
   build:binary:
     - task: clean
     - task: build

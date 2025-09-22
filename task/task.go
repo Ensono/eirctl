@@ -150,6 +150,7 @@ func NewTask(name string) *Task {
 	return &Task{
 		Name:           name,
 		Env:            variables.NewVariables(),
+		EnvFile:        utils.NewEnvFile(),
 		Variables:      variables.NewVariables(),
 		Required:       &RequiredInput{},
 		exitCode:       -1,
@@ -165,6 +166,7 @@ func (t *Task) FromTask(task *Task) {
 	}
 	// merge vars from preceeding higher contexts
 	t.Env = t.Env.Merge(task.Env)
+	t.EnvFile = task.EnvFile
 	t.Variables = t.Variables.Merge(task.Variables)
 }
 

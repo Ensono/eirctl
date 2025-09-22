@@ -213,6 +213,7 @@ Stage definition takes following parameters:
 - `task` - task to execute on this stage
 - `pipeline` - pipeline to execute on this stage
 - `env` - environment variables. All existing environment variables will be passed automatically
+- `envfile` - envfile specifications allow you to to leverage a cascade of envfile paths and rules.Tthese get merged with  any envfiles specified on the task level.
 - `depends_on` - name of stage on which this stage depends on. This stage will be started only after referenced stage is completed.
 - `allow_failure` - if `true` failing stage will not interrupt pipeline execution. ``false`` by default
 - `condition` - condition to check before running stage

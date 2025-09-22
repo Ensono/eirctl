@@ -7,7 +7,6 @@ import (
 
 func Test_shellCommand(t *testing.T) {
 	t.Parallel()
-
 	t.Run("errors on args", func(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:    []string{"-c", "testdata/graph.yaml", "shell"},

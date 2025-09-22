@@ -57,7 +57,9 @@ The general flow of inheritance is from the more general to the more specific, i
 > [!NOTE]
 > Presence of a file named `eirctl.env` (has to follow the nix style env file syntax `KEY=value`) will automatically make this part of the context environment variable. Will follow the same precedence as above.
 > [!TIP]
-> envfile can specify a path to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers.
+> envfile can specify a path(s) to a custom .env file - which now supports in file references to variables, _it does not_ support a more advanced envsubst style of defaults and empty checkers.
+> [!NOTE]
+> Multiple `envfile.path[]` can be specified on any level with the following order of precedence `context < task < stage (task called from a pipeline)`
 
 As the file is scanned line by line any referenced vars need to be specified after their declaration. See below for an example.
 
@@ -135,3 +137,6 @@ The path to `task:four` can be achieved in the following ways:
     - `FOO: task-set-val-always-wins`
     - `SOME: that`
   - `SOME` would be inherited the `tester` referenced `action:two` pipeline.
+
+> [!WARNING]
+> `env` property specified directly will have the highest precedence

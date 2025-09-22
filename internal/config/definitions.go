@@ -122,6 +122,11 @@ type PipelineDefinition struct {
 	Dir string `mapstructure:"dir" yaml:"dir,omitempty" json:"dir,omitempty"`
 	// Env is the Key: Value map of env vars to inject into the tasks within this pipeline
 	Env EnvVarMapType `mapstructure:"env" yaml:"env,omitempty" json:"env,omitempty"`
+	// EnvFile definition to set on the stage (eirctl pipeline)
+	//
+	// If a list is supplied than the order in which they are supplied will be respected
+	// later elements in the list will overwrite keys specified previously
+	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables is the Key: Value map of vars vars to inject into the tasks
 	Variables EnvVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 	// Generator PipelineLevel

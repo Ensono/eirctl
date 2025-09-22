@@ -5,11 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
-	"github.com/sirupsen/logrus"
 )
 
 // Stage statuses
@@ -38,6 +36,7 @@ type Stage struct {
 	AllowFailure bool
 	status       *atomic.Int32
 	env          *variables.Variables
+	envfile      *utils.Envfile
 	variables    *variables.Variables
 	start        time.Time
 	end          time.Time
@@ -56,6 +55,7 @@ func NewStage(name string, opts ...StageOpts) *Stage {
 		// Name:      name,
 		variables: variables.NewVariables(),
 		env:       variables.NewVariables(),
+		envfile:   utils.NewEnvFile(),
 	}
 	// Apply options if any
 	for _, o := range opts {
@@ -67,7 +67,7 @@ func NewStage(name string, opts ...StageOpts) *Stage {
 	return s
 }
 
-func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, ancestralParents []string) {
+func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, ancestralParents []string) *Stage {
 	s.Condition = originalStage.Condition
 	s.Dir = originalStage.Dir
 	s.AllowFailure = originalStage.AllowFailure
@@ -85,30 +85,36 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 		tsk.FromTask(originalStage.Task)
 		// Add additional vars from the pipeline
 		tsk.Env = tsk.Env.Merge(variables.FromMap(existingGraph.Env))
-		if originalStage.Task.EnvFile != nil {
-			ef := utils.NewEnvFile()
-			if err := mergo.Merge(ef, originalStage.Task.EnvFile); err != nil {
-				logrus.Error("failed to dereference task")
-			}
-			tsk.EnvFile = ef
-		}
+		// we want to overwrite any values in the task with values specified in the stage
+		envfileMerge(tsk.EnvFile, originalStage.EnvFile())
 
 		s.Task = tsk
 	}
+
 	if originalStage.Pipeline != nil {
 		// error can be ignored as we have already checked it
 		pipeline, _ := NewExecutionGraph(
 			utils.CascadeName(ancestralParents, originalStage.Pipeline.Name()),
 		)
 		pipeline.Env = utils.ConvertToMapOfStrings(variables.FromMap(existingGraph.Env).Merge(variables.FromMap(originalStage.Pipeline.Env)).Map())
+
+		pipeline.EnvFile = originalStage.Pipeline.EnvFile
+		if originalStage.Pipeline.EnvFile == nil {
+			pipeline.EnvFile = utils.NewEnvFile()
+		}
+		// we want to merge and overwrite any values in the pipeline with values specified in the stage
+		envfileMerge(pipeline.EnvFile, originalStage.EnvFile())
 		s.Pipeline = pipeline
 	}
 
+	s.WithEnvFile(originalStage.EnvFile())
 	s.DependsOn = []string{}
 
 	for _, v := range originalStage.DependsOn {
 		s.DependsOn = append(s.DependsOn, utils.CascadeName(ancestralParents, v))
 	}
+
+	return s
 }
 
 func (s *Stage) WithEnv(v *variables.Variables) {
@@ -117,6 +123,18 @@ func (s *Stage) WithEnv(v *variables.Variables) {
 
 func (s *Stage) Env() *variables.Variables {
 	return s.env
+}
+
+func (s *Stage) WithEnvFile(v *utils.Envfile) {
+	s.envfile = v
+}
+
+func (s *Stage) EnvFile() *utils.Envfile {
+	if s.envfile != nil {
+		return s.envfile
+	}
+	s.envfile = utils.NewEnvFile()
+	return s.envfile
 }
 
 func (s *Stage) WithVariables(v *variables.Variables) {

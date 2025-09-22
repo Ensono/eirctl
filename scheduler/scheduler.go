@@ -141,7 +141,7 @@ func (s *Scheduler) runStage(stage *Stage) error {
 	// Context > Pipeline > Task
 	t.Env = t.Env.Merge(stage.Env())
 	t.Variables = t.Variables.Merge(stage.Variables())
-
+	envfileMerge(t.EnvFile, stage.EnvFile())
 	return s.taskRunner.Run(t)
 }
 

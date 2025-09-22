@@ -157,18 +157,24 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	env := r.env.Merge(execContext.Env)
 	env = env.With("TASK_NAME", t.Name)
 	env = env.Merge(t.Env)
+
+	envfileEnv := variables.NewVariables()
 	// denormalized graph will append all ancestral env keys to the task
 	// if task also includes an envfile property
 	// We need to read it in and hang on the env for the command compiler.
-	if reader, exists := utils.ReaderFromPath(t.EnvFile); exists {
-		m, err := utils.ReadEnvFile(reader)
-		if err != nil {
-			return fmt.Errorf("%v, %w", err, utils.ErrEnvfileFormatIncorrect)
+	if readers, exists := utils.ReaderFromPath(t.EnvFile); exists {
+		for _, reader := range readers {
+			m, err := utils.ReadEnvFile(reader)
+			if err != nil {
+				return fmt.Errorf("%v, %w", err, utils.ErrEnvfileFormatIncorrect)
+			}
+			// now overwriting any env set properties in the envfile
+			envfileEnv = envfileEnv.Merge(variables.FromMap(m))
 		}
-		// now overwriting any env set properties in the envfile
-		env = variables.FromMap(m).Merge(env)
 	}
-
+	
+	// 
+	env = envfileEnv.Merge(env)
 	meets, err := r.checkTaskCondition(t)
 	if err != nil {
 		return err

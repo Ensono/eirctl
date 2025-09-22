@@ -65,7 +65,7 @@ func (vars *Variables) Map() map[string]any {
 // src will overwrite the existing keys if exists
 // returns a new instance of the merged *Variables
 func (vars *Variables) Merge(src *Variables) *Variables {
-	dst := &Variables{}
+	dst := NewVariables()
 
 	if vars != nil {
 		for k, v := range vars.Map() {
@@ -82,7 +82,7 @@ func (vars *Variables) Merge(src *Variables) *Variables {
 
 // With creates new container and sets key to given value
 func (vars *Variables) With(key string, value interface{}) *Variables {
-	dst := &Variables{}
+	dst := NewVariables()
 	dst = dst.Merge(vars)
 	dst.Set(key, value)
 	return dst

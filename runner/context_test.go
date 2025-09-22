@@ -194,7 +194,7 @@ func Test_Generate_Env_file(t *testing.T) {
 		envVars := osEnvVars.Merge(userEnvVars)
 
 		execContext := runner.NewExecutionContext(nil, "", envVars, utils.NewEnvFile(func(e *utils.Envfile) {
-			e.PathValue = outputFilePath
+			e.PathValue = []string{outputFilePath}
 			e.Exclude = append(e.Exclude, []string{"excld1", "exclude3", "userSuppliedButExcluded"}...)
 			e.Include = append(e.Include, "incld1")
 		}), []string{}, []string{}, []string{}, []string{})
@@ -319,7 +319,6 @@ func Test_ContainerContext_Volume_BindMounts(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			// t.Parallel()
 			cc := runner.NewContainerContext("image:latest")
 			cc.WithVolumes(tt.volumes...)
 			got := cc.BindMounts()
