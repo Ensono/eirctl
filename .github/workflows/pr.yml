@@ -66,6 +66,9 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        
+    - name: Add Go bin to PATH
+      run: echo "$HOME/go/bin" >> $GITHUB_PATH
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -92,10 +95,22 @@ jobs:
         fail_on_failure: true
         check_name: Eirctl Unit Tests
 
-    - name: Ensure full git history for SonarCloud
+
+    - name: Debug coverage files
       run: |
-        git fetch --unshallow --all || echo "Repository already has full history"
-        git log --oneline -5
+        echo "Checking coverage files..."
+        ls -la .coverage/ || echo "No .coverage directory found"
+        if [ -f ".coverage/report-cobertura.xml" ]; then
+          echo "Cobertura report exists ($(wc -l < .coverage/report-cobertura.xml) lines)"
+          head -10 .coverage/report-cobertura.xml
+        else
+          echo "Cobertura report not found"
+        fi
+        if [ -f ".coverage/report-junit.xml" ]; then
+          echo "JUnit report exists ($(wc -l < .coverage/report-junit.xml) lines)"
+        else
+          echo "JUnit report not found"
+        fi
 
     - name: Analyze with SonarCloud
       uses: SonarSource/sonarqube-scan-action@v6
