@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"mvdan.cc/sh/v3/interp"
@@ -28,5 +29,9 @@ func GetExecutorFactory(execContext *ExecutionContext, job *Job) (ExecutorIface,
 
 // IsExitStatus checks if given `err` is an exit status
 func IsExitStatus(err error) (uint8, bool) {
-	return interp.IsExitStatus(err)
+	var es interp.ExitStatus
+	if errors.As(err, &es) {
+		return uint8(es), true
+	}
+	return 0, false
 }
