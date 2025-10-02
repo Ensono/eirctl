@@ -94,9 +94,27 @@ jobs:
         check_name: Eirctl Unit Tests
 
 
+    - name: Verify git history for SonarCloud
+      run: |
+        echo "=== Git Repository Information ==="
+        echo "Git repository state:"
+        if [ -f ".git/shallow" ]; then
+          echo "⚠️ Repository is shallow - this will cause SonarCloud warnings"
+          echo "Shallow file contents:"
+          cat .git/shallow
+        else
+          echo "✓ Repository is not shallow"
+        fi
+        echo "Git log count: $(git log --oneline | wc -l)"
+        echo "Git branch: $(git branch --show-current)"
+        echo "Git remote: $(git remote -v)"
+        echo "Recent commits:"
+        git log --oneline -10
+        echo ""
+        
     - name: Debug coverage files
       run: |
-        echo "Checking coverage files..."
+        echo "=== Coverage Files ==="
         ls -la .coverage/ || echo "No .coverage directory found"
         if [ -f ".coverage/out" ]; then
           echo "Native Go coverage file exists ($(wc -l < .coverage/out) lines)"
@@ -137,6 +155,26 @@ jobs:
           grep -E "(sonar.projectKey|sonar.organization|sonar.go.coverage.reportPaths)" sonar-project.properties || echo "No matching properties found"
         else
           echo "✗ sonar-project.properties not found"
+        fi
+
+    - name: Ensure full git history for SonarCloud
+      run: |
+        echo "Ensuring full git history is available for SonarCloud..."
+        # Check if repository is shallow and unshallow if needed
+        if [ -f ".git/shallow" ]; then
+          echo "Repository is shallow, running git fetch --unshallow..."
+          git fetch --unshallow
+          echo "Git unshallow completed"
+        else
+          echo "Repository already has full history"
+        fi
+        # Verify we have adequate history
+        commit_count=$(git log --oneline | wc -l)
+        echo "Total commits available: $commit_count"
+        if [ "$commit_count" -lt 10 ]; then
+          echo "⚠️ Warning: Only $commit_count commits available, this may affect SonarCloud SCM features"
+        else
+          echo "✓ Sufficient git history available for SonarCloud"
         fi
 
     - name: Analyze with SonarCloud
