@@ -93,7 +93,7 @@ func (impl *githubCiImpl) Convert(pipeline *scheduler.ExecutionGraph) ([]byte, e
 func addDefaultStepsToJob(job *schema.GithubJob) {
 	// toggle if checkout or not
 	_ = job.AddStep(&schema.GithubStep{
-		Uses: "actions/checkout@v4",
+		Uses: "actions/checkout@v5",
 	})
 	_ = job.AddStep(&schema.GithubStep{
 		Name: "Install eirctl",
