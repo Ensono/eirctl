@@ -15,12 +15,12 @@ import (
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -415,16 +415,16 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 	if err != nil {
 		// as moby does not have properly typed errors
 		// we need to fall back to string comparison in the error
-		if client.IsErrNotFound(err) || strings.Contains(err.Error(), "no such container") {
+		if errdefs.IsNotFound(err) || strings.Contains(err.Error(), "no such container") {
 			logrus.Tracef("container %s was auto-removed; skipping exit code check", containerId)
 			return nil
 		}
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
-		return interp.NewExitStatus(125)
+		return interp.ExitStatus(125)
 	}
 	if resp.State.ExitCode != 0 {
 		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Config.Image, resp.Config.Cmd)
-		return interp.NewExitStatus(uint8(resp.State.ExitCode))
+		return interp.ExitStatus(uint8(resp.State.ExitCode))
 	}
 	e.cleanupContainer(ctx, containerId)
 	return nil

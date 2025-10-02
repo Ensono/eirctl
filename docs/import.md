@@ -35,6 +35,10 @@ Below protocols supported with Git
 > [!TIP]
 > Optional ref can be set to either point to a branch/tag/commit_sha
 
+> [!IMPORTANT]
+> The environment variable `GIT_SSH_PASSPHRASE` should be set if your SSH key is encrypted with a passphrase. 
+> Current limitation is that is global i.e. once set it will use it across all orgs and repos.
+
 ## FILESYSTEM
 
 Supports relative or absolute paths.

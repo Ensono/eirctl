@@ -27,6 +27,7 @@ const (
 	gitPathSeparator       = "//"
 	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
 	GitSshCommandVar       = "GIT_SSH_COMMAND"
+	GitSshPassphrase       = "GIT_SSH_PASSPHRASE"
 )
 
 var (
@@ -148,6 +149,22 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 	return cm, nil
 }
 
+func SSHKeySigner(key []byte) (ssh.Signer, error) {
+	if passphrase, found := os.LookupEnv(GitSshPassphrase); found {
+		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(passphrase))
+		if err != nil {
+			return nil, fmt.Errorf("%w\nfailed to parse identityFile with passprhase: %v", ErrGitOperation, err)
+		}
+		return signer, nil
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+	}
+
+	return signer, nil
+}
+
 type getCommitFunc func(r *git.Repository, tag string) (*object.Commit, error)
 
 var getCommitFuncFallback []getCommitFunc = []getCommitFunc{
@@ -222,10 +239,13 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
 	}
-	signer, err := ssh.ParsePrivateKey(key)
+
+	signer, err := SSHKeySigner(key)
+
 	if err != nil {
-		return nil, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+		return nil, err
 	}
+
 	return &gitssh.PublicKeys{
 		User:   sshDefaultConf.User,
 		Signer: signer,

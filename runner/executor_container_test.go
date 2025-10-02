@@ -18,12 +18,14 @@ import (
 	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/interp"
 )
 
 type mockContainerClient struct {
@@ -570,16 +572,6 @@ func (s *safeReaderWriter) Write(p []byte) (int, error) {
 	return s.LogsWriter.Write(p)
 }
 
-type notFoundErr struct{}
-
-func (n notFoundErr) Error() string {
-	return "not found"
-}
-
-func (n notFoundErr) NotFound() {
-
-}
-
 func Test_ContainerExecutor_execute(t *testing.T) {
 	t.Run("succeeds with image in cache", func(t *testing.T) {
 		t.Parallel()
@@ -683,7 +675,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc := mockContainerClientHelper(t, respCh, errCh, nil, nil)
 
 		mcc.create = func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: "created0-123"}, fmt.Errorf("%w", notFoundErr{})
+			return container.CreateResponse{ID: "created0-123"}, errdefs.ErrNotFound
 		}
 		mcc.pull = func() (io.ReadCloser, error) {
 			return nil, fmt.Errorf("unable to pull")
@@ -847,6 +839,155 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			t.Fatal("incorrect type of error ")
 		}
 	})
+	t.Run("succeeds with autoremove running and image not found", func(t *testing.T) {
+		t.Parallel()
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		pr, pw := io.Pipe()
+		outStreamer := &safeReaderWriter{mu: sync.Mutex{}, LogsReader: pr, LogsWriter: pw}
+
+		cmdOut := []string{"/eirctl", "hello, iteration 1", "hello, iteration 2", "hello, iteration 3", "hello, iteration 4", "hello, iteration 5", "hello, iteration 6", "hello, iteration 7", "hello, iteration 8", "hello, iteration 9", "hello, iteration 10"}
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
+		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, errdefs.ErrNotFound
+		}
+		ce, _ := mockClientHelper(t, mcc)
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		go func() {
+			for _, v := range cmdOut {
+				outStreamer.Write(multiplexFrame(1, fmt.Append([]byte(v), "\n")))
+			}
+			outStreamer.Write([]byte(`\r\n`))
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+			Stdin:  nil,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(se.String()) > 0 {
+			t.Errorf("got error %v, expected nil\n\n", se.String())
+		}
+		if len(so.String()) == 0 {
+			t.Errorf("got (%s) no output, expected stdout\n\n", so.String())
+		}
+		want := fmt.Sprintf("%s\n", strings.Join(cmdOut, "\n"))
+		if so.String() != want {
+			t.Errorf("outputs do not match\n\tgot: %s\n\twanted:  %s", so.String(), want)
+		}
+	})
+	t.Run("fails with insepct on exit status", func(t *testing.T) {
+		t.Parallel()
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		pr, pw := io.Pipe()
+		outStreamer := &safeReaderWriter{mu: sync.Mutex{}, LogsReader: pr, LogsWriter: pw}
+
+		cmdOut := []string{"/eirctl", "hello, iteration 1", "hello, iteration 2", "hello, iteration 3", "hello, iteration 4", "hello, iteration 5", "hello, iteration 6", "hello, iteration 7", "hello, iteration 8", "hello, iteration 9", "hello, iteration 10"}
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
+		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{}, fmt.Errorf("unable to inspect")
+		}
+		ce, _ := mockClientHelper(t, mcc)
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		go func() {
+			for _, v := range cmdOut {
+				outStreamer.Write(multiplexFrame(1, fmt.Append([]byte(v), "\n")))
+			}
+			outStreamer.Write([]byte(`\r\n`))
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+			Stdin:  nil,
+		})
+		if err == nil {
+			t.Fatal(err)
+		}
+		code, isExit := runner.IsExitStatus(err)
+		if !isExit {
+			t.Errorf("incorrect err type, got %v, wanted: %v", err, interp.ExitStatus(125))
+		}
+		if code != 125 {
+			t.Errorf("got %d, wanted: 125", code)
+		}
+	})
+	t.Run("fails with non 0 exit code", func(t *testing.T) {
+		t.Parallel()
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		pr, pw := io.Pipe()
+		outStreamer := &safeReaderWriter{mu: sync.Mutex{}, LogsReader: pr, LogsWriter: pw}
+
+		cmdOut := []string{"/eirctl", "hello, iteration 1", "hello, iteration 2", "hello, iteration 3", "hello, iteration 4", "hello, iteration 5", "hello, iteration 6", "hello, iteration 7", "hello, iteration 8", "hello, iteration 9", "hello, iteration 10"}
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
+		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			resp := container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{ExitCode: 1}},
+				Config:            &container.Config{Image: "foo/bar", Cmd: []string{"fail me"}},
+			}
+			return resp, nil
+		}
+		ce, _ := mockClientHelper(t, mcc)
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		go func() {
+			for _, v := range cmdOut {
+				outStreamer.Write(multiplexFrame(1, fmt.Append([]byte(v), "\n")))
+			}
+			outStreamer.Write([]byte(`\r\n`))
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `pwd
+for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
+			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+			Stdin:  nil,
+		})
+		if err == nil {
+			t.Fatal(err)
+		}
+		code, isExit := runner.IsExitStatus(err)
+		if !isExit {
+			t.Errorf("incorrect err type, got %v, wanted: %v", err, interp.ExitStatus(125))
+		}
+		if code != 1 {
+			t.Errorf("got %d, wanted: 1", code)
+		}
+	})
 }
 
 func Test_ContainerExecutor_Execute_Cancelled_CleanUp(t *testing.T) {
@@ -918,4 +1059,5 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 	if rmCalled+stopCalled != 2 {
 		t.Errorf("stop and remove functions were not called")
 	}
+
 }

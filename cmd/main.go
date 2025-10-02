@@ -52,8 +52,9 @@ func setDefaultCommandIfNonePresent(cmd *cobra.Command) {
 	}
 }
 
-func cmdSetUp() (*eirctlcmd.EirCtlCmd, context.CancelFunc) {
+func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), []os.Signal{os.Interrupt, syscall.SIGTERM, os.Kill}...)
+	defer stop()
 
 	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(ctx, os.Stdout, os.Stderr)
 
@@ -63,12 +64,6 @@ func cmdSetUp() (*eirctlcmd.EirCtlCmd, context.CancelFunc) {
 
 	setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
 
-	return eirctlRootCmd, stop
-}
-
-func main() {
-	eirctlRootCmd, stop := cmdSetUp()
-	defer stop()
 	if err := eirctlRootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stdout, cmdutils.RED_TERMINAL+"\n", err)
 		os.Exit(1)
