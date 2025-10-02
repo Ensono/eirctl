@@ -35,6 +35,9 @@ Below protocols supported with Git
 > [!TIP]
 > Optional ref can be set to either point to a branch/tag/commit_sha
 
+> [!IMPORTANT]
+> The environment variable `GIT_SSH_PASSPHRASE` should be set if your SSH key is encrypted with a passphrase
+
 ## FILESYSTEM
 
 Supports relative or absolute paths.
