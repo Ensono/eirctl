@@ -102,22 +102,36 @@ jobs:
         ls -la .coverage/ || echo "No .coverage directory found"
         if [ -f ".coverage/report-cobertura.xml" ]; then
           echo "Cobertura report exists ($(wc -l < .coverage/report-cobertura.xml) lines)"
+          echo "File size: $(stat -c%s .coverage/report-cobertura.xml) bytes"
+          echo "First few lines:"
           head -10 .coverage/report-cobertura.xml
+          echo "Checking for coverage data:"
+          if grep -q "line-rate=" .coverage/report-cobertura.xml; then
+            echo "✓ Contains coverage data"
+            grep "line-rate=" .coverage/report-cobertura.xml | head -1
+          else
+            echo "✗ No coverage data found"
+          fi
         else
           echo "Cobertura report not found"
         fi
         if [ -f ".coverage/report-junit.xml" ]; then
           echo "JUnit report exists ($(wc -l < .coverage/report-junit.xml) lines)"
+          echo "File size: $(stat -c%s .coverage/report-junit.xml) bytes"
+          if grep -q "<testsuite" .coverage/report-junit.xml; then
+            echo "✓ Contains test data"
+          else
+            echo "✗ No test data found"
+          fi
         else
           echo "JUnit report not found"
         fi
 
     - name: Analyze with SonarCloud
-      uses: SonarSource/sonarqube-scan-action@v6
+      uses: SonarSource/sonarcloud-github-action@master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
       with:
-        projectBaseDir: .
         args: >
-          "-Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}"
+          -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
