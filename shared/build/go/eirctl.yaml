@@ -55,6 +55,13 @@ tasks:
       - |
         mkdir -p .coverage
         go test $(go list ./... | grep -v /local/) -v -coverpkg=./... -race -mod=readonly -shuffle=on -buildvcs=false -coverprofile=.coverage/out -count=1 -run=$GO_TEST_RUN_ARGS | tee .coverage/test.out
+        # Convert module paths to relative paths for SonarCloud compatibility
+        if [ -f ".coverage/out" ]; then
+          # Get the module name from go.mod
+          MODULE_NAME=$(grep '^module ' go.mod | cut -d' ' -f2)
+          # Replace module prefix with relative paths in coverage file
+          sed -i "s|$MODULE_NAME/||g" .coverage/out
+        fi
         if command -v go-junit-report >/dev/null 2>&1; then
           cat .coverage/test.out | go-junit-report > .coverage/report-junit.xml
         else
