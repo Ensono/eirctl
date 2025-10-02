@@ -98,20 +98,23 @@ jobs:
       run: |
         echo "Checking coverage files..."
         ls -la .coverage/ || echo "No .coverage directory found"
-        if [ -f ".coverage/report-cobertura.xml" ]; then
-          echo "Cobertura report exists ($(wc -l < .coverage/report-cobertura.xml) lines)"
-          echo "File size: $(stat -c%s .coverage/report-cobertura.xml) bytes"
+        if [ -f ".coverage/out" ]; then
+          echo "Native Go coverage file exists ($(wc -l < .coverage/out) lines)"
+          echo "File size: $(stat -c%s .coverage/out) bytes"
           echo "First few lines:"
-          head -10 .coverage/report-cobertura.xml
+          head -10 .coverage/out
           echo "Checking for coverage data:"
-          if grep -q "line-rate=" .coverage/report-cobertura.xml; then
-            echo "✓ Contains coverage data"
-            grep "line-rate=" .coverage/report-cobertura.xml | head -1
+          if head -1 .coverage/out | grep -q "^mode:"; then
+            echo "✓ Contains valid Go coverage format"
+            echo "Coverage mode: $(head -1 .coverage/out)"
+            covered_lines=$(grep -c " [1-9]" .coverage/out)
+            total_lines=$(tail -n +2 .coverage/out | wc -l)
+            echo "Coverage stats: $covered_lines covered lines out of $total_lines total lines"
           else
-            echo "✗ No coverage data found"
+            echo "✗ Invalid Go coverage format (should start with 'mode:')"
           fi
         else
-          echo "Cobertura report not found"
+          echo "Native Go coverage file (.coverage/out) not found"
         fi
         if [ -f ".coverage/report-junit.xml" ]; then
           echo "JUnit report exists ($(wc -l < .coverage/report-junit.xml) lines)"
