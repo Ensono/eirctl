@@ -430,3 +430,53 @@ func Test_LoaderGit_Integration(t *testing.T) {
 		})
 	}
 }
+
+func Test_LoaderGit_SSHKeySigner(t *testing.T) {
+
+	keyWithPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jYmMAAAAGYmNyeXB0AAAAGAAAABDzGKF3uX
+G1gXALZKFd6Ir4AAAAEAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIDne4/teO42zTDdj
+NwxUMNpbfmp/dxgU4ZNkC3ydgcugAAAAoJ3J/oA7+iqVOz0CIUUk9ufdP1VP4jDf2um+0s
+Sgs7x6Gpyjq67Ps7wLRdSmxr/G5b+Z8dRGFYS/wUCQEe3whwuImvLyPwWjXLzkAyMzc01f
+ywBGSrHnvP82ppenc2HuTI+E05Xc02i6JVyI1ShiekQL5twoqtR6pEBZnD17UonIx7cRzZ
+gbDGyT3bXMQtagvCwoW+/oMTKXiZP5jCJpEO8=
+-----END OPENSSH PRIVATE KEY-----`)
+	keyWithoutPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----`)
+	t.Run("correctly uses passphrase", func(t *testing.T) {
+		os.Setenv(config.GitSshPassphrase, "password")
+		defer os.Unsetenv(config.GitSshPassphrase)
+		signer, err := config.SSHKeySigner(keyWithPassphrase)
+		if err != nil {
+			t.Error(err)
+		}
+		if signer.PublicKey().Type() != "ssh-ed25519" {
+			t.Errorf("incorrectly deduced public key - got: %v, wanted 'ssh-ed25519'", signer.PublicKey().Type())
+		}
+	})
+
+	t.Run("correctly uses key without passphrase", func(t *testing.T) {
+		signer, err := config.SSHKeySigner(keyWithoutPassphrase)
+		if err != nil {
+			t.Error(err)
+		}
+		if signer.PublicKey().Type() != "ssh-ed25519" {
+			t.Errorf("incorrectly deduced public key - got: %v, wanted 'ssh-ed25519'", signer.PublicKey().Type())
+		}
+	})
+
+	t.Run("fails on no passphrase provided for the key", func(t *testing.T) {
+		_, err := config.SSHKeySigner(keyWithPassphrase)
+		if err == nil {
+			t.Fatal("failed to error out on missing passphrase")
+		}
+		if !errors.Is(err, config.ErrGitOperation) {
+			t.Fatalf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
+		}
+	})
+}

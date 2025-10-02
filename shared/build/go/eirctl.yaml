@@ -93,5 +93,3 @@ pipelines:
   lints:
     - task: golint
     - task: vuln:check
-    # govet is run as part of golint
-    # - task: govet
