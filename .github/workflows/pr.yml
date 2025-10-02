@@ -37,6 +37,8 @@ jobs:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -89,6 +91,11 @@ jobs:
         commit: ${{ github.sha }}
         fail_on_failure: true
         check_name: Eirctl Unit Tests
+
+    - name: Ensure full git history for SonarCloud
+      run: |
+        git fetch --unshallow --all || echo "Repository already has full history"
+        git log --oneline -5
 
     - name: Analyze with SonarCloud
       uses: SonarSource/sonarqube-scan-action@v6
