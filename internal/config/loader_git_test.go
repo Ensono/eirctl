@@ -460,6 +460,15 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 		}
 	})
 
+	t.Run("fails with wrong passphrase", func(t *testing.T) {
+		os.Setenv(config.GitSshPassphrase, "wrong")
+		defer os.Unsetenv(config.GitSshPassphrase)
+		_, err := config.SSHKeySigner(keyWithPassphrase)
+		if err == nil {
+			t.Error(err)
+		}
+	})
+
 	t.Run("correctly uses key without passphrase", func(t *testing.T) {
 		signer, err := config.SSHKeySigner(keyWithoutPassphrase)
 		if err != nil {
