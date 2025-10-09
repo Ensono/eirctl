@@ -1,6 +1,6 @@
 module github.com/Ensono/eirctl
 
-go 1.25.1
+go 1.25.2
 
 require (
 	dario.cat/mergo v1.0.2
@@ -99,6 +99,7 @@ require (
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/huh v0.7.0
+	github.com/coryb/templatecolor v0.0.0-20230911044230-5d137a83f1e3
 	github.com/docker/cli v28.4.0+incompatible
 	github.com/docker/docker v28.4.0+incompatible
 	github.com/emicklei/dot v1.9.1

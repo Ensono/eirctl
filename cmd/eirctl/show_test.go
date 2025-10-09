@@ -23,7 +23,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "graph:task1"},
-			output: []string{"Name: graph:task1", "echo &#39;hello, world!&#39"},
+			output: []string{"Name: graph:task1", "echo 'hello, world!'"},
 		})
 	})
 	t.Run("pipeline show succeeds args", func(t *testing.T) {
@@ -40,6 +40,19 @@ func Test_showCommand(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "foo"},
 			output: []string{"Name: foo", "Image: golang:1.24.3-bookworm"},
+		})
+	})
+	t.Run("imports show correctly with sources in task", func(t *testing.T) {
+
+		cmdRunTestHelper(t, &cmdRunTestInput{
+			args:   []string{"-c", "testdata/imports.yaml", "show", "task:task1"},
+			output: []string{"- echo 'This is {{index .ArgsList 0}} argument'"},
+		})
+	})
+	t.Run("imports show correctly with sources in context", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{
+			args:   []string{"-c", "testdata/imports.yaml", "show", "sonar"},
+			output: []string{"DefinedIn: https://raw.githubusercontent.com/Ensono/eirctl/refs/tags/0.9.1/shared/security/eirctl.yaml"},
 		})
 	})
 }

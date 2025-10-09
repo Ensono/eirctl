@@ -28,13 +28,14 @@ type GraphError struct {
 
 // ExecutionGraph is a DAG whose nodes are Stages and edges are their dependencies
 type ExecutionGraph struct {
-	errors    []GraphError
 	Generator map[string]any
 	Env       map[string]string
 	EnvFile   *utils.Envfile
-	name      string
-	alias     string
-	nodes     map[string]*Stage
+	//
+	errors []GraphError
+	name   string
+	alias  string
+	nodes  map[string]*Stage
 	// parent holds the children reference of the node
 	parent map[string][]string
 	// children points back children the parent reference

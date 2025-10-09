@@ -54,11 +54,12 @@ type ConfigDefinition struct {
 }
 
 type ContextDefinition struct {
-	Dir    string   `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
-	Up     []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
-	Down   []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
-	Before []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
-	After  []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
+	SourceFile string
+	Dir        string   `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
+	Up         []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
+	Down       []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
+	Before     []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
+	After      []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
 	// Env is supplied from config file definition and is merged with the
 	// current process environment variables list
 	//
@@ -99,6 +100,7 @@ type ContextDefinition struct {
 }
 
 type PipelineDefinition struct {
+	SourceFile string
 	// Name is the friendly name to give to pipeline
 	Name string `mapstructure:"name" yaml:"name" json:"name,omitempty"`
 	// Condition evaluates whether to run this task or not within a given Schedule (Pipeline).
@@ -140,6 +142,7 @@ type Generator struct {
 }
 
 type TaskDefinition struct {
+	SourceFile  string
 	Name        string `mapstructure:"name" yaml:"name,omitempty" json:"name,omitempty"`
 	Description string `mapstructure:"description" yaml:"description,omitempty" json:"description,omitempty"`
 	Condition   string `mapstructure:"condition" yaml:"condition,omitempty" json:"condition,omitempty"`
