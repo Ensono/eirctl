@@ -21,7 +21,7 @@ type showContext struct {
 	DefinedIn string
 }
 
-var showContextTmpl = `Name: {{ .Name -}}
+var showContextTmpl = `Context: {{ .Name | bold -}}
 {{- if .Container }}
 Image: {{ .Container.Image }}
 {{- if .Volumes }}
@@ -38,6 +38,7 @@ This is only the current env plus added to the context
 DOES NOT INCLUDE computed envFile include/excludes and paths
 
 */}}
+DefinedIn: {{ .DefinedIn | fg.Magenta }}
 Env: 
 {{- range $key, $val := .Env }}
   {{ $key | bg.Yellow }} => '{{ $val}}'
@@ -46,10 +47,7 @@ Variables:
 {{- range $key, $val := .Vars }}
 {{ $key }} => '{{ $val}}'
 {{- end }}
-{{- if .Envfile }}
 Envfile: {{ .Envfile }}
-{{- end }}
-DefinedIn: {{ .DefinedIn }}
 `
 
 type pipelineShow struct {
@@ -59,7 +57,7 @@ type pipelineShow struct {
 	Envfile   *utils.Envfile
 }
 
-var showPipelineTmpl = `Name: {{ .Name }}
+var showPipelineTmpl = `Pipeline: {{ .Name | bold }}
 Env:
 {{- range $key, $val := .Env }}
 {{ $key }} => '{{ $val}}'
@@ -77,7 +75,7 @@ NOTE: to see the nodes of this pipeline run:
 eirctl graph {{ .Name }}
 `
 
-var showTaskTmpl = `Name: {{ .Name }}
+var showTaskTmpl = `Task: {{ .Name | bold }}
 Description: {{ .Description -}}
 {{- if .Context }}
 Context: {{ .Context }}

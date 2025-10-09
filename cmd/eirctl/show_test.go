@@ -23,7 +23,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "graph:task1"},
-			output: []string{"Name: graph:task1", "echo 'hello, world!'"},
+			output: []string{"Task: graph:task1", "echo 'hello, world!'"},
 		})
 	})
 	t.Run("pipeline show succeeds args", func(t *testing.T) {
@@ -31,7 +31,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "graph:pipeline1"},
-			output: []string{"Name: graph:pipeline1"},
+			output: []string{"Pipeline: graph:pipeline1"},
 		})
 	})
 	t.Run("context show succeeds args", func(t *testing.T) {
@@ -39,7 +39,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "foo"},
-			output: []string{"Name: foo", "Image: golang:1.24.3-bookworm"},
+			output: []string{"Context: foo", "Image: golang:1.24.3-bookworm"},
 		})
 	})
 	t.Run("imports show correctly with sources in task", func(t *testing.T) {
