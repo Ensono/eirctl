@@ -21,8 +21,7 @@ type showContext struct {
 	DefinedIn string
 }
 
-var showContextTmpl = `
-Name: {{ .Name -}}
+var showContextTmpl = `Name: {{ .Name -}}
 {{- if .Container }}
 Image: {{ .Container.Image }}
 {{- if .Volumes }}
@@ -60,8 +59,7 @@ type pipelineShow struct {
 	Envfile   *utils.Envfile
 }
 
-var showPipelineTmpl = `
-Name: {{ .Name }}
+var showPipelineTmpl = `Name: {{ .Name }}
 Env:
 {{- range $key, $val := .Env }}
 {{ $key }} => '{{ $val}}'
@@ -79,8 +77,7 @@ NOTE: to see the nodes of this pipeline run:
 eirctl graph {{ .Name }}
 `
 
-var showTaskTmpl = `
-Name: {{ .Name -}}
+var showTaskTmpl = `Name: {{ .Name }}
 Description: {{ .Description -}}
 {{- if .Context }}
 Context: {{ .Context }}
@@ -101,7 +98,7 @@ AllowFailure: {{ .AllowFailure }}
 Required:
   Env:
   {{- range .Required.Env }}
-  - {{ . }}
+  - {{ . | bg.Red }}
   {{- end }}
 {{- end }}
 {{- end }}
