@@ -1,0 +1,37 @@
+contexts:
+  awscli:
+    container:
+      name: public.ecr.aws/aws-cli/aws-cli:2.28.21
+      entrypoint: /usr/bin/env
+      shell: bash
+      shell_args:
+        - -c
+      container_args:
+        - -v ~/.aws:/root/.aws
+        - ${EIRCTL_CONTAINER_ARG}
+      enable_dind: true
+    envfile:
+      exclude:
+        - PATH
+        - HOME
+        - which_declare
+        - BASH_FUNC_
+
+tasks:
+  configmanager:file:
+    description: |
+      Replaces with configmanager the input file.
+
+      By default it sets the --separator to `://` and --enable-envsubst to ensure unset variables blow up
+
+      This can be overridden with the args arguments.
+    context: awscli
+    command: |
+      curl -L --fail-with-body https://github.com/DevLabFoundry/configmanager/releases/download/v2.1.10/configmanager-linux-${ARCH:=amd64} \
+      -o /tmp/configmanager
+      chmod +x /tmp/configmanager
+      /tmp/configmanager fromstr -i ${CONFIGMANAGER_INPUT_FILE} -p ${CONFIGMANAGER_OUTPUT_FILE} {{ if .ArgsList }}{{ .Args }}{{ else }}-s '://' --enable-envsubst{{ end }}
+    required:
+      env:
+        - CONFIGMANAGER_OUTPUT_FILE
+        - CONFIGMANAGER_INPUT_FILE
