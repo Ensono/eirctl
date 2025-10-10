@@ -38,7 +38,7 @@ func newListCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-			t := template.Must(template.New("list").Funcs(text).Parse(listTmpl))
+			t := template.Must(template.New("list").Parse(listTmpl)) // Funcs(text)
 
 			contexts := utils.MapKeys(conf.Contexts)
 			pipelines := utils.MapKeys(conf.Pipelines)
