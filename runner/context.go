@@ -237,6 +237,7 @@ func (c *ContainerContext) WithEnvOverride(env map[string]string) *ContainerCont
 
 // ExecutionContext allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 type ExecutionContext struct {
+	SourceFile string
 	Executable *utils.Binary
 	container  *ContainerContext
 	Dir        string

@@ -27,10 +27,10 @@ tasks:
       number: 123.12
       int: 123
       bool: true
-    
+
   task:task2:
     command: "echo 'This is {{index .ArgsList 1}} argument'"
-    
+
   task:task3:
     command: "echo 'This is {{.Args }} arguments'"
 

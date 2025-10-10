@@ -65,6 +65,7 @@ func buildContext(def *ContextDefinition) (*runner.ExecutionContext, error) {
 		},
 		runner.WithContainerOpts(utilContainer),
 	)
+	c.SourceFile = def.SourceFile
 	return c, nil
 }
 

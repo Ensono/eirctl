@@ -2,15 +2,15 @@ name: Publish Container
 
 on:
   workflow_run:
-    workflows: ['Lint and Test']
+    workflows: ["Lint and Test"]
     types:
       - completed
-    branches: 
+    branches:
       - main
 
 permissions:
   contents: write
-  packages: write 
+  packages: write
 
 jobs:
   set-version-tag:
@@ -27,7 +27,7 @@ jobs:
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v3.0
         with:
-          versionSpec: '5.x'
+          versionSpec: "5.x"
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@v3.0
         id: gitversion

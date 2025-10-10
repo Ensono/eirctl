@@ -234,20 +234,18 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 	}
 
 	gs.SshConfig = sshConf
-
 	key, err := os.ReadFile(utils.NormalizeHome(sshConf.IdentityFile))
 	if err != nil {
 		return nil, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
 	}
 
 	signer, err := SSHKeySigner(key)
-
 	if err != nil {
 		return nil, err
 	}
 
 	return &gitssh.PublicKeys{
-		User:   sshDefaultConf.User,
+		User:   sshConf.User,
 		Signer: signer,
 		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
