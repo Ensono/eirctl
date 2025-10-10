@@ -40,9 +40,6 @@ pipelines:
     - task: build:push:image
       depends_on:
         - registry:auth
-  # pipeline:ci:
-  #   - task:
-  #   -
 
 tasks:
   registry:auth:

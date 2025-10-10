@@ -31,7 +31,7 @@ tasks:
         rm -rf dist/*
         rm -rf vendor/*
         rm -rf .coverage
-  
+
   test_prereqs:
     context: go1x
     description: Installs coverage and junit tools

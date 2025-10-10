@@ -172,8 +172,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 			envfileEnv = envfileEnv.Merge(variables.FromMap(m))
 		}
 	}
-	
-	// 
+
 	env = envfileEnv.Merge(env)
 	meets, err := r.checkTaskCondition(t)
 	if err != nil {
