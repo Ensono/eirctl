@@ -278,7 +278,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 		if err != nil {
 			return fmt.Errorf("load import error: %v", err)
 		}
-		if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+		if err := mergeExistingWithImported(baseConfig, importedConfig, importFile); err != nil {
 			return err
 		}
 	}
@@ -299,6 +299,8 @@ func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, pat
 		if _, exists := baseConfig.Tasks[name]; exists {
 			return fmt.Errorf("%w, file `%s` contains an already specified task (%s)", ErrImportKeyClash, path, name)
 		}
+		// enrich with source
+		val.SourceFile = path
 		baseConfig.Tasks[name] = val
 	}
 
@@ -311,7 +313,13 @@ func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, pat
 			return fmt.Errorf("%w, file `%s` contains an already specified pipeline (%s)", ErrImportKeyClash, path, name)
 
 		}
-		baseConfig.Pipelines[name] = val
+		// enrich with source
+		enrichedPipelineDef := []*PipelineDefinition{}
+		for _, p := range val {
+			p.SourceFile = path
+			enrichedPipelineDef = append(enrichedPipelineDef, p)
+		}
+		baseConfig.Pipelines[name] = enrichedPipelineDef
 	}
 	// merge contexts - fail on already defined contexts
 	for name, val := range importedConfig.Contexts {
@@ -321,16 +329,14 @@ func mergeExistingWithImported(baseConfig, importedConfig *ConfigDefinition, pat
 		if _, exists := baseConfig.Contexts[name]; exists {
 			return fmt.Errorf("%w, file `%s` contains an already specified context (%s)", ErrImportKeyClash, path, name)
 		}
+		// enrich with source
+		val.SourceFile = path
 		baseConfig.Contexts[name] = val
 	}
 	return nil
 }
 
 func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
-	// this is only going to work on yaml files
-	// this program seems to want to accept json/toml and yaml
-	//
-	// TODO: remove json/toml support - unnecessary
 	pattern := filepath.Join(dir, "*.yaml")
 	q, err := filepath.Glob(pattern)
 	if err != nil {

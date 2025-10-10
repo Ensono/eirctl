@@ -11,12 +11,12 @@ contexts:
 
 pipelines:
   graph:pipeline1:
-    - task: graph:task1 # => graph:pipeline1__graph:task1__executionOrder
+    - task: graph:task1
     - task: graph:task2
       depends_on: [graph:task1]
     - task: graph:task3
       depends_on: [graph:task1]
-    - pipeline: graph:pipeline2 # pipeline: graph:pipeline2 - fix cycle detection
+    - pipeline: graph:pipeline2
       depends_on: [graph:task3]
 
   graph:pipeline2:

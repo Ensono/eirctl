@@ -8,6 +8,12 @@ output: prefixed
 
 import:
   - shared/build/go/eirctl.yaml
+  - shared/security/eirctl.yaml
+
+contexts:
+  bash:
+    container:
+      name: mirror.gcr.io/bash:5.0.18-alpine3.22
 
 pipelines:
   build:binary:
@@ -18,6 +24,11 @@ pipelines:
       variables:
         RepoOwner: Ensono
         BinName: eirctl
+  
+  gha:unit:test:
+    - pipeline: test:unit
+    - task: sonar:coverage:prep
+      depends_on: test:unit
 
 tasks:
   build:
@@ -26,6 +37,7 @@ tasks:
     command:
       - |
         mkdir -p .deps
+        unset GOTOOLCHAIN
         ldflags="-s -w -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Version={{.Version}}\" -X \"github.com/{{.RepoOwner}}/{{.BinName}}/cmd/eirctl.Revision={{.Revision}}\" -extldflags -static"
         GOPATH=$PWD/.deps GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build -mod=readonly -buildvcs=false -ldflags="$ldflags" -o bin/{{.BinName}}-${BUILD_GOOS}-${BUILD_GOARCH}${BINARY_SUFFIX} cmd/main.go
     variations:
@@ -65,9 +77,10 @@ tasks:
   gofmt:
     context: go1x
     command:
-      - go fmt ./...
-      - gofmt -l **/*.go
-      # - gofmt -l -cpuprofile .pprof  **/*.go
+      - |
+        unset GOTOOLCHAIN
+        go fmt ./...
+        gofmt -l **/*.go
 
   schema_gen_deps:
     description: |
@@ -106,11 +119,6 @@ tasks:
       - go fmt ./internal/z_generated/gitlab
       - quicktype --lang go --src-lang schema --src ./internal/schema/sources/bitbucket.json -o internal/schema/bitbucket.go --field-tags yaml --just-types-and-package --omit-empty --package schema
       - go fmt internal/schema/bitbucket.go
-    # variations:
-    #   # - CI_TARGET: github
-    #   #   SCHEMA: ./internal/z_generated/schema/sources/github.json
-    #   - CI_TARGET: gitlab
-    #     SCHEMA: ./internal/z_generated/schema/sources/gitlab.json # https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json
 
   show_docs:
     command:
@@ -122,3 +130,15 @@ tasks:
     name: "tidy me up"
     command:
       - go mod tidy
+
+  sonar:coverage:prep:
+    context: bash
+    command:
+      - | 
+        # SonarCloud expects relative file paths, but Go generates coverage with full module paths
+        # Convert from 'github.com/Ensono/eirctl/path/file.go' to 'path/file.go'
+        sed -i 's|github.com/Ensono/eirctl/||g' .coverage/out
+        echo "Coverage file first 20 lines after conversion:"
+        head -20 .coverage/out
+        echo "Coverage file line count:"
+        wc -l .coverage/out

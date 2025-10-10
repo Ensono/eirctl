@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../schemas/schema_v1.json
+
+import:
+  - task.yaml
+  - https://raw.githubusercontent.com/Ensono/eirctl/refs/tags/0.9.1/shared/security/eirctl.yaml
+
+pipelines:
+  security:
+    - task: sonar:scanner:cli
+    - task: trivy:file:system:scan
+
+  mixed:stages:
+    - task: task:task1
+    - task: lint:yaml
+    - pipeline: security

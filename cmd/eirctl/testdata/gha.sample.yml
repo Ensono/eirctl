@@ -25,26 +25,26 @@ contexts:
   podman:
     container:
       name: alpine:latest
-    env: 
+    env:
       GLOBAL_VAR: this is it
       TF_VAR_name_company: ${{ env.COMPANY }}
       TF_VAR_name_project: ${{ env.PROJECT }}
       TF_VAR_name_component: ${{ env.COMPONENT }}
       TF_VAR_region: ${{ env.REGION }}
     envfile:
-      # global envfile will be source merged to all the 
-      # subsquent usages of it 
+      # global envfile will be source merged to all the
+      # subsquent usages of it
       # takes least precedence
       path: cmd/eirctl/testdata/global.env
       exclude:
         - HOME
 
 pipelines:
-  # 
+  #
   # CI pipelines
   lint:
     - task: lint:ci
-      env: 
+      env:
         ENV_NAME: caller-lint
 
   helm:
@@ -71,8 +71,6 @@ pipelines:
     - task: post:apply
       depends_on:
         - infra:apply
-      # condition: |
-      #   if [[ "$ENV_NAME" == "prod" ]]; then echo 1; fi
     - pipeline: helm
       depends_on:
         - post:apply
@@ -81,8 +79,6 @@ pipelines:
     - pipeline: infrapipeline
       env:
         ENV_NAME: nonprod
-        # locally you can keep this value in a taskctl.env file
-        # SOME_TOKEN_FOR_APP1: fuzzzbarsdsd
     - task: post:task
       depends_on:
         - infrapipeline
@@ -97,20 +93,20 @@ pipelines:
 
   # gha pipeline will be used to generate the CI definition
   # can be run locally as well in entirety
-  gha:infra:sample: 
+  gha:infra:sample:
     - pipeline: lint
       ci_meta:
-        github: 
+        github:
           runs-on: ubuntu-24.04
           env:
             SOME_TOKEN_FOR_APP1: ${{ secrets.FOO_BAR_Secret }}
     - pipeline: InfraDev
       ci_meta:
-        github: 
+        github:
           if: github.ref != 'refs/heads/main'
           environment: nonprod
           runs-on: ubuntu-24.04
-          env: 
+          env:
             SOME_TOKEN_FOR_APP1: ${{ secrets.FOO_BAR_Secret }}
       depends_on:
         - lint
@@ -121,17 +117,17 @@ pipelines:
       depends_on:
         - InfraDev
     - pipeline: InfraProd
-    # - name: InfraProd
-    #   pipeline: infrapipeline
-    #   env:
-    #     ENV_NAME: prod
-    #     SOME_TOKEN_FOR_APP1: overwritten_in_CI_by_ci_specific_secret
+      # - name: InfraProd
+      #   pipeline: infrapipeline
+      #   env:
+      #     ENV_NAME: prod
+      #     SOME_TOKEN_FOR_APP1: overwritten_in_CI_by_ci_specific_secret
       ci_meta:
-        github: 
+        github:
           if: github.ref == 'refs/heads/main'
           environment: prod
           runs-on: ubuntu-24.04
-          env: 
+          env:
             SOME_TOKEN_FOR_APP1: ${{ secrets.FOO_BAR_Secret }}
       depends_on:
         - lint
@@ -146,25 +142,24 @@ tasks:
   lint:ci:
     command:
       - echo "lint stuff"
-    env: 
+    env:
       ENV_NAME: ci
-  
-  post:apply: 
+
+  post:apply:
     command:
       - echo "post apply run"
 
-  install-taskctl: 
+  install-taskctl:
     command:
       - echo "installing taskctl"
 
   infra:init:
     description: |
-      multi line 
+      multi line
 
       desc goes here
-      
     command:
-      - | 
+      - |
         for i in $(seq 1 2); do
           echo "tf init ${ENV_NAME} in TF_DIR: ${TF_DIR} - iteration $i"
           sleep 1
@@ -175,7 +170,7 @@ tasks:
 
   infra:plan:
     command:
-      - | 
+      - |
         for i in $(seq 1 3); do
           echo "tf plan ${ENV_NAME} in TF_DIR: ${TF_DIR} - iteration $i"
           sleep 1
@@ -186,7 +181,7 @@ tasks:
 
   infra:apply:
     command:
-      - | 
+      - |
         for i in $(seq 1 5); do
           echo "tf apply ${ENV_NAME} in TF_DIR: ${TF_DIR} - iteration $i"
           sleep 1
@@ -196,14 +191,14 @@ tasks:
 
   helm:test:
     command:
-      - | 
+      - |
         for i in $(seq 1 2); do
           echo "helm test ${ENV_NAME} - iteration $i"
           sleep 1
         done
   helm:deploy:
     command:
-      - | 
+      - |
         for i in $(seq 1 5); do
           echo "helm deploy ${ENV_NAME} - iteration $i"
           sleep 1

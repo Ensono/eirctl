@@ -143,6 +143,7 @@ type Task struct {
 	errorVal       error
 	capturedOutput outputCapture
 	Generator      map[string]any
+	SourceFile     string
 }
 
 // NewTask creates new Task instance
