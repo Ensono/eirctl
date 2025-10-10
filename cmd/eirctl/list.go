@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"html/template"
 	"slices"
+	"text/template"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/spf13/cobra"
@@ -38,7 +38,7 @@ func newListCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-			t := template.Must(template.New("list").Parse(listTmpl))
+			t := template.Must(template.New("list").Funcs(text).Parse(listTmpl))
 
 			contexts := utils.MapKeys(conf.Contexts)
 			pipelines := utils.MapKeys(conf.Pipelines)
