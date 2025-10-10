@@ -13,7 +13,7 @@ import:
 contexts:
   bash:
     container:
-      name: public.ecr.aws/docker/library/bash:5.0.18-alpine3.22
+      name: mirror.gcr.io/bash:5.0.18-alpine3.22
 
 pipelines:
   build:binary:
