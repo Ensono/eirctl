@@ -37,13 +37,35 @@ type rootCmdFlags struct {
 	NoSummary bool
 }
 
+type OsFSOpsIface interface {
+	Rename(oldpath string, newpath string) error
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Create(name string) (io.Writer, error)
+}
+
 type EirCtlCmd struct {
 	ctx        context.Context
 	Cmd        *cobra.Command
 	ChannelOut io.Writer
 	ChannelErr io.Writer
+	OsFsOps    OsFSOpsIface
 	viperConf  *viper.Viper
 	rootFlags  *rootCmdFlags
+}
+
+type osFsOps struct {
+}
+
+func (o osFsOps) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
+func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (o osFsOps) Create(name string) (io.Writer, error) {
+	return os.Create(name)
 }
 
 func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtlCmd {
@@ -51,6 +73,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 		ctx:        ctx,
 		ChannelOut: channelOut,
 		ChannelErr: channelErr,
+		OsFsOps:    osFsOps{},
 		Cmd: &cobra.Command{
 			Use:                        "eirctl",
 			Version:                    fmt.Sprintf("%s-%s", Version, Revision),

@@ -34,13 +34,10 @@ func newUpdateCommand(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-			if runtime.GOOS == "windows" {
-				// move current file to tmp
-				if err := os.Rename(currentExecPath, path.Join(path.Dir(currentExecPath), "eirctl.old")); err != nil {
-					fmt.Fprintf(os.Stdout, "rename err: %v", err)
-				}
-			}
-			return os.WriteFile(currentExecPath, binary, 0666)
+
+			PrepSourceBinary(rootCmd, currentExecPath)
+
+			return rootCmd.OsFsOps.WriteFile(currentExecPath, binary, 0666)
 		},
 	}
 	updateCmd.PersistentFlags().StringVarP(&f.version, "version", "", "latest", "specific version to update to.")
@@ -62,11 +59,7 @@ func GetVersion(ctx context.Context, baseUrl, version string) ([]byte, error) {
 		releasePath = path.Join(latest, suffix)
 	}
 
-	if runtime.GOOS == "windows" {
-		releasePath = releasePath + ".exe"
-	}
-
-	link, err := url.Parse(fmt.Sprintf("%s/%s", baseUrl, releasePath))
+	link, err := url.Parse(fmt.Sprintf("%s/%s", baseUrl, EnrichFinalLink(releasePath)))
 	if err != nil {
 		return nil, err
 	}

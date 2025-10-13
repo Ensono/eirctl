@@ -75,4 +75,11 @@ func Test_Update_Command(t *testing.T) {
 			errored: false,
 		})
 	})
+	t.Run("successfully writes the new binary", func(t *testing.T) {
+		//
+		cmdRunTestHelper(t, &cmdRunTestInput{
+			args:    []string{"-c", "testdata/imports.yaml", "update"},
+			errored: false,
+		})
+	})
 }
