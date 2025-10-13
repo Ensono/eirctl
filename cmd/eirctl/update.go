@@ -23,7 +23,7 @@ func newUpdateCommand(rootCmd *EirCtlCmd) {
 
 	updateCmd := &cobra.Command{
 		Use:     "update",
-		Aliases: []string{},
+		Aliases: []string{"self-update"},
 		Short:   `Updates the to the specified or latest version of eirctl.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			currentExecPath, err := os.Executable()
@@ -33,6 +33,12 @@ func newUpdateCommand(rootCmd *EirCtlCmd) {
 			binary, err := GetVersion(cmd.Context(), f.baseUrl, f.version)
 			if err != nil {
 				return err
+			}
+			if runtime.GOOS == "windows" {
+				// move current file to tmp
+				if err := os.Rename(currentExecPath, path.Join(path.Dir(currentExecPath), "eirctl.old")); err != nil {
+					fmt.Fprintf(os.Stdout, "rename err: %v", err)
+				}
 			}
 			return os.WriteFile(currentExecPath, binary, 0666)
 		},
@@ -56,11 +62,15 @@ func GetVersion(ctx context.Context, baseUrl, version string) ([]byte, error) {
 		releasePath = path.Join(latest, suffix)
 	}
 
-	link, err := url.Parse(fmt.Sprintf("%s/%s", baseUrl, releasePath))
+	if runtime.GOOS == "windows" {
+		releasePath = releasePath + ".exe"
+	}
 
+	link, err := url.Parse(fmt.Sprintf("%s/%s", baseUrl, releasePath))
 	if err != nil {
 		return nil, err
 	}
+
 	req := &http.Request{
 		URL:    link,
 		Method: http.MethodGet,

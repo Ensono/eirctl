@@ -54,6 +54,16 @@ func Test_Update_GetVersion(t *testing.T) {
 			t.Fail()
 		}
 	})
+	t.Run("integration test", func(t *testing.T) {
+		t.Skip()
+		binary, err := cmd.GetVersion(context.TODO(), "https://github.com/Ensono/eirctl/releases", "latest")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(binary) != "latest version downloaded" {
+			t.Fail()
+		}
+	})
 }
 
 func Test_Update_Command(t *testing.T) {

@@ -210,7 +210,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				}
 			},
 		},
-		"specify identiy and config over GIT_SSH_COMMAND": {
+		"specify identity and config over GIT_SSH_COMMAND": {
 			rawString:       "git::ssh://github.com/example/repo//config.yaml",
 			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
 			wantTag:         "",

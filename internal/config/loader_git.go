@@ -16,7 +16,6 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/kevinburke/ssh_config"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -264,24 +263,20 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	}
 	// use posix flag package for these flags
 	pflagSet := pflag.NewFlagSet("gitsshcommand", pflag.ContinueOnError)
-	_ = pflagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
-	_ = pflagSet.StringP("file", "F", "", "config file override")
+	identity := pflagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
+	confFile := pflagSet.StringP("file", "F", "", "config file override")
 
-	if err := pflagSet.Parse(args); err != nil {
-		logrus.Debugf("%s: %s\nerror: %v", GitSshCommandVar, gsc, err)
-	}
-	sshConf.IdentityFile, _ = pflagSet.GetString("identity")
-	sshConf.ConfigFile, _ = pflagSet.GetString("file")
+	_ = pflagSet.Parse(args)
+
+	sshConf.IdentityFile = *identity
+	sshConf.ConfigFile = *confFile
 
 	// use default flag package to parse these flags
-	flagSet := flag.NewFlagSet("nativeSSHGitCommand", flag.ContinueOnError)
-	// hostname := flag.String("oHostname", "", "")
-	hostname := flagSet.String("oHostname", "", "global hostname overrride")
-	port := flagSet.String("oPort", "", "global port overrride")
+	oParamsFlagSet := flag.NewFlagSet("nativeSSHGitCommand", flag.ContinueOnError)
+	hostname := oParamsFlagSet.String("oHostname", "", "global hostname override")
+	port := oParamsFlagSet.String("oPort", "", "global port override")
 
-	if err := flagSet.Parse(args[1:]); err != nil {
-		logrus.Debugf("%s: %s\nnative flag parse error: %v", GitSshCommandVar, gsc, err)
-	}
+	_ = oParamsFlagSet.Parse(args[1:])
 
 	sshConf.Hostname = *hostname
 	sshConf.Port = *port

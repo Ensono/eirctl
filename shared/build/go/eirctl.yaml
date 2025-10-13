@@ -1,7 +1,7 @@
 contexts:
   go1x:
     container:
-      name: public.ecr.aws/docker/library/golang:1.25-trixie
+      name: mirror.gcr.io/golang:1.25-trixie
       enable_dind: true
       enable_mount: true
     envfile:
@@ -12,7 +12,7 @@ contexts:
 
   golint:
     container:
-      name: docker.io/golangci/golangci-lint:v2.4.0-alpine
+      name: mirror.gcr.io/golangci/golangci-lint:v2.4.0-alpine
       enable_mount: true
     envfile:
       exclude:
@@ -21,6 +21,14 @@ contexts:
         - CGO
         - PATH
         - HOME
+
+  goreleaser:
+    container:
+      name: ghcr.io/goreleaser/goreleaser:v2.12.5
+      shell: bash
+      shell_args:
+        - -c
+      enable_dind: true
 
 tasks:
   clean:
@@ -80,6 +88,11 @@ tasks:
     command:
       - |
         golangci-lint run
+  releaser:
+    context: goreleaser
+    command: 
+      - | 
+        release 
 
 pipelines:
   test:unit:
