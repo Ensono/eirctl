@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/kevinburke/ssh_config"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
@@ -265,21 +265,24 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	pflagSet := pflag.NewFlagSet("gitsshcommand", pflag.ContinueOnError)
 	identity := pflagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
 	confFile := pflagSet.StringP("file", "F", "", "config file override")
+	optionParam := pflagSet.StringToStringP("", "o", nil, "options parameter")
 
 	_ = pflagSet.Parse(args)
 
 	sshConf.IdentityFile = *identity
 	sshConf.ConfigFile = *confFile
 
-	// use default flag package to parse these flags
-	oParamsFlagSet := flag.NewFlagSet("nativeSSHGitCommand", flag.ContinueOnError)
-	hostname := oParamsFlagSet.String("oHostname", "", "global hostname override")
-	port := oParamsFlagSet.String("oPort", "", "global port override")
-
-	_ = oParamsFlagSet.Parse(args[1:])
-
-	sshConf.Hostname = *hostname
-	sshConf.Port = *port
+	for key, v := range *optionParam {
+		// Keep this as switch in case we want to introduce additional parameters from the `-oParam=Val` option set in SSH
+		switch key {
+		case "Hostname":
+			sshConf.Hostname = v
+		case "Port":
+			sshConf.Port = v
+		default:
+			logrus.Debugf("option: %s, currently not supported with GIT_SSH_COMMAND", key)
+		}
+	}
 
 	return sshConf
 }
