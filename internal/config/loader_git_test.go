@@ -185,7 +185,7 @@ kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
 AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
-		`))
+				`))
 				os.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
 				return tempFile.Name(), "", func() {
 					os.Unsetenv(config.GitSshCommandVar)
@@ -222,14 +222,14 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				Port 443
 				Hostname ssh.github.com
 				`))
-				sshIdFile, _ := os.CreateTemp("", "id-rando-*")
+				sshIdFile, _ := os.CreateTemp("", "id-rando-with-conf-*")
 				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
-		b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-		QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
-		kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
-		AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
-		wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
-		-----END OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
 				`))
 				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
