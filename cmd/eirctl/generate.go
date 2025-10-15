@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/Ensono/eirctl/internal/cmdutils"
@@ -49,7 +48,7 @@ func newGenerateCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
-			return generateDefinition(conf, argsStringer, f)
+			return generateDefinition(rootCmd, conf, argsStringer, f)
 		},
 	}
 
@@ -63,7 +62,7 @@ var DefaultCIOutput = map[genci.CITarget]string{
 	genci.GitHubCITarget: ".github/workflows",
 }
 
-func generateDefinition(conf *config.Config, argsStringer *argsToStringsMapper, f *generateFlags) (err error) {
+func generateDefinition(rootCmd *EirCtlCmd, conf *config.Config, argsStringer *argsToStringsMapper, f *generateFlags) (err error) {
 	pipeline := argsStringer.pipelineName
 	if pipeline == nil {
 		return fmt.Errorf("specified arg is not a pipeline")
@@ -87,7 +86,7 @@ func generateDefinition(conf *config.Config, argsStringer *argsToStringsMapper, 
 		}
 	}
 
-	file, err := os.Create(filepath.Join(output, fmt.Sprintf("%s.yml", utils.ConvertToMachineFriendly(pipeline.Name()))))
+	file, err := rootCmd.OsFsOps.Create(filepath.Join(output, fmt.Sprintf("%s.yml", utils.ConvertToMachineFriendly(pipeline.Name()))))
 	if err != nil {
 		return err
 	}

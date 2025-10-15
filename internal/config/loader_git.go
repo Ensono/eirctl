@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -264,27 +263,26 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	}
 	// use posix flag package for these flags
 	pflagSet := pflag.NewFlagSet("gitsshcommand", pflag.ContinueOnError)
-	_ = pflagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
-	_ = pflagSet.StringP("file", "F", "", "config file override")
+	identity := pflagSet.StringP("identity", "i", "", "identity file - i.e. the private key to use")
+	confFile := pflagSet.StringP("file", "F", "", "config file override")
+	optionParam := pflagSet.StringToStringP("", "o", nil, "options parameter")
 
-	if err := pflagSet.Parse(args); err != nil {
-		logrus.Debugf("%s: %s\nerror: %v", GitSshCommandVar, gsc, err)
+	_ = pflagSet.Parse(args)
+
+	sshConf.IdentityFile = *identity
+	sshConf.ConfigFile = *confFile
+
+	for key, v := range *optionParam {
+		// Keep this as switch in case we want to introduce additional parameters from the `-oParam=Val` option set in SSH
+		switch key {
+		case "Hostname":
+			sshConf.Hostname = v
+		case "Port":
+			sshConf.Port = v
+		default:
+			logrus.Debugf("option: %s, currently not supported with GIT_SSH_COMMAND", key)
+		}
 	}
-	sshConf.IdentityFile, _ = pflagSet.GetString("identity")
-	sshConf.ConfigFile, _ = pflagSet.GetString("file")
-
-	// use default flag package to parse these flags
-	flagSet := flag.NewFlagSet("nativeSSHGitCommand", flag.ContinueOnError)
-	// hostname := flag.String("oHostname", "", "")
-	hostname := flagSet.String("oHostname", "", "global hostname overrride")
-	port := flagSet.String("oPort", "", "global port overrride")
-
-	if err := flagSet.Parse(args[1:]); err != nil {
-		logrus.Debugf("%s: %s\nnative flag parse error: %v", GitSshCommandVar, gsc, err)
-	}
-
-	sshConf.Hostname = *hostname
-	sshConf.Port = *port
 
 	return sshConf
 }

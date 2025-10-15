@@ -33,10 +33,14 @@ type rootCmdFlags struct {
 	Quiet       bool
 	VariableSet map[string]string
 	DryRun      bool
-	// NoSummary report at the end of the task run
-	// this was set to default as true in the original
-	// - not sure this makes sense for a boolean flag "¯\_(ツ)_/¯"
+	// NoSummary report at the end of the pipeline or task run
 	NoSummary bool
+}
+
+type OsFSOpsIface interface {
+	Rename(oldpath string, newpath string) error
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Create(name string) (io.Writer, error)
 }
 
 type EirCtlCmd struct {
@@ -44,8 +48,24 @@ type EirCtlCmd struct {
 	Cmd        *cobra.Command
 	ChannelOut io.Writer
 	ChannelErr io.Writer
+	OsFsOps    OsFSOpsIface
 	viperConf  *viper.Viper
 	rootFlags  *rootCmdFlags
+}
+
+type osFsOps struct {
+}
+
+func (o osFsOps) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
+func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (o osFsOps) Create(name string) (io.Writer, error) {
+	return os.Create(name)
 }
 
 func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtlCmd {
@@ -53,12 +73,13 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 		ctx:        ctx,
 		ChannelOut: channelOut,
 		ChannelErr: channelErr,
+		OsFsOps:    osFsOps{},
 		Cmd: &cobra.Command{
 			Use:                        "eirctl",
 			Version:                    fmt.Sprintf("%s-%s", Version, Revision),
 			Args:                       cobra.ExactArgs(0),
-			Short:                      "EIR optimised task runner",
-			Long:                       ``,
+			Short:                      "Modern task runner with native support for containerised tasks",
+			Long:                       `eirctl allows for task composition and running them in eirctl pipelines (graph)`,
 			SuggestionsMinimumDistance: 1,
 			SilenceErrors:              true, // handle errors in the main
 		},
@@ -69,7 +90,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	tc.viperConf.SetEnvPrefix("EIRCTL")
 	tc.viperConf.SetConfigName("eirctl_conf")
 
-	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "eirctl.yaml", "config file to use. For backwards compatibility it also accepts `taskctl.yaml` and `tasks.yaml`")
+	tc.Cmd.PersistentFlags().StringVarP(&tc.rootFlags.CfgFilePath, "config", "c", "eirctl.yaml", "config file to use - `eirctl.yaml`. For backwards compatibility it also accepts taskctl.yaml and tasks.yaml")
 	_ = tc.viperConf.BindEnv("config", "EIRCTL_CONFIG_FILE")
 	_ = tc.viperConf.BindPFlag("config", tc.Cmd.PersistentFlags().Lookup("config"))
 
@@ -105,6 +126,7 @@ func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 		newWatchCmd,
 		newGenerateCmd,
 		newShellCmd,
+		newUpdateCommand,
 	}
 }
 
