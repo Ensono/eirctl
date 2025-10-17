@@ -85,6 +85,9 @@ Host github.com
     Hostname ssh.github.com
     Port 443
     User git
+// Match User adminuser Address 10.10.10.5
+//     PermitRootLogin yes
+//     AllowTcpForwarding no
 `))
 	sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
 	sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -391,6 +394,34 @@ func Test_NewGitSource_ValidInput_withSSH_COMMAND_hostname_port(t *testing.T) {
 	if gs.SshConfig.Hostname != "altssh.github.org" {
 		t.Errorf("got %s, wanted: altssh.github.org", gs.SshConfig.Hostname)
 	}
+}
+
+func Test_GitSource_Error(t *testing.T) {
+	t.Run("on_incorrect_directive", func(t *testing.T) {
+		tmpHomeDir, _ := os.MkdirTemp("", "ssh-conf-*")
+		tmpSShNew := filepath.Join(tmpHomeDir, ".ssh")
+		_ = os.Mkdir(tmpSShNew, 0777)
+		sshConfFile, _ := os.Create(filepath.Join(tmpSShNew, "config"))
+		_, _ = sshConfFile.Write([]byte(`
+Host github.com
+    Hostname ssh.github.com
+    Port 443
+    User git
+Match User adminuser Address 10.10.10.5
+    PermitRootLogin yes
+    AllowTcpForwarding no
+`))
+
+		os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name())
+		defer os.Unsetenv(config.GitSshCommandVar)
+		defer os.Remove(sshConfFile.Name())
+
+		_, err := config.NewGitSource("git::ssh://github.com/example/repo//config.yaml")
+		if !errors.Is(err, config.ErrSSHConfig) {
+			t.Errorf("wrong error type\ngot: %v, wanted %v", err, config.ErrSSHConfig)
+		}
+	})
+
 }
 
 func TestGitSource_Config_FromHead(t *testing.T) {
