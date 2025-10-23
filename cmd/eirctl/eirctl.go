@@ -159,6 +159,18 @@ var (
 func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 	// consume env and build options via Viper
 	tc.viperConf.AutomaticEnv()
+
+	// NOTE: These need to be set early, before parsing the config file,
+	// as a remote loader could fail and we want to make sure the log levels
+	// are as we expect...
+	if tc.viperConf.GetBool("debug") {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	if tc.viperConf.GetBool("verbose") {
+		logrus.SetLevel(logrus.TraceLevel)
+	}
+
 	configFilePath, err := configFileFinder(tc)
 	if err != nil {
 		return nil, err
@@ -170,17 +182,21 @@ func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// if cmd line flags were passed in, they override anything
-	// parsed from theconfig file
-	if tc.viperConf.GetBool("debug") {
-		conf.Debug = tc.viperConf.GetBool("debug") // this is bound to viper env flag
+	// If the CLI flags were passed in, they override anything
+	// parsed from the config file. We also need to re-set the
+	// log levels if they were changed by loading config, but
+	// not supplied on the CLI.
+	if tc.Cmd.Flags().Changed("debug") {
+		conf.Debug = tc.viperConf.GetBool("debug")
 	}
 
 	if conf.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	conf.Verbose = tc.viperConf.GetBool("verbose")
+	if tc.Cmd.Flags().Changed("verbose") {
+		conf.Verbose = tc.viperConf.GetBool("verbose")
+	}
 
 	if conf.Verbose {
 		logrus.SetLevel(logrus.TraceLevel)
