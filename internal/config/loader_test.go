@@ -213,9 +213,14 @@ tasks:
 	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
-	cfg, err := cl.Load(tmpFile.Name())
+	cfg, _ := cl.Load(tmpFile.Name())
+
+	if cfg == nil {
+		t.Fatal("got nil cfg")
+	}
+
 	if len(cfg.Tasks) != 2 {
-		t.Errorf("got %v, wanted 2", len(cfg.Tasks))
+		t.Fatalf("got %v, wanted 2", len(cfg.Tasks))
 	}
 }
 func TestLoader_resolveDefaultConfigFile(t *testing.T) {

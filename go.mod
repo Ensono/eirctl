@@ -2,7 +2,7 @@ module github.com/Ensono/eirctl
 
 go 1.25
 
-toolchain go1.25.2
+toolchain go1.25.3
 
 require (
 	dario.cat/mergo v1.0.2

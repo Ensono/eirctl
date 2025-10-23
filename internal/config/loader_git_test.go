@@ -439,7 +439,7 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 
 	repo := createTestRepo(t, map[string]string{
 		"my.yaml": cfgWriter.String(),
-	}, "feature/foo", "")
+	}, "refs/remotes/origin/feature/foo", "")
 
 	gs, err := config.NewGitSource("git::https://example.com/org/repo//my.yaml?ref=feature/foo")
 	if err != nil {

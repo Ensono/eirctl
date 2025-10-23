@@ -22,3 +22,5 @@ local/
 *.env
 # prof outputs
 .pprof
+
+__debug_bin.exe
