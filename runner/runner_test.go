@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -263,6 +264,7 @@ LUX=foobar`))
 	// with custom envfile as well
 }
 
+// TODO: What is this, was it meant to be a test?
 func ExampleTaskRunner_Run() {
 	t := taskpkg.FromCommands("t1", "go doc github.com/Ensono/eirctl/runner.Runner")
 	ob := output.NewSafeWriter(&bytes.Buffer{})
@@ -458,17 +460,21 @@ func TestTaskRunner_withContext(t *testing.T) {
 
 		task := taskpkg.NewTask("test:with:env")
 		task.Env = task.Env.Merge(variables.FromMap(map[string]string{"ONE": "two"}))
+		// `sleep` is also on pwsh as an alias of `Start-Sleep`
 		task.Commands = []string{"sleep 2"}
+
 		go func() {
 			time.Sleep(100 * time.Millisecond)
 			cancel()
 		}()
 
 		e := tr.Run(task)
+
 		if e == nil {
-			t.Fatalf("got %v, wanted 'context canceled'", e)
+			t.Fatal("got no error, wanted 'context canceled'")
 		}
-		if e.Error() != "context canceled" {
+
+		if !errors.Is(e, context.Canceled) {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
 	})
@@ -489,10 +495,12 @@ func TestTaskRunner_withContext(t *testing.T) {
 		}()
 
 		e := tr.Run(task)
+
 		if e == nil {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
-		if e.Error() != "context canceled" {
+
+		if !errors.Is(e, context.Canceled) {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
 	})
@@ -511,10 +519,12 @@ func TestTaskRunner_withContext(t *testing.T) {
 		task.Commands = []string{"sleep 2"}
 
 		e := tr.Run(task)
+
 		if e == nil {
 			t.Fatalf("got %v, wanted error", e)
 		}
-		if e.Error() != "context deadline exceeded" {
+
+		if !errors.Is(e, context.DeadlineExceeded) {
 			t.Fatalf("got %v, wanted 'context deadline exceeded'", e)
 		}
 	})

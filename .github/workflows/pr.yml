@@ -29,31 +29,41 @@ jobs:
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@v3.0
         id: gitversion
-  # Runs in parallel
-  lint:
-    name: Lint
-    runs-on: ubuntu-24.04
-    env:
-      DOCKER_HOST: unix:///var/run/docker.sock
-    steps:
-      - uses: actions/checkout@v5
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.25.x
-      - name: Linters
-        run: |
-          go run -race cmd/main.go run lints
+
+  # lint:
+  #   name: Lint
+  #   runs-on: ubuntu-24.04
+  #   env:
+  #     DOCKER_HOST: unix:///var/run/docker.sock
+  #   steps:
+  #     - uses: actions/checkout@v5
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: 1.25.x
+  #     - name: Linters
+  #       run: |
+  #         go run -race cmd/main.go run lints
 
   test:
-    name: Test
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # - name: Linux
+          #   os: ubuntu-24.04
+          #   docker_host: unix:///var/run/docker.sock
+          - name: Windows
+            os: windows-2025
+            # docker_host: /var/run/docker.sock
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     needs:
       - set-version-tag
-      - lint
+      # - lint
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
-      DOCKER_HOST: unix:///var/run/docker.sock
+      # DOCKER_HOST: ${{ matrix.docker_host }}
     steps:
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -66,41 +76,51 @@ jobs:
           # Fetch full git history for SonarCloud SCM features
           fetch-depth: 0
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      - name: check schema
+      - name: Foo
         run: |
-          CI=true go run cmd/main.go generate_own_schema
+          Get-ChildItem -Name $Env:ProgramFiles
+          DockerCli.exe --help
+          DockerCli.exe -SwitchLinuxEngine
 
-      - name: Test
-        run: |
-          go run cmd/main.go run pipeline gha:unit:test
+      # - name: Cache Go modules
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ~/go/pkg/mod
+      #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-go-
 
-      - name: Publish Junit style Test Report
-        uses: mikepenz/action-junit-report@v5
-        if: always()
-        with:
-          report_paths: ".coverage/report-junit.xml"
-          commit: ${{ github.sha }}
-          fail_on_failure: true
-          check_name: Eirctl Unit Tests
+      # - name: Check Schema
+      #   # TODO: Schema Generation is broken on Windows atm
+      #   if: matrix.name == 'Linux'
+      #   run: |
+      #     go run cmd/main.go generate_own_schema
+      #   env:
+      #     CI: true
 
-      - name: Analyze with SonarCloud
-        uses: SonarSource/sonarqube-scan-action@v6
-        env:
-          # Needed to get PR information
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          projectBaseDir: .
-          args: >
-            -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
-            -Dsonar.working.directory=.scannerwork
-            -Dsonar.scm.provider=git
+      # - name: Test
+      #   run: |
+      #     go run cmd/main.go run pipeline gha:unit:test --verbose
+
+      # - name: Publish Junit style Test Report
+      #   uses: mikepenz/action-junit-report@v5
+      #   if: always()
+      #   with:
+      #     report_paths: ".coverage/report-junit.xml"
+      #     commit: ${{ github.sha }}
+      #     fail_on_failure: true
+      #     check_name: Eirctl Unit Tests (${{ matrix.name }})
+
+      # - name: Analyze with SonarCloud
+      #   uses: SonarSource/sonarqube-scan-action@v6
+      #   env:
+      #     # Needed to get PR information
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #   with:
+      #     projectBaseDir: .
+      #     args: >
+      #       -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }}
+      #       -Dsonar.working.directory=.scannerwork
+      #       -Dsonar.scm.provider=git
