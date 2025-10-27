@@ -503,7 +503,7 @@ func Test_ContainerContext_PortArgs(t *testing.T) {
 				t.Fatal("expecting at least 1 BindMount...")
 			}
 
-			for port, _ := range gotPorts {
+			for port := range gotPorts {
 				if !slices.Contains(tt.wantContainerPort, port.Port()) {
 					t.Errorf("incorrect container expose port translation, got: %s, wanted: %v\n", port.Port(), tt.wantContainerPort)
 				}

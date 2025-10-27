@@ -11,10 +11,18 @@ import (
 	cmd "github.com/Ensono/eirctl/cmd/eirctl"
 )
 
+func getBinarySuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+
+	return ""
+}
+
 func specificVersionHandler(t *testing.T) http.Handler {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc(fmt.Sprintf("/download/0.11.23/eirctl-%s-%s", runtime.GOOS, runtime.GOARCH), func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(fmt.Sprintf("/download/0.11.23/eirctl-%s-%s%s", runtime.GOOS, runtime.GOARCH, getBinarySuffix()), func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write([]byte(`version 0.11.23 downloaded`))
 	})
@@ -24,7 +32,7 @@ func specificVersionHandler(t *testing.T) http.Handler {
 func latestVersionHandler(t *testing.T) http.Handler {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc(fmt.Sprintf("/latest/download/eirctl-%s-%s", runtime.GOOS, runtime.GOARCH), func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(fmt.Sprintf("/latest/download/eirctl-%s-%s%s", runtime.GOOS, runtime.GOARCH, getBinarySuffix()), func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write([]byte(`latest version downloaded`))
 	})
@@ -40,7 +48,7 @@ func Test_Update_GetVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 		if string(binary) != "version 0.11.23 downloaded" {
-			t.Fail()
+			t.Fatal(string(binary))
 		}
 	})
 	t.Run("download latest version", func(t *testing.T) {

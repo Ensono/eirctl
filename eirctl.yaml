@@ -24,7 +24,7 @@ pipelines:
       variables:
         RepoOwner: Ensono
         BinName: eirctl
-  
+
   gha:unit:test:
     - pipeline: test:unit
     - task: sonar:coverage:prep
@@ -96,12 +96,14 @@ tasks:
 
       Exits in CI if changes detected.
     command:
-      - go run tools/schemagenerator/main.go
+      - go run tools/schemagenerator/main.go 2>&1
       - |
+        # cat schemas/schema_v1.json
+        git status --porcelain --untracked-files=no
         if [ ! -z "$(git status --porcelain --untracked-files=no)" ]; then
           if [ ! -z ${CI+x} ] ; then
             echo "In CI with an unclean tree - exiting"
-            echo "Info: make sure you have generatedschema and committed"
+            echo "Info: make sure you have generatedschema locally and committed"
             exit 1
           fi
         fi
@@ -136,7 +138,7 @@ tasks:
   sonar:coverage:prep:
     context: bash
     command:
-      - | 
+      - |
         # SonarCloud expects relative file paths, but Go generates coverage with full module paths
         # Convert from 'github.com/Ensono/eirctl/path/file.go' to 'path/file.go'
         sed -i 's|github.com/Ensono/eirctl/||g' .coverage/out
