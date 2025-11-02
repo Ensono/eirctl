@@ -23,8 +23,8 @@ import (
 
 const (
 	gitPrefix              = "git::"
-	gitPathSeparator       = "//"
 	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
+	remoteRef              = "origin"
 	GitSshCommandVar       = "GIT_SSH_COMMAND"
 	GitSshPassphrase       = "GIT_SSH_PASSPHRASE"
 )
@@ -64,11 +64,14 @@ func IsGit(raw string) bool {
 func NewGitSource(raw string) (*GitSource, error) {
 	gs := &GitSource{gcOpts: &git.CloneOptions{
 		// specifically set this here so that later it is a known value
-		RemoteName: "origin",
+		RemoteName: remoteRef,
 		Depth:      0,
 	}}
 
 	gitImportParts := gitRegexp.FindStringSubmatch(raw)
+
+	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitImportParts)
+
 	if len(gitImportParts) != 5 {
 		return gs, fmt.Errorf("import %s, %w", raw, ErrIncorrectlyFormattedGit)
 	}
@@ -122,21 +125,28 @@ func (gs *GitSource) WithRepo(repo *git.Repository) {
 }
 
 func (gs *GitSource) Config() (*ConfigDefinition, error) {
+	logrus.Trace("loader_git.Config: gs.getCommit")
 	commit, err := gs.getCommit(gs.repo)
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
+
+	logrus.Trace("loader_git.Config: commit.Tree")
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
+
+	logrus.Trace("loader_git.Config: tree.File")
 	file, err := tree.File(gs.yamlPath)
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
+
+	logrus.Trace("loader_git.Config: file.Reader")
 	contents, err := file.Reader()
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
 	defer contents.Close()
@@ -170,10 +180,20 @@ var getCommitFuncFallback []getCommitFunc = []getCommitFunc{
 	func(r *git.Repository, tag string) (*object.Commit, error) {
 		rev, err := r.ResolveRevision(plumbing.Revision(tag))
 		if err != nil {
-			return nil, fmt.Errorf("%w, gone through all fallbacks", ErrGitTagBranchRevisionWrong)
+			tryRemote := fmt.Sprintf("refs/remotes/%s/%s", remoteRef, tag)
+			logrus.Debugf("Failed to resolve '%s', trying, '%s'", tag, tryRemote)
+
+			rev, err = r.ResolveRevision(plumbing.Revision(tryRemote))
+
+			if err != nil {
+				// TODO: This error never gets surfaced as it's ignored in `getCommit` below..?
+				return nil, fmt.Errorf("%w, gone through all fallbacks", ErrGitTagBranchRevisionWrong)
+			}
 		}
-		return r.CommitObject(plumbing.NewHashReference("", *rev).Hash())
+
+		return r.CommitObject(*rev)
 	},
+	// TODO: Validate if this is needed
 	func(r *git.Repository, tag string) (*object.Commit, error) {
 		return r.CommitObject(plumbing.NewHash(tag))
 	},

@@ -189,7 +189,7 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 	},
 }
 
-// load is called with the base eirctl.yaml|json|toml files for the first time
+// load is called with the base eirctl.yaml file for the first time
 // recursively called by other imports if they exist and their imports
 func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 	// ensures a recursive forever loop does not occur and set file to visited
@@ -206,7 +206,7 @@ func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 		}
 	}
 
-	// the config will be cumulatively built over the imports
+	// The config will be cumulatively built over the imports
 	// NOTE: we want to fail on duplicate keys detected
 	if err := cl.parseImports(config, filepath.Dir(file)); err != nil {
 		return nil, err
@@ -218,8 +218,6 @@ func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) error {
 
 	for _, val := range baseConfig.Import {
-		// switch val := v.(type) {
-		// case string:
 		if utils.IsURL(val) {
 			if cl.imports[val] {
 				// already visited and parsed import file
@@ -236,6 +234,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			// iterate through next import
 			continue
 		}
+
 		if IsGit(val) {
 			if cl.imports[val] {
 				// already visited and parsed import file
@@ -292,6 +291,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			return err
 		}
 	}
+
 	return nil
 }
 
