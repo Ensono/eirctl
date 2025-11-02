@@ -21,7 +21,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TODO: Should we normalise names for constants? lowercase vs uppercase
 const (
 	gitPrefix              = "git::"
 	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
