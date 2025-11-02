@@ -202,7 +202,7 @@ func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 		logrus.SetLevel(logrus.TraceLevel)
 	}
 
-	// if default config keys were set to false
+	// If default config keys were set to false
 	// we check the overrides
 	if tc.rootFlags.Quiet {
 		conf.Quiet = tc.rootFlags.Quiet

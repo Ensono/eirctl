@@ -71,7 +71,7 @@ func NewGitSource(raw string) (*GitSource, error) {
 
 	gitImportParts := gitRegexp.FindStringSubmatch(raw)
 
-	logrus.Tracef("Git Import Parts: %+v", gitImportParts)
+	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitImportParts)
 
 	if len(gitImportParts) != 5 {
 		return gs, fmt.Errorf("import %s, %w", raw, ErrIncorrectlyFormattedGit)
@@ -126,28 +126,28 @@ func (gs *GitSource) WithRepo(repo *git.Repository) {
 }
 
 func (gs *GitSource) Config() (*ConfigDefinition, error) {
-	logrus.Trace("gs: getCommit")
+	logrus.Trace("loader_git.Config: gs.getCommit")
 	commit, err := gs.getCommit(gs.repo)
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	logrus.Trace("commit: Tree")
+	logrus.Trace("loader_git.Config: commit.Tree")
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	logrus.Trace("tree: File")
+	logrus.Trace("loader_git.Config: tree.File")
 	file, err := tree.File(gs.yamlPath)
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	logrus.Trace("file: Reader")
+	logrus.Trace("loader_git.Config: file.Reader")
 	contents, err := file.Reader()
 	if err != nil {
-		return nil, fmt.Errorf("%w\nerror: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
 	defer contents.Close()
