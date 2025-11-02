@@ -24,7 +24,7 @@ pipelines:
       variables:
         RepoOwner: Ensono
         BinName: eirctl
-  
+
   gha:unit:test:
     - pipeline: test:unit
     - task: sonar:coverage:prep
@@ -136,7 +136,7 @@ tasks:
   sonar:coverage:prep:
     context: bash
     command:
-      - | 
+      - |
         # SonarCloud expects relative file paths, but Go generates coverage with full module paths
         # Convert from 'github.com/Ensono/eirctl/path/file.go' to 'path/file.go'
         sed -i 's|github.com/Ensono/eirctl/||g' .coverage/out
