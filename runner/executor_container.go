@@ -57,28 +57,51 @@ type ContainerExecutorIface interface {
 }
 
 type Terminal interface {
-	MakeRaw(fd int) (*term.State, error)
-	Restore(fd int, state *term.State) error
-	IsTerminal(fd int) bool
-	GetSize(fd int) (width, height int, err error)
+	GetTerminalFd() int
+	MakeRaw() (*term.State, error)
+	Restore(state *term.State) error
+	IsTerminal() bool
+	GetSize() (width, height int, err error)
+	UpdateSize() (width, height int, err error)
 }
 
-type realTerminal struct{}
-
-func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
-	return term.MakeRaw(fd)
+type realTerminal struct {
+	terminalFd   int
+	stdInFd      int
+	terminalSize [2]int
 }
 
-func (t realTerminal) Restore(fd int, state *term.State) error {
-	return term.Restore(fd, state)
+func (t *realTerminal) GetTerminalFd() int {
+	return t.terminalFd
 }
 
-func (t realTerminal) IsTerminal(fd int) bool {
-	return term.IsTerminal(fd)
+func (t *realTerminal) MakeRaw() (*term.State, error) {
+	return term.MakeRaw(t.stdInFd)
 }
 
-func (t realTerminal) GetSize(fd int) (width, height int, err error) {
-	return term.GetSize(fd)
+func (t *realTerminal) Restore(state *term.State) error {
+	return term.Restore(t.stdInFd, state)
+}
+
+func (t *realTerminal) IsTerminal() bool {
+	return term.IsTerminal(t.terminalFd)
+}
+
+func (t *realTerminal) GetSize() (width, height int, err error) {
+	return t.terminalSize[0], t.terminalSize[1], nil
+}
+
+func (t *realTerminal) UpdateSize() (width, height int, err error) {
+	width, height, err = term.GetSize(t.terminalFd)
+
+	if err != nil {
+		logrus.Error("Terminal.UpdateSize: Failed to get size")
+		return 0, 0, nil
+	}
+
+	t.terminalSize = [2]int{width, height}
+
+	return width, height, nil
 }
 
 type ContainerExecutor struct {
@@ -103,10 +126,16 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 		return nil, err
 	}
 
+	size, fd := utils.GetTerminalSize()
+
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
-		Term:        realTerminal{},
+		Term: &realTerminal{
+			terminalFd:   fd,
+			stdInFd:      int(os.Stdin.Fd()),
+			terminalSize: size,
+		},
 	}
 
 	for _, opt := range opts {
@@ -145,7 +174,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 			Merge(variables.FromMap(containerContext.envOverride)).
 			Map()))
 
-	containerConfig, hostConfig := platformContainerConfig(containerContext, cEnv, cmd, wd, tty, attachStdin)
+	containerConfig, hostConfig := platformContainerConfig(containerContext, cEnv, cmd, wd, e.Term, tty, attachStdin)
 
 	if job.IsShell && job.Stdin != nil {
 		return e.shell(ctx, containerConfig, hostConfig, job)
@@ -187,7 +216,6 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 }
 
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
-
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -265,8 +293,16 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 
 // shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
+	width, height, err := e.Term.GetSize()
+
+	if err != nil {
+		logrus.Fatal("executor_container.shell: Couldn't get terminal size")
+	}
+
+	hostConfig.ConsoleSize = [2]uint{uint(height), uint(width)}
 
 	mutateShellContainerConfig(containerConfig)
+
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -287,31 +323,28 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
-	fd := int(os.Stdin.Fd())
-	if e.Term.IsTerminal(fd) {
-		logrus.Tracef("Making Terminal Raw")
-		oldState, err := e.Term.MakeRaw(fd)
+	if e.Term.IsTerminal() {
+		logrus.Tracef("executor_container.shell: Making Terminal Raw")
+		oldState, err := e.Term.MakeRaw()
 		if err != nil {
 			return nil, err
 		}
-		// defer e.Term.Restore(fd, oldState)
+
 		defer func() {
-			_ = e.Term.Restore(fd, oldState)
+			_ = e.Term.Restore(oldState)
 		}()
 	}
-
-	e.resizeShellTTY(ctx, fd, createdContainer.ID)
 
 	// Start container with a defined shell
 	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	sigCh := resizeSignal()
+	sigCh := resizeSignal(e.Term)
 	go func() {
 		for range sigCh {
 			logrus.Tracef("terminal window resized")
-			e.resizeShellTTY(ctx, fd, createdContainer.ID)
+			e.resizeShellTty(ctx, createdContainer.ID)
 		}
 	}()
 
@@ -341,17 +374,25 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	return []byte{}, nil
 }
 
-func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containerId string) {
-	if e.Term.IsTerminal(fd) {
-		width, height, err := e.Term.GetSize(fd)
+func (e *ContainerExecutor) resizeShellTty(ctx context.Context, containerId string) {
+	if e.Term.IsTerminal() {
+		width, height, err := e.Term.UpdateSize()
 		if err != nil {
-			logrus.Tracef("failed to get terminal size: %v", err)
+			logrus.Tracef("resizeShellTty: failed to update terminal size: %v", err)
 			return
 		}
-		_ = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
+
+		err = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
 			Height: uint(height),
 			Width:  uint(width),
 		})
+
+		if err != nil {
+			logrus.Tracef("resizeShellTty: failed to resize the terminal: %s", err.Error())
+			return
+		}
+
+		logrus.Tracef("resizeShellTty: resized the terminal to %dx%d", width, height)
 	}
 }
 

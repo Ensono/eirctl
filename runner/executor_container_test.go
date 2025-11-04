@@ -290,22 +290,30 @@ type mockTerminal struct {
 	returnMakeRawErr error
 }
 
-func (m *mockTerminal) MakeRaw(fd int) (*term.State, error) {
+func (m *mockTerminal) GetTerminalFd() int {
+	return 0
+}
+
+func (m *mockTerminal) MakeRaw() (*term.State, error) {
 	m.makeRawCalled = true
 	return m.returnMakeRaw, m.returnMakeRawErr
 }
 
-func (m *mockTerminal) Restore(fd int, state *term.State) error {
+func (m *mockTerminal) Restore(state *term.State) error {
 	m.restoreCalled = true
 	return nil
 }
 
-func (m *mockTerminal) IsTerminal(fd int) bool {
+func (m *mockTerminal) IsTerminal() bool {
 	return true
 }
 
-func (m *mockTerminal) GetSize(fd int) (width, height int, err error) {
+func (m *mockTerminal) GetSize() (width, height int, err error) {
 	return 1, 1, nil
+}
+
+func (m *mockTerminal) UpdateSize() (width, height int, err error) {
+	return 2, 2, nil
 }
 
 type MockConn struct {

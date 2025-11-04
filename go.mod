@@ -112,6 +112,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/sys v0.37.0
 	golang.org/x/term v0.36.0
 )

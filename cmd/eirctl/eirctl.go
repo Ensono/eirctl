@@ -107,7 +107,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.NoSummary, "no-summary", "", false, "show summary")
 	_ = tc.viperConf.BindPFlag("no-summary", tc.Cmd.PersistentFlags().Lookup("no-summary"))
 
-	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Quiet, "quiet", "q", false, "quite mode")
+	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Quiet, "quiet", "q", false, "quiet mode")
 	_ = tc.viperConf.BindPFlag("quiet", tc.Cmd.PersistentFlags().Lookup("quiet"))
 
 	return tc
@@ -139,8 +139,6 @@ func (tc *EirCtlCmd) InitCommand(iocFuncs ...func(rootCmd *EirCtlCmd)) error {
 }
 
 func (tc *EirCtlCmd) Execute() error {
-	// NOTE: do we need logrus ???
-	// latest Go has structured logging...
 	logrus.SetFormatter(&logrus.TextFormatter{
 		DisableColors:   false,
 		TimestampFormat: "2006-01-02 15:04:05",
