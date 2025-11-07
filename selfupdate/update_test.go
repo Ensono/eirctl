@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Ensono/eirctl/cmdutils/selfupdate"
+	"github.com/Ensono/eirctl/selfupdate"
 )
 
 func specificVersionHandler(t *testing.T) http.Handler {

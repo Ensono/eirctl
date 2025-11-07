@@ -19,12 +19,17 @@ type UpdateCmdFlags struct {
 	Version string
 }
 
+type UpdateOsFSOpsIface interface {
+	Rename(oldpath string, newpath string) error
+	WriteFile(name string, data []byte, perm os.FileMode) error
+}
+
 type UpdateCmd struct {
 	flags        UpdateCmdFlags
 	name         string
 	suffix       string
 	ghReleaseUrl string
-	OsFsOps      cmdutils.OsFSOpsIface
+	OsFsOps      UpdateOsFSOpsIface
 	getVersionFn func(ctx context.Context, flags UpdateCmdFlags) ([]byte, error)
 }
 
@@ -46,7 +51,7 @@ func New(name string, ghReleaseUrl string, opts ...Opt) *UpdateCmd {
 	return uc
 }
 
-func WithOsFsOps(osfs cmdutils.OsFSOpsIface) Opt {
+func WithOsFsOps(osfs UpdateOsFSOpsIface) Opt {
 	return func(uc *UpdateCmd) {
 		uc.OsFsOps = osfs
 	}
@@ -64,8 +69,8 @@ func WithDownloadSuffix(suffix string) Opt {
 	}
 }
 
-// AddUpdateCommand
-func (uc *UpdateCmd) AddUpdateCommand(rootCmd *cobra.Command) {
+// AddToRootCommand
+func (uc *UpdateCmd) AddToRootCommand(rootCmd *cobra.Command) {
 
 	updateCmd := &cobra.Command{
 		Use:     "update",
@@ -84,8 +89,9 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 				return err
 			}
 
-			uc.prepSourceBinary(currentExecPath)
-
+			if err := uc.prepSourceBinary(currentExecPath); err != nil {
+				return err
+			}
 			return uc.OsFsOps.WriteFile(currentExecPath, binary, 0666)
 		},
 	}

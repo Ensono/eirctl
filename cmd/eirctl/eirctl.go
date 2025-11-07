@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/Ensono/eirctl/cmdutils"
-	"github.com/Ensono/eirctl/cmdutils/selfupdate"
 	"github.com/Ensono/eirctl/internal/config"
 	outputpkg "github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/selfupdate"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -109,7 +109,7 @@ func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 		newGenerateCmd,
 		newShellCmd,
 		func(rootCmd *EirCtlCmd) {
-			uc.AddUpdateCommand(rootCmd.Cmd)
+			uc.AddToRootCommand(rootCmd.Cmd)
 		},
 	}
 }
