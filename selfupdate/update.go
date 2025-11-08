@@ -20,6 +20,7 @@ type UpdateCmdFlags struct {
 }
 
 type updateOsFSOpsIface interface {
+	Executable() (string, error)
 	Rename(oldpath string, newpath string) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
 }
@@ -33,6 +34,10 @@ func (o osFsOps) Rename(oldpath string, newpath string) error {
 
 func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(name, data, perm)
+}
+
+func (o osFsOps) Executable() (string, error) {
+	return os.Executable()
 }
 
 type UpdateCmd struct {
@@ -91,7 +96,7 @@ func (uc *UpdateCmd) AddToRootCommand(rootCmd *cobra.Command) {
 
 Supports GitHub releases OOTB, but custom functions for GetVersion can be provided.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			currentExecPath, err := os.Executable()
+			currentExecPath, err := uc.OsFsOps.Executable()
 			if err != nil {
 				return err
 			}
@@ -103,6 +108,7 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 			if err := uc.prepSourceBinary(currentExecPath); err != nil {
 				return err
 			}
+
 			if err := uc.OsFsOps.WriteFile(currentExecPath, binary, 0666); err != nil {
 				return err
 			}
