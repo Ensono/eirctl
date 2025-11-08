@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 
-	"github.com/Ensono/eirctl/cmdutils"
 	"github.com/spf13/cobra"
 )
 
@@ -19,9 +19,20 @@ type UpdateCmdFlags struct {
 	Version string
 }
 
-type UpdateOsFSOpsIface interface {
+type updateOsFSOpsIface interface {
 	Rename(oldpath string, newpath string) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
+}
+
+type osFsOps struct {
+}
+
+func (o osFsOps) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
+func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
 }
 
 type UpdateCmd struct {
@@ -29,7 +40,7 @@ type UpdateCmd struct {
 	name         string
 	suffix       string
 	ghReleaseUrl string
-	OsFsOps      UpdateOsFSOpsIface
+	OsFsOps      updateOsFSOpsIface
 	getVersionFn func(ctx context.Context, flags UpdateCmdFlags) ([]byte, error)
 }
 
@@ -40,7 +51,7 @@ func New(name string, ghReleaseUrl string, opts ...Opt) *UpdateCmd {
 		flags:        UpdateCmdFlags{},
 		name:         name,
 		ghReleaseUrl: ghReleaseUrl,
-		OsFsOps:      cmdutils.OsFsOps{},
+		OsFsOps:      osFsOps{},
 	}
 	uc.getVersionFn = uc.GetVersion
 
@@ -51,7 +62,7 @@ func New(name string, ghReleaseUrl string, opts ...Opt) *UpdateCmd {
 	return uc
 }
 
-func WithOsFsOps(osfs UpdateOsFSOpsIface) Opt {
+func WithOsFsOps(osfs updateOsFSOpsIface) Opt {
 	return func(uc *UpdateCmd) {
 		uc.OsFsOps = osfs
 	}
@@ -92,7 +103,11 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 			if err := uc.prepSourceBinary(currentExecPath); err != nil {
 				return err
 			}
-			return uc.OsFsOps.WriteFile(currentExecPath, binary, 0666)
+			if err := uc.OsFsOps.WriteFile(currentExecPath, binary, 0666); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "%s has been updated", uc.name)
+			return nil
 		},
 	}
 	updateCmd.PersistentFlags().StringVarP(&uc.flags.Version, "version", "", "latest", "specific version to update to.")
@@ -106,8 +121,16 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 //
 // This can be overwritten completely to support any kind of fetcher
 func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags) ([]byte, error) {
+	// decided not to pass in the httpClientIface as an argument
+	// Tests are done with httptest to ensure the client is tested also
 	c := &http.Client{}
+
+	// supplying a custom suffix will override the default suffix
 	suffix := fmt.Sprintf("%s-%s-%s", uc.name, runtime.GOOS, runtime.GOARCH)
+	if uc.suffix != "" {
+		suffix = uc.suffix
+	}
+
 	specific := "download/%s"
 	latest := "latest/download"
 
@@ -137,10 +160,7 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags) ([]by
 // prepSourceBinary as a rule of thumb on all platforms
 // We move the current binary to a binaryName.old
 func (uc *UpdateCmd) prepSourceBinary(currentExecPath string) error {
-	oldName := uc.name + ".old"
-	if runtime.GOOS == "windows" {
-		oldName += ".exe"
-	}
+	oldName := filepath.Base(currentExecPath) + ".old"
 
 	// move current file to old
 	return uc.OsFsOps.Rename(currentExecPath, path.Join(path.Dir(currentExecPath), oldName))
