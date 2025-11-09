@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/Ensono/eirctl/output"
@@ -35,17 +34,26 @@ func latestVersionHandler(t *testing.T) http.Handler {
 	return mux
 }
 
+type mockCloser struct {
+	io.Writer
+}
+
+func (m mockCloser) Close() error {
+	return nil
+}
+
 func Test_Update_GetVersion(t *testing.T) {
 
 	t.Run("download specific version", func(t *testing.T) {
 		ts := httptest.NewServer(specificVersionHandler(t))
 		defer ts.Close()
 		su := selfupdate.New("my-binary", ts.URL)
-		binary, err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "0.11.23", BaseUrl: ts.URL})
+		binary := &bytes.Buffer{}
+		err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "0.11.23", BaseUrl: ts.URL}, mockCloser{binary})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(binary) != "version 0.11.23 downloaded" {
+		if binary.String() != "version 0.11.23 downloaded" {
 			t.Fail()
 		}
 	})
@@ -53,12 +61,13 @@ func Test_Update_GetVersion(t *testing.T) {
 
 		ts := httptest.NewServer(latestVersionHandler(t))
 		defer ts.Close()
+		binary := &bytes.Buffer{}
 		su := selfupdate.New("my-binary", ts.URL)
-		binary, err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "latest", BaseUrl: ts.URL})
+		err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "latest", BaseUrl: ts.URL}, mockCloser{binary})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(binary) != "latest version downloaded" {
+		if binary.String() != "latest version downloaded" {
 			t.Fail()
 		}
 	})
@@ -67,12 +76,15 @@ func Test_Update_GetVersion(t *testing.T) {
 
 		ts := httptest.NewServer(latestVersionHandler(t))
 		defer ts.Close()
+		binary := &bytes.Buffer{}
+
 		su := selfupdate.New("my-binary", ts.URL, selfupdate.WithDownloadSuffix("linux-amr64-mybinary"))
-		binary, err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "latest", BaseUrl: ts.URL})
+
+		err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "latest", BaseUrl: ts.URL}, mockCloser{binary})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(binary) != "latest version downloaded" {
+		if binary.String() != "latest version downloaded" {
 			t.Fail()
 		}
 	})
@@ -82,7 +94,7 @@ func Test_Update_GetVersion(t *testing.T) {
 type mockOsFsOps struct {
 	exec   func() (string, error)
 	rename func(oldpath string, newpath string) error
-	write  func(name string, data []byte, perm os.FileMode) error
+	create func(name string) (io.WriteCloser, error)
 }
 
 func (o mockOsFsOps) Rename(oldpath string, newpath string) error {
@@ -92,11 +104,11 @@ func (o mockOsFsOps) Rename(oldpath string, newpath string) error {
 	return nil
 }
 
-func (o mockOsFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
-	if o.write != nil {
-		return o.write(name, data, perm)
+func (o mockOsFsOps) Create(name string) (io.WriteCloser, error) {
+	if o.create != nil {
+		return o.create(name)
 	}
-	return nil
+	return mockCloser{&bytes.Buffer{}}, nil
 }
 
 func (o mockOsFsOps) Executable() (string, error) {
@@ -118,9 +130,9 @@ func cmdHelper(t *testing.T, out, errOut io.Writer) *cobra.Command {
 func TestUpdateCmd_RunFromRoot(t *testing.T) {
 
 	t.Run("clean run", func(t *testing.T) {
-		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 			// You can encapsulate the entire fetch logic in a custom function
-			return []byte("my binary downloaded"), nil
+			return nil
 		}
 		errOut := output.NewSafeWriter(&bytes.Buffer{})
 		stdOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -135,9 +147,9 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 		}
 	})
 	t.Run("fails to get executable", func(t *testing.T) {
-		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 			// You can encapsulate the entire fetch logic in a custom function
-			return []byte("my binary downloaded"), nil
+			return nil
 		}
 		errOut := output.NewSafeWriter(&bytes.Buffer{})
 		stdOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -155,9 +167,9 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 	})
 
 	t.Run("fails to get version from fetcher", func(t *testing.T) {
-		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 			// You can encapsulate the entire fetch logic in a custom function
-			return []byte{}, fmt.Errorf("fialed to fetch version")
+			return fmt.Errorf("failed to fetch version")
 		}
 		errOut := output.NewSafeWriter(&bytes.Buffer{})
 		stdOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -177,9 +189,9 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 		}
 	})
 	t.Run("fails to prep source binary", func(t *testing.T) {
-		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 			// You can encapsulate the entire fetch logic in a custom function
-			return []byte{}, nil
+			return nil
 		}
 		errOut := output.NewSafeWriter(&bytes.Buffer{})
 		stdOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -203,9 +215,9 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 		}
 	})
 	t.Run("fails to write new binary", func(t *testing.T) {
-		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 			// You can encapsulate the entire fetch logic in a custom function
-			return []byte{}, nil
+			return nil
 		}
 		errOut := output.NewSafeWriter(&bytes.Buffer{})
 		stdOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -215,8 +227,8 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 		uc := selfupdate.New("my-binary", "http://ignored.com",
 			selfupdate.WithGetVersionFunc(getFunc),
 			selfupdate.WithOsFsOps(mockOsFsOps{
-				write: func(name string, data []byte, perm os.FileMode) error {
-					return fmt.Errorf("failed to write new binary")
+				create: func(name string) (io.WriteCloser, error) {
+					return nil, fmt.Errorf("failed to write new binary")
 				},
 			}))
 
@@ -234,10 +246,10 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 func ExampleUpdateCmd_withOwnGetFunc() {
 
 	setOutput := ""
-	getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags) ([]byte, error) {
+	getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
 		// You can encapsulate the entire fetch logic in a custom function
-		setOutput = "my binary downloaded"
-		return []byte(setOutput), nil
+		setOutput = "binary(contents....)"
+		return nil
 	}
 
 	errOut := output.NewSafeWriter(&bytes.Buffer{})
@@ -256,6 +268,6 @@ func ExampleUpdateCmd_withOwnGetFunc() {
 	fmt.Println(string(setOutput))
 	fmt.Println(stdOut.String())
 
-	// Output: my binary downloaded
+	// Output: binary(contents....)
 	// my-binary has been updated
 }

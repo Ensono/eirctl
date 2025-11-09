@@ -1,7 +1,6 @@
 package selfupdate
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -24,7 +23,7 @@ type UpdateCmdFlags struct {
 type updateOsFSOpsIface interface {
 	Executable() (string, error)
 	Rename(oldpath string, newpath string) error
-	WriteFile(name string, data []byte, perm os.FileMode) error
+	Create(name string) (io.WriteCloser, error)
 }
 
 type osFsOps struct {
@@ -34,8 +33,8 @@ func (o osFsOps) Rename(oldpath string, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
-func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(name, data, perm)
+func (o osFsOps) Create(name string) (io.WriteCloser, error) {
+	return os.Create(name)
 }
 
 func (o osFsOps) Executable() (string, error) {
@@ -75,6 +74,10 @@ func WithOsFsOps(osfs updateOsFSOpsIface) Opt {
 	}
 }
 
+// WithGetVersionFunc accepts a custom function that will encapsulate the entire fetch logic
+// w io.WriteCloser will point to the current executable.
+//
+// Ensure your custom function handles the `w.Write(resp.Body)`
 func WithGetVersionFunc(fn func(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) error) Opt {
 	return func(uc *UpdateCmd) {
 		uc.getVersionFn = fn
@@ -109,15 +112,17 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 				return err
 			}
 
-			err := uc.getVersionFn(cmd.Context(), uc.flags)
+			f, err := uc.OsFsOps.Create(currentExecPath)
 			if err != nil {
+				// enrich error here
 				return err
 			}
+			if err := uc.getVersionFn(cmd.Context(), uc.flags, f); err != nil {
+				// enrich error here
+				return err
+			}
+			_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "%s has been updated", uc.name)
 			return nil
-			// f, _ := os.Create(currentExecPath)
-			// f.Write()
-			bb, _ := io.ReadAll(binary)
-			return uc.OsFsOps.WriteFile(currentExecPath, bb, 0666)
 		},
 	}
 
@@ -132,8 +137,9 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 //
 // This can be overwritten completely to support any kind of fetcher
 func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) error {
-	c := &http.Client{}
+	defer w.Close()
 
+	c := &http.Client{}
 	// supplying a custom suffix will override the default suffix
 	suffix := fmt.Sprintf("%s-%s-%s", uc.name, runtime.GOOS, runtime.GOARCH)
 	if uc.suffix != "" {
@@ -151,7 +157,7 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 
 	link, err := url.Parse(fmt.Sprintf("%s/%s", flags.BaseUrl, EnrichFinalLink(releasePath)))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	req := &http.Request{
@@ -160,7 +166,7 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -168,13 +174,12 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 		resp.ContentLength,
 		"downloading",
 	)
-	f := &bytes.Buffer{}
 
-	if _, err = io.Copy(io.MultiWriter(f, bar), resp.Body); err != nil {
-		return nil, err
+	if _, err = io.Copy(io.MultiWriter(w, bar), resp.Body); err != nil {
+		return err
 	}
 
-	return f, nil
+	return nil
 }
 
 // prepSourceBinary as a rule of thumb on all platforms
