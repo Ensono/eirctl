@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 
 	"github.com/Ensono/eirctl/cmdutils"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +32,7 @@ type UpdateCmd struct {
 	suffix       string
 	ghReleaseUrl string
 	OsFsOps      UpdateOsFSOpsIface
-	getVersionFn func(ctx context.Context, flags UpdateCmdFlags) ([]byte, error)
+	getVersionFn func(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) error
 }
 
 type Opt func(*UpdateCmd)
@@ -57,7 +59,7 @@ func WithOsFsOps(osfs UpdateOsFSOpsIface) Opt {
 	}
 }
 
-func WithGetVersionFunc(fn func(ctx context.Context, flags UpdateCmdFlags) ([]byte, error)) Opt {
+func WithGetVersionFunc(fn func(ctx context.Context, flags UpdateCmdFlags) (io.Reader, error)) Opt {
 	return func(uc *UpdateCmd) {
 		uc.getVersionFn = fn
 	}
@@ -84,17 +86,25 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 			if err != nil {
 				return err
 			}
+
+			// perform the rename of the current file prior
+			// to writing the new version in to the current executable
+			if err := uc.prepSourceBinary(currentExecPath); err != nil {
+				return err
+			}
+
 			binary, err := uc.getVersionFn(cmd.Context(), uc.flags)
 			if err != nil {
 				return err
 			}
 
-			if err := uc.prepSourceBinary(currentExecPath); err != nil {
-				return err
-			}
-			return uc.OsFsOps.WriteFile(currentExecPath, binary, 0666)
+			// f, _ := os.Create(currentExecPath)
+			// f.Write()
+			bb, _ := io.ReadAll(binary)
+			return uc.OsFsOps.WriteFile(currentExecPath, bb, 0666)
 		},
 	}
+
 	updateCmd.PersistentFlags().StringVarP(&uc.flags.Version, "version", "", "latest", "specific version to update to.")
 	updateCmd.PersistentFlags().StringVarP(&uc.flags.BaseUrl, "baseUrl", "", uc.ghReleaseUrl, "base url for the github release repository")
 	rootCmd.AddCommand(updateCmd)
@@ -105,7 +115,7 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 // NOTE: exposed as public for testing purposes
 //
 // This can be overwritten completely to support any kind of fetcher
-func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags) ([]byte, error) {
+func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) error {
 	c := &http.Client{}
 	suffix := fmt.Sprintf("%s-%s-%s", uc.name, runtime.GOOS, runtime.GOARCH)
 	specific := "download/%s"
@@ -131,7 +141,18 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags) ([]by
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+
+	bar := progressbar.DefaultBytes(
+		resp.ContentLength,
+		"downloading",
+	)
+	f := &bytes.Buffer{}
+
+	if _, err = io.Copy(io.MultiWriter(f, bar), resp.Body); err != nil {
+		return nil, err
+	}
+
+	return f, nil
 }
 
 // prepSourceBinary as a rule of thumb on all platforms
