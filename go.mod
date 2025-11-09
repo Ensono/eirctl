@@ -15,6 +15,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.6.2
 	github.com/kevinburke/ssh_config v1.4.0
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.43.0
@@ -75,7 +76,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
-	github.com/schollz/progressbar/v3 v3.18.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.2 // indirect
 	github.com/spf13/afero v1.15.0 // indirect

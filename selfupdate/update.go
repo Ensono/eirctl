@@ -34,6 +34,7 @@ func (o osFsOps) Rename(oldpath string, newpath string) error {
 }
 
 func (o osFsOps) Create(name string) (io.WriteCloser, error) {
+	// return os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o644)
 	return os.Create(name)
 }
 
@@ -121,6 +122,8 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 				// enrich error here
 				return err
 			}
+			// we need to add the chmod back in now to ensure it's in the same state as before
+			_ = os.Chmod(currentExecPath, 0644)
 			_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "%s has been updated", uc.name)
 			return nil
 		},
