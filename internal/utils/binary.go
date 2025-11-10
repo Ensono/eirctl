@@ -88,5 +88,7 @@ type Container struct {
 	// Example: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`
 	ShellArgs []string `mapstructure:"shell_args" yaml:"shell_args,omitempty" json:"shell_args,omitempty"`
 	// PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled
-	PullTimeout int `mapstructure:"pull_timeout" yaml:"pull_timeout,omitempty" json:"pull_timeout,omitempty" jsonschema:"default=120"`
+	// Default: 0
+	// 0 means infinite wait
+	PullTimeout int `mapstructure:"pull_timeout" yaml:"pull_timeout,omitempty" json:"pull_timeout,omitempty" jsonschema:"default=0"`
 }

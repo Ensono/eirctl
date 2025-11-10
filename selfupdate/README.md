@@ -1,6 +1,6 @@
 # Self Update
 
-This package provides the ability to plug in another subcommand into your cobra app, that will expose the below subcommand. 
+This package provides the ability to plug in another subcommand into your cobra app, that will expose the below subcommand.
 
 ```sh
 Updates the binary to the specified or latest version.

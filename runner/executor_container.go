@@ -162,13 +162,15 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 		return err
 	}
 
-	// 120 seconds is an arbitrary time limit beyond which the program won't wait
-	// In case of slow internet or extremely large layers this may be hit.
-	// TODO: make this configurable
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(e.execContext.container.pullTimeout)*time.Second)
-	defer cancel()
+	// if timeout has been set on the context
+	// we create a new context with timeout value
+	if e.execContext.container.pullTimeout > 0 {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(e.execContext.container.pullTimeout)*time.Second)
+		defer cancel()
+	}
 
-	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
+	reader, err := e.cc.ImagePull(ctx, containerConf.Image, pullOpts)
 	if err != nil {
 		logrus.Tracef("e.cc.ImagePull err: %v\n opts: %+v", err, pullOpts)
 		return fmt.Errorf("%v\n%w", err, ErrImagePull)
@@ -185,14 +187,15 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(30),
+		progressbar.OptionClearOnFinish(),
 		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]Pulling Image (%s)...[reset]", containerConf.Image)),
 	)
 
 	if _, err = io.Copy(bar, reader); err != nil {
 		return err
 	}
-
-	return nil
+	logrus.Trace(bar.String())
+	return bar.Close()
 }
 
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {

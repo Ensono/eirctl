@@ -34,7 +34,6 @@ type ContainerContext struct {
 	Entrypoint []string
 	ShellArgs  []string
 	// pullTimeout is the number of seconds to wait until we cancel the pull context
-	// 	Default: 120
 	pullTimeout int
 	// BindMount uses --mount instead of -v
 	//
@@ -61,7 +60,7 @@ func NewContainerContext(name string, opts ...ContainerContextOpt) *ContainerCon
 		Image:       name,
 		volumes:     make(map[string]struct{}),
 		envOverride: make(map[string]string),
-		pullTimeout: 120,
+		pullTimeout: 0,
 	}
 	for _, opt := range opts {
 		opt(cc)
