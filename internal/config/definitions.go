@@ -54,12 +54,22 @@ type ConfigDefinition struct {
 }
 
 type ContextDefinition struct {
-	SourceFile string   `jsonschema:"-"`
-	Dir        string   `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
-	Up         []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
-	Down       []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
-	Before     []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
-	After      []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
+	SourceFile string `jsonschema:"-"`
+	Dir        string `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
+	// Up runs once at the beginning of the usage of the context
+	// These are run in the mvdn.sh on the host
+	Up []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
+	// Down runs once at the end of the usage of the context
+	// These are run in the mvdn.sh on the host
+	Down []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
+	// Before runs any commands prior to the tasks' commands
+	// These are run in the mvdn.sh on the host
+	Before []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
+	// After runs after the commads of the task that use this context have run
+	// NB: these are run irrespective of the state of the task, this can be useful
+	// for clean up operations and similar.
+	// These are run in the mvdn.sh on the host
+	After []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
 	// Env is supplied from config file definition and is merged with the
 	// current process environment variables list
 	//
@@ -149,8 +159,11 @@ type TaskDefinition struct {
 	// Command is the actual command to run in either a specified executable or
 	// in mvdn.shell
 	Command schema.StringSlice `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
-	After   []string           `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
-	Before  []string           `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
+	// After runs after the commads of the task have completed
+	// If a task errors these are not run
+	After []string `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
+	// Before runs before the commads of the task have run
+	Before []string `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
 	// Context is the pointer to the key in the context map
 	// it must exist else it will fallback to default context
 	Context string `mapstructure:"context" yaml:"context,omitempty" json:"context,omitempty"`

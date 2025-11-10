@@ -73,5 +73,5 @@ jobs:
           file: Dockerfile.pwsh
           build-args: Version=${{ needs.set-version-tag.outputs.semVer }},Revision=${{ github.sha }}
           tags: |
-            ghcr.io/ensono/eirctl:${{ needs.set-version-tag.outputs.semVer }}
+            ghcr.io/ensono/eirctl:pwsh-${{ needs.set-version-tag.outputs.semVer }}
           platforms: linux/amd64,linux/arm64

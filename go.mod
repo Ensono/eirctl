@@ -2,7 +2,7 @@ module github.com/Ensono/eirctl
 
 go 1.25
 
-toolchain go1.25.2
+toolchain go1.25.3
 
 require (
 	dario.cat/mergo v1.0.2
@@ -16,6 +16,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/kevinburke/ssh_config v1.4.0
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.43.0
@@ -60,6 +61,7 @@ require (
 	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
@@ -112,6 +114,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/term v0.36.0
 )
