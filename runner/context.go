@@ -82,12 +82,6 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	return c
 }
 
-// func WithContainerPullTimeout(timeout int) ContainerOpts {
-// 	return func(ce *ContainerExecutor) {
-// 		ce.pullTimeout = timeout
-// 	}
-// }
-
 type containerArgs struct {
 	args    []string
 	flagSet *pflag.FlagSet
