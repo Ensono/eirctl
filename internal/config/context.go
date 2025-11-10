@@ -100,7 +100,11 @@ const EIRCTL_DOCKER_HOST string = `EIRCTL_DOCKER_HOST`
 
 func contextExecutable(container *utils.Container) (*runner.ContainerContext, error) {
 	if container != nil && container.Name != "" {
-		cc := runner.NewContainerContext(container.Name)
+		cpt := container.PullTimeout
+		if cpt == 0 {
+			cpt = 120
+		}
+		cc := runner.NewContainerContext(container.Name, runner.WithContainerContextPullTimeout(cpt))
 		pwd := utils.MustGetwd()
 
 		cc.BindMount = container.EnableBindMount

@@ -167,6 +167,11 @@
           },
           "type": "array",
           "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
+        },
+        "pull_timeout": {
+          "type": "integer",
+          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled",
+          "default": 120
         }
       },
       "additionalProperties": false,

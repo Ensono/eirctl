@@ -2,7 +2,6 @@ package runner
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
@@ -103,6 +103,7 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 		return nil, err
 	}
 
+	// execContext.container
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
@@ -155,16 +156,16 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 
 // Container pull images - all contexts that have a container property
 func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *container.Config) error {
-	logrus.Tracef("pulling image: %s", containerConf.Image)
 	pullOpts, err := platformPullOptions(ctx, containerConf)
 	if err != nil {
 		logrus.Debugf("platformPullOptions err: %v", err)
 		return err
 	}
+
 	// 120 seconds is an arbitrary time limit beyond which the program won't wait
 	// In case of slow internet or extremely large layers this may be hit.
 	// TODO: make this configurable
-	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(e.execContext.container.pullTimeout)*time.Second)
 	defer cancel()
 
 	reader, err := e.cc.ImagePull(timeoutCtx, containerConf.Image, pullOpts)
@@ -176,13 +177,21 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	defer reader.Close()
 	// container.ImagePull is asynchronous.
 	// The reader needs to be read completely for the pull operation to complete.
-	// If stdout is not required, consider using io.Discard instead of os.Stdout.
-	// Debug log pull image output
-	b := &bytes.Buffer{}
-	if _, err := io.Copy(b, reader); err != nil {
+	//
+	// Displaying a download bar is one way to achieve the wait for the reader to be fully read.
+	// NB: without reading the entire ReadCloser - i.e. the response over the network as it's being streamed
+	// we need to set the max value to `-1` i.e. bring out the spinner
+	bar := progressbar.NewOptions(-1,
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]Pulling Image (%s)...[reset]", containerConf.Image)),
+	)
+
+	if _, err = io.Copy(bar, reader); err != nil {
 		return err
 	}
-	logrus.Trace(b.String())
+
 	return nil
 }
 
@@ -199,6 +208,7 @@ func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig
 		}
 		return container.CreateResponse{}, fmt.Errorf("%v\n%w", err, ErrContainerCreate)
 	}
+	logrus.Tracef("container (%s) found in docker cache", containerConfig.Image)
 	return resp, nil
 }
 
