@@ -228,7 +228,9 @@ func (r *TaskRunner) Cancel() {
 
 // Finish makes cleanup tasks over contexts
 func (r *TaskRunner) Finish() {
-	r.cleanupList.Range(func(key, value interface{}) bool {
+	// future iteration should properly type these 
+	// context level Down are run after the task level After
+	r.cleanupList.Range(func(key, value any) bool {
 		value.(*ExecutionContext).Down()
 		return true
 	})

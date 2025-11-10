@@ -190,25 +190,29 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Up runs once at the beginning of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "down": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Down runs once at the end of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs any commands prior to the tasks' commands\nThese are run in the mvdn.sh on the host"
         },
         "after": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task that use this context have run\nNB: these are run irrespective of the state of the task, this can be useful\nfor clean up operations and similar.\nThese are run in the mvdn.sh on the host"
         },
         "env": {
           "$ref": "#/$defs/EnvVarMapType",
@@ -476,13 +480,15 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task have completed\nIf a task errors these are not run"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs before the commads of the task have run"
         },
         "context": {
           "type": "string",
