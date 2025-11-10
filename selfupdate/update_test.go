@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/Ensono/eirctl/output"
@@ -95,6 +96,7 @@ type mockOsFsOps struct {
 	exec   func() (string, error)
 	rename func(oldpath string, newpath string) error
 	create func(name string) (io.WriteCloser, error)
+	chmod  func(name string, mode os.FileMode) error
 }
 
 func (o mockOsFsOps) Rename(oldpath string, newpath string) error {
@@ -116,6 +118,13 @@ func (o mockOsFsOps) Executable() (string, error) {
 		return o.exec()
 	}
 	return "/my/exec/binary", nil
+}
+
+func (o mockOsFsOps) Chmod(name string, mode os.FileMode) error {
+	if o.chmod != nil {
+		return o.chmod(name, mode)
+	}
+	return nil
 }
 
 func cmdHelper(t *testing.T, out, errOut io.Writer) *cobra.Command {
@@ -270,4 +279,5 @@ func ExampleUpdateCmd_withOwnGetFunc() {
 
 	// Output: binary(contents....)
 	// my-binary has been updated
+	//
 }

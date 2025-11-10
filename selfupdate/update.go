@@ -1,3 +1,12 @@
+// Package selfupdate provides the subcommand functionality for
+// updating the binary itself.
+//
+// It supports an OOTB GitHub releases URLs for fetching with some customisation,
+// though if too rigid an entire fetch function can be provided.
+//
+// Example:
+//
+//	WithGetVersionFunc()
 package selfupdate
 
 import (
@@ -24,6 +33,7 @@ type updateOsFSOpsIface interface {
 	Executable() (string, error)
 	Rename(oldpath string, newpath string) error
 	Create(name string) (io.WriteCloser, error)
+	Chmod(name string, mode os.FileMode) error
 }
 
 type osFsOps struct {
@@ -34,12 +44,15 @@ func (o osFsOps) Rename(oldpath string, newpath string) error {
 }
 
 func (o osFsOps) Create(name string) (io.WriteCloser, error) {
-	// return os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o644)
 	return os.Create(name)
 }
 
 func (o osFsOps) Executable() (string, error) {
 	return os.Executable()
+}
+
+func (o osFsOps) Chmod(name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
 }
 
 type UpdateCmd struct {
@@ -98,9 +111,7 @@ func (uc *UpdateCmd) AddToRootCommand(rootCmd *cobra.Command) {
 		Use:     "update",
 		Aliases: []string{"self-update"},
 		Short:   `Updates the binary to the specified or latest version.`,
-		Long: `Updates the binary to the specified or latest version.
-
-Supports GitHub releases OOTB, but custom functions for GetVersion can be provided.`,
+		Long:    `Updates the binary to the specified or latest version.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			currentExecPath, err := uc.OsFsOps.Executable()
 			if err != nil {
@@ -122,9 +133,11 @@ Supports GitHub releases OOTB, but custom functions for GetVersion can be provid
 				// enrich error here
 				return err
 			}
-			// we need to add the chmod back in now to ensure it's in the same state as before
-			_ = os.Chmod(currentExecPath, 0644)
-			_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "%s has been updated", uc.name)
+			// we need to change mode back to an executable now to ensure it's in the same state as before
+			if err := uc.OsFsOps.Chmod(currentExecPath, 0755); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(rootCmd.OutOrStdout(), "%s has been updated\n", uc.name)
 			return nil
 		},
 	}
@@ -171,6 +184,7 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	if err != nil {
 		return err
 	}
+
 	defer resp.Body.Close()
 
 	bar := progressbar.DefaultBytes(
