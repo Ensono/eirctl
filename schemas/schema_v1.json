@@ -170,8 +170,8 @@
         },
         "pull_timeout": {
           "type": "integer",
-          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled",
-          "default": 120
+          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled\nDefault: 0\n0 means infinite wait",
+          "default": 0
         }
       },
       "additionalProperties": false,
