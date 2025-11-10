@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/k0kubun/go-ansi"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
@@ -185,6 +186,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	// we need to set the max value to `-1` i.e. bring out the spinner
 	bar := progressbar.NewOptions(-1,
 		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),

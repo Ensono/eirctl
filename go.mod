@@ -110,6 +110,7 @@ require (
 	github.com/emicklei/dot v1.9.2
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-git/go-git/v5 v5.16.3
+	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/spf13/cobra v1.10.1
