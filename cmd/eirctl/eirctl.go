@@ -11,6 +11,7 @@ import (
 	"github.com/Ensono/eirctl/internal/config"
 	outputpkg "github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/selfupdate"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -22,50 +23,14 @@ var (
 	Revision = "aaaa1234"
 )
 
-type rootCmdFlags struct {
-	// all vars here
-	Debug       bool
-	Verbose     bool
-	CfgFilePath string
-	Output      string
-	Raw         bool
-	Cockpit     bool
-	Quiet       bool
-	VariableSet map[string]string
-	DryRun      bool
-	// NoSummary report at the end of the pipeline or task run
-	NoSummary bool
-}
-
-type OsFSOpsIface interface {
-	Rename(oldpath string, newpath string) error
-	WriteFile(name string, data []byte, perm os.FileMode) error
-	Create(name string) (io.Writer, error)
-}
-
 type EirCtlCmd struct {
 	ctx        context.Context
 	Cmd        *cobra.Command
 	ChannelOut io.Writer
 	ChannelErr io.Writer
-	OsFsOps    OsFSOpsIface
+	OsFsOps    osFSOpsIface
 	viperConf  *viper.Viper
 	rootFlags  *rootCmdFlags
-}
-
-type osFsOps struct {
-}
-
-func (o osFsOps) Rename(oldpath string, newpath string) error {
-	return os.Rename(oldpath, newpath)
-}
-
-func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(name, data, perm)
-}
-
-func (o osFsOps) Create(name string) (io.Writer, error) {
-	return os.Create(name)
 }
 
 func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtlCmd {
@@ -115,6 +80,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 
 // WithSubCommands returns a manually maintained list of commands
 func WithSubCommands() []func(rootCmd *EirCtlCmd) {
+	uc := selfupdate.New("eirctl", "https://github.com/Ensono/eirctl/releases")
 	// add all sub commands
 	return []func(rootCmd *EirCtlCmd){
 		newRunCmd,
@@ -126,7 +92,9 @@ func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 		newWatchCmd,
 		newGenerateCmd,
 		newShellCmd,
-		newUpdateCommand,
+		func(rootCmd *EirCtlCmd) {
+			uc.AddToRootCommand(rootCmd.Cmd)
+		},
 	}
 }
 
@@ -147,6 +115,21 @@ func (tc *EirCtlCmd) Execute() error {
 	logrus.SetOutput(tc.ChannelErr)
 
 	return tc.Cmd.ExecuteContext(tc.ctx)
+}
+
+type rootCmdFlags struct {
+	// all vars here
+	Debug       bool
+	Verbose     bool
+	CfgFilePath string
+	Output      string
+	Raw         bool
+	Cockpit     bool
+	Quiet       bool
+	VariableSet map[string]string
+	DryRun      bool
+	// NoSummary report at the end of the pipeline or task run
+	NoSummary bool
 }
 
 var (
@@ -314,4 +297,26 @@ func configFileFinder(tc *EirCtlCmd) (string, error) {
 		return confFile, nil
 	}
 	return "", fmt.Errorf("%w\nincorrect config file (%s) does not exist", ErrIncompleteConfig, configFilePath)
+}
+
+type osFSOpsIface interface {
+	Rename(oldpath string, newpath string) error
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Create(name string) (io.Writer, error)
+}
+
+// osFsOps is a concrete implementation of the above iface
+type osFsOps struct {
+}
+
+func (o osFsOps) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
+func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (o osFsOps) Create(name string) (io.Writer, error) {
+	return os.Create(name)
 }

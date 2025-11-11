@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"regexp"
 	"slices"
@@ -32,6 +33,8 @@ type ContainerContext struct {
 	Image      string
 	Entrypoint []string
 	ShellArgs  []string
+	// pullTimeout is the number of seconds to wait until we cancel the pull context
+	pullTimeout int
 	// BindMount uses --mount instead of -v
 	//
 	// when running on Windows mount is default as volume mapping does not work.
@@ -49,12 +52,25 @@ type ContainerContext struct {
 	ports []string
 }
 
+type ContainerContextOpt func(cc *ContainerContext)
+
 // NewContainerContext accepts name of the image
-func NewContainerContext(name string) *ContainerContext {
-	return &ContainerContext{
+func NewContainerContext(name string, opts ...ContainerContextOpt) *ContainerContext {
+	cc := &ContainerContext{
 		Image:       name,
 		volumes:     make(map[string]struct{}),
 		envOverride: make(map[string]string),
+		pullTimeout: 0,
+	}
+	for _, opt := range opts {
+		opt(cc)
+	}
+	return cc
+}
+
+func WithContainerContextPullTimeout(p int) ContainerContextOpt {
+	return func(cc *ContainerContext) {
+		cc.pullTimeout = p
 	}
 }
 
@@ -229,9 +245,7 @@ func (c *ContainerContext) BindMounts() []BindVolume {
 }
 
 func (c *ContainerContext) WithEnvOverride(env map[string]string) *ContainerContext {
-	for k, v := range env {
-		c.envOverride[k] = v
-	}
+	maps.Copy(c.envOverride, env)
 	return c
 }
 

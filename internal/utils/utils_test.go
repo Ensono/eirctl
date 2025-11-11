@@ -2,12 +2,14 @@ package utils_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +17,22 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 )
+
+func getHomeFromEnv() (string, error) {
+	var home string
+
+	if runtime.GOOS == "windows" {
+		home = os.Getenv("USERPROFILE")
+	} else {
+		home = os.Getenv("HOME")
+	}
+
+	if home == "" {
+		return "", errors.New("Couldn't locate home directory variable")
+	}
+
+	return home, nil
+}
 
 func TestConvertEnv(t *testing.T) {
 	type args struct {
@@ -196,19 +214,20 @@ func TestMustGetwd(t *testing.T) {
 	if wd != utils.MustGetwd() {
 		t.Error()
 	}
-
 }
 
 func TestMustGetUserHomeDir(t *testing.T) {
-	err := os.Setenv("HOME", "/test")
+	expected, err := getHomeFromEnv()
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	hd := utils.MustGetUserHomeDir()
-	if hd != "/test" {
-		t.Error()
-	}
 
+	hd := utils.MustGetUserHomeDir()
+
+	if hd != expected {
+		t.Fatal(hd)
+	}
 }
 
 // Test envfile
@@ -638,21 +657,26 @@ MULTI=somekey=someval`))},
 }
 
 func Test_NormalizeHome(t *testing.T) {
-	os.Setenv("HOME", "/foo/bar")
-	defer os.Unsetenv("HOME")
+	homeDir, err := getHomeFromEnv()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ttests := map[string]struct {
 		volStr string
 		want   string
 	}{
 		"$HOME": {
 			volStr: "$HOME/baz:/usr/share/nginx/html",
-			want:   "/foo/bar/baz:/usr/share/nginx/html",
+			want:   fmt.Sprintf("%s/baz:/usr/share/nginx/html", homeDir),
 		},
 		"${HOME}": {
 			volStr: "${HOME}/baz:/usr/share/nginx/html",
-			want:   "/foo/bar/baz:/usr/share/nginx/html",
+			want:   fmt.Sprintf("%s/baz:/usr/share/nginx/html", homeDir),
 		},
 	}
+
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
 			got := utils.NormalizeHome(tt.volStr)

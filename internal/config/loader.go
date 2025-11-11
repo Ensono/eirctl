@@ -252,13 +252,22 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			continue
 		}
 
-		importFile := path.Join(importDir, val)
-		if path.IsAbs(val) {
+		var importFile string
+
+		// This is the value passed in if the loaded file was originally a URL
+		// TODO: Need to talk through the intentions here, as this magically
+		// worked for *nix systems but not Windows...
+		if importDir != "http:" {
+			importFile = filepath.Join(importDir, val)
+		}
+
+		if filepath.IsAbs(val) {
 			importFile = val
 		}
 		if cl.imports[importFile] {
 			continue
 		}
+
 		fi, err := os.Stat(importFile)
 		if err != nil {
 			return fmt.Errorf("%s: %v", importFile, err)

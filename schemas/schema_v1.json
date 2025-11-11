@@ -167,6 +167,11 @@
           },
           "type": "array",
           "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
+        },
+        "pull_timeout": {
+          "type": "integer",
+          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled\nDefault: 0\n0 means infinite wait",
+          "default": 0
         }
       },
       "additionalProperties": false,
@@ -185,25 +190,29 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Up runs once at the beginning of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "down": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Down runs once at the end of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs any commands prior to the tasks' commands\nThese are run in the mvdn.sh on the host"
         },
         "after": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task that use this context have run\nNB: these are run irrespective of the state of the task, this can be useful\nfor clean up operations and similar.\nThese are run in the mvdn.sh on the host"
         },
         "env": {
           "$ref": "#/$defs/EnvVarMapType",
@@ -471,13 +480,15 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task have completed\nIf a task errors these are not run"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs before the commads of the task have run"
         },
         "context": {
           "type": "string",

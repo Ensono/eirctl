@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schemas/schema_v1.json
 contexts:
   go1x:
     container:
@@ -52,6 +53,16 @@ tasks:
         go install github.com/AlekSi/gocov-xml@v1.0.0
     allow_failure: true
 
+  coverage_merge_prereqs:
+    context: go1x
+    description: Installs coverage merge
+    command:
+      - |
+        mkdir -p .coverage .deps
+        export GOPATH="${PWD}/.deps" GOBIN="${PWD}/.deps/bin"
+        go install github.com/alexfalkowski/gocovmerge@v2.16.0
+    allow_failure: true
+
   vuln:check:
     context: go1x
     description: |
@@ -76,6 +87,16 @@ tasks:
       GOFLAGS: -buildvcs=false
     allow_failure: true
 
+  coverage_merge:
+    description: For the pipeline to merge Linux and Windows test run coverages together
+    context: go1x
+    command:
+      - |
+        unset GOTOOLCHAIN
+        mkdir -p .coverage .deps
+        export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
+        gocovmerge .coverage-artifacts/**/out > .coverage/out
+
   show_coverage:
     command:
       - echo "Opening coverage html page"
@@ -90,9 +111,9 @@ tasks:
         golangci-lint run
   releaser:
     context: goreleaser
-    command: 
-      - | 
-        release 
+    command:
+      - |
+        release
 
 pipelines:
   test:unit:
@@ -102,6 +123,12 @@ pipelines:
       depends_on:
         - clean
         - test_prereqs
+
+  test:coverage:merge:
+    - task: coverage_merge_prereqs
+    - task: coverage_merge
+      depends_on:
+        - coverage_merge_prereqs
 
   show:coverage:
     - pipeline: test:unit
