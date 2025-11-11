@@ -75,8 +75,6 @@ func (e *DefaultExecutor) Execute(ctx context.Context, job *Job) ([]byte, error)
 		job.Dir = e.dir
 	}
 
-	logrus.Debugf("Executing Command: \"%s\"", command)
-
 	e.interp.Dir = job.Dir
 	e.interp.Env = expand.ListEnviron(env...)
 
@@ -98,8 +96,19 @@ func (e *DefaultExecutor) Execute(ctx context.Context, job *Job) ([]byte, error)
 		e.interp.Reset()
 	}
 
+	logrus.Debugf("Executing Command: \"%s\"", command)
+
 	if err := e.interp.Run(ctx, cmd); err != nil {
+		// On Windows the err is 'exit status 1' as it doesn't handle
+		// SIGINT properly and so interp just kills the proc. Bubble
+		// up a cancelled error if the context reports it was cancelled,
+		// or bubble up a DeadlineExceeded context error too.
+		if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+			err = ctx.Err()
+		}
+
 		return []byte{}, err
 	}
+
 	return []byte{}, nil
 }

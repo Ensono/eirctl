@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/k0kubun/go-ansi"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
@@ -177,6 +178,11 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	}
 
 	defer reader.Close()
+	// in non TTY environment we want to update the bar every 3 seconds
+	throttle := time.Duration(0)
+	if len(os.Getenv("CI")) > 0 {
+		throttle = 3 * time.Second
+	}
 	// container.ImagePull is asynchronous.
 	// The reader needs to be read completely for the pull operation to complete.
 	//
@@ -185,10 +191,13 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	// we need to set the max value to `-1` i.e. bring out the spinner
 	bar := progressbar.NewOptions(-1,
 		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
 		progressbar.OptionShowBytes(true),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]Pulling Image (%s)...[reset]", containerConf.Image)),
+		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s[reset]", containerConf.Image)),
+		progressbar.OptionThrottle(throttle),
+		progressbar.OptionShowTotalBytes(true),
 	)
 
 	if _, err = io.Copy(bar, reader); err != nil {
