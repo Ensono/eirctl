@@ -300,6 +300,22 @@ func TestLoader_errors(t *testing.T) {
 			t.Fatal("got nil, wanted error")
 		}
 	})
+	t.Run("import over git fails", func(t *testing.T) {
+		dir, _ := os.MkdirTemp(os.TempDir(), "import-err*")
+		fname := filepath.Join(dir, "eirctl.yaml")
+
+		f, _ := os.Create(fname)
+		defer os.RemoveAll(dir)
+
+		f.Write([]byte(`import:
+  - git::wrong-proto://unknown.org/foo/bar//eirctl/component/eirctl.yaml?ref=v0.0.65`))
+
+		cl := config.NewConfigLoader(config.NewConfig())
+		_, err := cl.Load(f.Name())
+		if err == nil {
+			t.Fatal("got nil, wanted error")
+		}
+	})
 }
 
 func TestLoader_LoadGlobalConfig(t *testing.T) {
