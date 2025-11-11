@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -19,6 +20,7 @@ import (
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
 
 // IsURL checks if given string is a valid URL
@@ -408,6 +410,95 @@ func CascadeName(parents []string, current string) string {
 func TailExtract(v string) string {
 	split := strings.Split(v, PipelineDirectionChar)
 	return split[len(split)-1]
+}
+
+// Gets the terminal size and file descriptor, through various methods or will
+// fallback to 80x24 which is the standard.
+//
+// Returns an int with the width and height, and also the file descriptor.
+//
+// If the last fallback is reached the terminal file descriptor will be -1
+// signalling failure. You can continue to size the terminal to a known value
+// but you won't be able to use other terminal functions that rely on a valid
+// file descriptor.
+func GetTerminalSize() ([2]int, int) {
+	var terminalSize [2]int
+	var err error
+
+	// Try fd zero, most *nix systems use this
+	terminalSize, err = getTerminalSize("0", 0)
+	if err == nil {
+		return terminalSize, 0
+	}
+
+	var fd uintptr
+
+	// Try stdin's fd next
+	// Most articles say this is the method to use...
+	fd = os.Stdin.Fd()
+	terminalSize, err = getTerminalSize("stdin", fd)
+	if err == nil {
+		return terminalSize, int(fd)
+	}
+
+	// Try stdout, it seems a whole host of terminals respond to this
+	// This also will return when stdin is a PIPE and so not a Terminal
+	fd = os.Stdout.Fd()
+	terminalSize, err = getTerminalSize("stdout", fd)
+	if err == nil {
+		return terminalSize, int(fd)
+	}
+
+	// Last shot in the dark, try using `stty size`
+	// If present on the system (such as through WSL) this works even in cmd
+	terminalSize, err = getTerminalSizeFromSttyCommand()
+	if err == nil {
+		// File Descriptor will be -1
+		return terminalSize, -1
+	}
+
+	// All fallbacks have failed, assume the standard terminal size and return
+	// -1 as the file descriptor
+	logrus.Warn("utils.getTerminalSize: All fallback methods have been exhausted, assuming a standard terminal size of 80x24.\nThis might result in weird behaviour.")
+	return [2]int{80, 24}, -1
+}
+
+func getTerminalSize(fileDescriptorName string, fileDescriptor uintptr) ([2]int, error) {
+	logrus.Tracef("utils.getTerminalSize: Trying %s: %d", fileDescriptorName, fileDescriptor)
+	width, height, err := term.GetSize(int(fileDescriptor))
+	if err != nil {
+		logrus.Tracef("utils.getTerminalSize: '%s': '%d' failed, error: %s", fileDescriptorName, fileDescriptor, err.Error())
+		return [2]int{0, 0}, err
+	}
+
+	return [2]int{width, height}, nil
+}
+
+func getTerminalSizeFromSttyCommand() ([2]int, error) {
+	logrus.Tracef("utils.getTerminalSizeFromSttyCommand Trying to execute 'stty size' as a final fallback")
+	cmd := exec.Command("stty", "size")
+	output, err := cmd.Output()
+	if err != nil {
+		logrus.Tracef("utils.getTerminalSizeFromSttyCommand: command failed:\n\t- Output: %s\n\tErr: %s", output, err.Error())
+	}
+
+	outputString := strings.Split(string(output), " ")
+
+	if len(outputString) != 2 {
+		logrus.Tracef("utils.getTerminalSizeFromSttyCommand: Expected two numbers as a response, got: %s", output)
+		return [2]int{}, errors.New("utils.getTerminalSizeFromSttyCommand: Expected two integers back from stty")
+	}
+
+	width, err := strconv.Atoi(outputString[0])
+	height, err2 := strconv.Atoi(outputString[1])
+
+	if err != nil || err2 != nil {
+		logrus.Tracef("utils.getTerminalSizeFromSttyCommand: Expected two numbers as a response, got:\n\t - Width: %d\n\r - Height: %d", width, height)
+
+		return [2]int{}, errors.New("utils.getTerminalSizeFromSttyCommand: Width or Height is invalid")
+	}
+
+	return [2]int{width, height}, nil
 }
 
 // base62 helpers included here - to avoid introducing a secondary dependancy
