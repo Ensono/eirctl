@@ -319,10 +319,10 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	if err != nil {
 		logrus.Fatal("executor_container.shell: Couldn't get terminal size")
 	}
+	
+	mutateShellContainerConfig(containerConfig)
 
 	hostConfig.ConsoleSize = [2]uint{uint(height), uint(width)}
-
-	mutateShellContainerConfig(containerConfig)
 
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
