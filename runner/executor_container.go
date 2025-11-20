@@ -58,11 +58,11 @@ type ContainerExecutorIface interface {
 }
 
 type Terminal interface {
-	GetTerminalFd() int
+	// GetTerminalFd() int
 	MakeRaw() (*term.State, error)
 	Restore(state *term.State) error
 	IsTerminal() bool
-	GetSize() (width, height int, err error)
+	GetSize(_ int) (width, height int, err error)
 	UpdateSize() (width, height int, err error)
 }
 
@@ -72,9 +72,9 @@ type realTerminal struct {
 	terminalSize [2]int
 }
 
-func (t *realTerminal) GetTerminalFd() int {
-	return t.terminalFd
-}
+// func (t *realTerminal) GetTerminalFd() int {
+// 	return t.terminalFd
+// }
 
 func (t *realTerminal) MakeRaw() (*term.State, error) {
 	return term.MakeRaw(t.stdInFd)
@@ -88,7 +88,7 @@ func (t *realTerminal) IsTerminal() bool {
 	return term.IsTerminal(t.terminalFd)
 }
 
-func (t *realTerminal) GetSize() (width, height int, err error) {
+func (t *realTerminal) GetSize(_ int) (width, height int, err error) {
 	return t.terminalSize[0], t.terminalSize[1], nil
 }
 
@@ -127,14 +127,15 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 		return nil, err
 	}
 
-	size, fd := utils.GetTerminalSize()
+	tu := NewTerminalUtils(&realTerminal{})
+	size, fd := tu.GetTerminalSize()
 
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
 		Term: &realTerminal{
-			terminalFd:   fd,
 			stdInFd:      int(os.Stdin.Fd()),
+			terminalFd:   fd,
 			terminalSize: size,
 		},
 	}
@@ -314,12 +315,14 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 
 // shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
-	width, height, err := e.Term.GetSize()
+	// only initialise the terminal FD interrogator here
+
+	width, height, err := e.Term.GetSize(0)
 
 	if err != nil {
 		logrus.Fatal("executor_container.shell: Couldn't get terminal size")
 	}
-	
+
 	mutateShellContainerConfig(containerConfig)
 
 	hostConfig.ConsoleSize = [2]uint{uint(height), uint(width)}
