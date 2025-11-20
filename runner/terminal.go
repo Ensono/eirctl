@@ -47,11 +47,10 @@ type CmdOutputIface interface {
 //
 // NOTE: we need to remove/rework the utils package
 type TerminalUtils struct {
-	term       Terminal
-	terminalFd int
-	stdInFd    FileFDIface
-	stdOutFd   FileFDIface
-	execCmd    func(name string, arg ...string) CmdOutputIface
+	term     Terminal
+	stdInFd  FileFDIface
+	stdOutFd FileFDIface
+	execCmd  func(name string, arg ...string) CmdOutputIface
 }
 
 type TerminalUtilsOpt func(*TerminalUtils)
@@ -104,12 +103,10 @@ func NewTerminalUtils(term Terminal, opts ...TerminalUtilsOpt) *TerminalUtils {
 func (tu *TerminalUtils) InitInteractiveTerminal() ([2]int, int) {
 	var terminalSize [2]int
 	var err error
-	tu.terminalFd = -1
 
 	// Try fd zero, most *nix systems use this
 	terminalSize, err = getTerminalSize(tu.term, "0", 0)
 	if err == nil {
-		tu.terminalFd = 0
 		return terminalSize, 0
 	}
 
@@ -117,7 +114,6 @@ func (tu *TerminalUtils) InitInteractiveTerminal() ([2]int, int) {
 	// Most articles say this is the method to use...
 	terminalSize, err = getTerminalSize(tu.term, "stdin", tu.stdInFd.Fd())
 	if err == nil {
-		tu.terminalFd = int(tu.stdInFd.Fd())
 		return terminalSize, int(tu.stdInFd.Fd())
 	}
 
@@ -125,7 +121,6 @@ func (tu *TerminalUtils) InitInteractiveTerminal() ([2]int, int) {
 	// This also will return when stdin is a PIPE and so not a Terminal
 	terminalSize, err = getTerminalSize(tu.term, "stdout", tu.stdOutFd.Fd())
 	if err == nil {
-		tu.terminalFd = int(tu.stdOutFd.Fd())
 		return terminalSize, int(tu.stdOutFd.Fd())
 	}
 
