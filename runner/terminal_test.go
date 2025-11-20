@@ -14,13 +14,14 @@ func TestTerminalUtils_GetSize_default_unix(t *testing.T) {
 	mterm := &mockTerminal{getSizeFn: func(_ int) (width int, height int, err error) {
 		return 1, 1, nil
 	}}
+
 	stdin, _ := os.CreateTemp("", "stdin-*")
 	stdout, _ := os.CreateTemp("", "stdout-*")
 	defer os.Remove(stdin.Name())
 	defer os.Remove(stdout.Name())
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 1 && tsize[1] != 1 {
 		t.Error("terminal size")
 	}
@@ -44,7 +45,7 @@ func TestTerminalUtils_GetSize_fallback_on_stdin_uintptr(t *testing.T) {
 	defer os.Remove(stdout.Name())
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 1 && tsize[1] != 1 {
 		t.Error("terminal size")
 	}
@@ -68,7 +69,7 @@ func TestTerminalUtils_GetSize_fallback_on_stdout_uintptr(t *testing.T) {
 	defer os.Remove(stdout.Name())
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 1 && tsize[1] != 1 {
 		t.Error("terminal size")
 	}
@@ -101,7 +102,7 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check(t *testing.T) {
 		return mockCmdOut{err: nil, outbytes: []byte(`100 200`)}
 	}))
 
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 100 && tsize[1] != 200 {
 		t.Error("terminal size")
 	}
@@ -126,7 +127,7 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_output(t *testing
 		return mockCmdOut{err: fmt.Errorf("unable to get output"), outbytes: nil}
 	}))
 
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 80 && tsize[1] != 24 {
 		t.Error("terminal size error")
 	}
@@ -154,7 +155,7 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_int_convert(t *te
 		return mockCmdOut{err: nil, outbytes: []byte(`100 xyz`)}
 	}))
 
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 80 && tsize[1] != 24 {
 		t.Error("terminal size error")
 	}
@@ -183,7 +184,7 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_split(t *testing.
 		return mockCmdOut{err: nil, outbytes: []byte(`100`)}
 	}))
 
-	tsize, fd := mtu.GetTerminalSize()
+	tsize, fd := mtu.InitInteractiveTerminal()
 	if tsize[0] != 80 && tsize[1] != 24 {
 		t.Error("terminal size error")
 	}

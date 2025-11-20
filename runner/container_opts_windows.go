@@ -44,7 +44,7 @@ func platformPullOptions(ctx context.Context, containerConf *container.Config) (
 	return pullOpts, nil
 }
 
-func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, term Terminal, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
+func platformContainerConfig(containerContext *ContainerContext, cEnv []string, cmd []string, wd string, tty, attachStdin bool) (*container.Config, *container.HostConfig) {
 	containerPorts, hostPorts := containerContext.Ports()
 
 	containerConfig := &container.Config{
@@ -105,12 +105,12 @@ func mutateShellContainerConfig(containerConfig *container.Config) {
 }
 
 // resizeSignal polls for console size changes without consuming stdin input
-func resizeSignal(term Terminal) chan os.Signal {
+func resizeSignal(fd int) chan os.Signal {
 	ch := make(chan os.Signal, 1)
 
 	go func() {
 		defer close(ch)
-		hOut := windows.Handle(term.GetTerminalFd())
+		hOut := windows.Handle(fd)
 		winSigWinch := &winSigWinch{}
 
 		var prevSize coord

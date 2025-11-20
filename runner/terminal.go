@@ -8,10 +8,35 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
 
-type termIface interface {
-	GetSize(fd int) (width int, height int, err error)
+type Terminal interface {
+	MakeRaw(fd int) (*term.State, error)
+	Restore(fd int, state *term.State) error
+	IsTerminal(fd int) bool
+	GetSize(fd int) (width, height int, err error)
+}
+
+type realTerminal struct{}
+
+// MakeRaw accepts a stdin fd pointer
+func (t *realTerminal) MakeRaw(fd int) (*term.State, error) {
+	return term.MakeRaw(fd)
+}
+
+// Restore accepts a stdin fd pointer
+func (t *realTerminal) Restore(fd int, state *term.State) error {
+	return term.Restore(fd, state)
+}
+
+// IsTerminal accepts a terminalFD
+func (t *realTerminal) IsTerminal(fd int) bool {
+	return term.IsTerminal(fd)
+}
+
+func (t *realTerminal) GetSize(fd int) (width, height int, err error) {
+	return term.GetSize(fd)
 }
 
 type CmdOutputIface interface {
@@ -22,10 +47,11 @@ type CmdOutputIface interface {
 //
 // NOTE: we need to remove/rework the utils package
 type TerminalUtils struct {
-	term     termIface
-	stdInFd  FileFDIface
-	stdOutFd FileFDIface
-	execCmd  func(name string, arg ...string) CmdOutputIface
+	term       Terminal
+	terminalFd int
+	stdInFd    FileFDIface
+	stdOutFd   FileFDIface
+	execCmd    func(name string, arg ...string) CmdOutputIface
 }
 
 type TerminalUtilsOpt func(*TerminalUtils)
@@ -47,7 +73,7 @@ func WithCustomExecCmd(execmd func(name string, arg ...string) CmdOutputIface) T
 	}
 }
 
-func NewTerminalUtils(term termIface, opts ...TerminalUtilsOpt) *TerminalUtils {
+func NewTerminalUtils(term Terminal, opts ...TerminalUtilsOpt) *TerminalUtils {
 
 	// setting up default terminalUtils
 	tu := &TerminalUtils{
@@ -66,7 +92,7 @@ func NewTerminalUtils(term termIface, opts ...TerminalUtilsOpt) *TerminalUtils {
 	return tu
 }
 
-// GetTerminalSize gets the terminal size and file descriptor, through various methods or will
+// InitInteractiveTerminal gets the terminal size and file descriptor, through various methods or will
 // fallback to 80x24 which is the standard.
 //
 // Returns an int with the width and height, and also the file descriptor.
@@ -75,13 +101,15 @@ func NewTerminalUtils(term termIface, opts ...TerminalUtilsOpt) *TerminalUtils {
 // signalling failure. You can continue to size the terminal to a known value
 // but you won't be able to use other terminal functions that rely on a valid
 // file descriptor.
-func (tu *TerminalUtils) GetTerminalSize() ([2]int, int) {
+func (tu *TerminalUtils) InitInteractiveTerminal() ([2]int, int) {
 	var terminalSize [2]int
 	var err error
+	tu.terminalFd = -1
 
 	// Try fd zero, most *nix systems use this
 	terminalSize, err = getTerminalSize(tu.term, "0", 0)
 	if err == nil {
+		tu.terminalFd = 0
 		return terminalSize, 0
 	}
 
@@ -89,6 +117,7 @@ func (tu *TerminalUtils) GetTerminalSize() ([2]int, int) {
 	// Most articles say this is the method to use...
 	terminalSize, err = getTerminalSize(tu.term, "stdin", tu.stdInFd.Fd())
 	if err == nil {
+		tu.terminalFd = int(tu.stdInFd.Fd())
 		return terminalSize, int(tu.stdInFd.Fd())
 	}
 
@@ -113,7 +142,18 @@ func (tu *TerminalUtils) GetTerminalSize() ([2]int, int) {
 	return [2]int{80, 24}, -1
 }
 
-func getTerminalSize(termix termIface, fileDescriptorName string, fileDescriptor uintptr) ([2]int, error) {
+func (tu *TerminalUtils) UpdateSize(fd int) (width, height int, err error) {
+	width, height, err = tu.term.GetSize(fd)
+
+	if err != nil {
+		logrus.Error("Terminal.UpdateSize: Failed to get size")
+		return 0, 0, nil
+	}
+
+	return width, height, nil
+}
+
+func getTerminalSize(termix Terminal, fileDescriptorName string, fileDescriptor uintptr) ([2]int, error) {
 	logrus.Tracef("utils.getTerminalSize: Trying %s: %d", fileDescriptorName, fileDescriptor)
 	width, height, err := termix.GetSize(int(fileDescriptor))
 	if err != nil {
