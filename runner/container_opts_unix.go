@@ -57,6 +57,7 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		PortBindings: hostPorts,
 		AutoRemove:   true,
 	}
+
 	for _, volume := range containerContext.BindMounts() {
 		if containerContext.BindMount {
 			// use the new mounts
@@ -95,7 +96,7 @@ func mutateShellContainerConfig(containerConfig *container.Config) {
 	logrus.Debugf("Shell Mutated Unix ContainerConfig: %+v", containerConfig)
 }
 
-func resizeSignal() chan os.Signal {
+func resizeSignal(fd int) chan os.Signal {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGWINCH)
 	return sigCh
