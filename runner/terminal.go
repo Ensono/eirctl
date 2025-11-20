@@ -125,6 +125,7 @@ func (tu *TerminalUtils) InitInteractiveTerminal() ([2]int, int) {
 	// This also will return when stdin is a PIPE and so not a Terminal
 	terminalSize, err = getTerminalSize(tu.term, "stdout", tu.stdOutFd.Fd())
 	if err == nil {
+		tu.terminalFd = int(tu.stdOutFd.Fd())
 		return terminalSize, int(tu.stdOutFd.Fd())
 	}
 
