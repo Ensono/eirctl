@@ -10,15 +10,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TestTerminalUtils_GetSize_default_unix(t *testing.T) {
-	mterm := &mockTerminal{getSizeFn: func(_ int) (width int, height int, err error) {
-		return 1, 1, nil
-	}}
-
+func terminalFdHelper(t *testing.T) (*os.File, *os.File, func()) {
+	t.Helper()
 	stdin, _ := os.CreateTemp("", "stdin-*")
 	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	return stdin, stdout, func() {
+		os.Remove(stdin.Name())
+		os.Remove(stdout.Name())
+	}
+}
+
+func TestTerminalUtils_GetSize_default_unix(t *testing.T) {
+	mterm := &mockTerminal{getSizeFn: func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{1, 1}, nil
+	}}
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
 	tsize, fd := mtu.InitInteractiveTerminal()
@@ -32,17 +39,15 @@ func TestTerminalUtils_GetSize_default_unix(t *testing.T) {
 
 func TestTerminalUtils_GetSize_fallback_on_stdin_uintptr(t *testing.T) {
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
 		// already called by the default unix and failed
 		if mterm.getSizeCalled == 2 {
-			return 1, 1, nil
+			return runner.TerminalSize{1, 1}, nil
 		}
-		return 1, 1, fmt.Errorf("force fallback")
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
 	tsize, fd := mtu.InitInteractiveTerminal()
@@ -56,17 +61,15 @@ func TestTerminalUtils_GetSize_fallback_on_stdin_uintptr(t *testing.T) {
 
 func TestTerminalUtils_GetSize_fallback_on_stdout_uintptr(t *testing.T) {
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
 		// called by default unix and stdint
 		if mterm.getSizeCalled == 3 {
-			return 1, 1, nil
+			return runner.TerminalSize{1, 1}, nil
 		}
-		return 1, 1, fmt.Errorf("force fallback")
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
 	tsize, fd := mtu.InitInteractiveTerminal()
@@ -90,13 +93,11 @@ func (m mockCmdOut) Output() ([]byte, error) {
 
 func TestTerminalUtils_GetSize_fallback_on_stty_check(t *testing.T) {
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
-		return 1, 1, fmt.Errorf("force fallback")
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout), runner.WithCustomExecCmd(func(name string, arg ...string) runner.CmdOutputIface {
 		return mockCmdOut{err: nil, outbytes: []byte(`100 200`)}
@@ -115,13 +116,11 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check(t *testing.T) {
 
 func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_output(t *testing.T) {
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
-		return 1, 1, fmt.Errorf("force fallback")
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout), runner.WithCustomExecCmd(func(name string, arg ...string) runner.CmdOutputIface {
 		return mockCmdOut{err: fmt.Errorf("unable to get output"), outbytes: nil}
@@ -143,13 +142,11 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_int_convert(t *te
 	logrus.SetOutput(&bytes.Buffer{})
 
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
-		return 1, 1, fmt.Errorf("force fallback")
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout), runner.WithCustomExecCmd(func(name string, arg ...string) runner.CmdOutputIface {
 		return mockCmdOut{err: nil, outbytes: []byte(`100 xyz`)}
@@ -171,14 +168,12 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_split(t *testing.
 	logrus.SetOutput(&bytes.Buffer{})
 
 	mterm := &mockTerminal{}
-	mterm.getSizeFn = func(_ int) (width int, height int, err error) {
-		return 1, 1, fmt.Errorf("force fallback")
+	mterm.getSizeFn = func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{1, 1}, fmt.Errorf("force fallback")
 	}
 
-	stdin, _ := os.CreateTemp("", "stdin-*")
-	stdout, _ := os.CreateTemp("", "stdout-*")
-	defer os.Remove(stdin.Name())
-	defer os.Remove(stdout.Name())
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
 
 	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout), runner.WithCustomExecCmd(func(name string, arg ...string) runner.CmdOutputIface {
 		return mockCmdOut{err: nil, outbytes: []byte(`100`)}
@@ -195,5 +190,41 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check_fails_on_split(t *testing.
 	// this needs testing on windows as there are more channels there...
 	if fd != -1 {
 		t.Errorf("fd (%v) should be -1", fd)
+	}
+}
+
+func TestTerminalUtils_UpdateSize_success(t *testing.T) {
+	mterm := &mockTerminal{getSizeFn: func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{112, 122}, nil
+	}}
+
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
+
+	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
+	tsize, err := mtu.UpdateSize(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tsize[0] != 122 && tsize[1] != 122 {
+		t.Error("terminal update size")
+	}
+}
+
+func TestTerminalUtils_UpdateSize_error(t *testing.T) {
+	mterm := &mockTerminal{getSizeFn: func(_ int) (tsize runner.TerminalSize, err error) {
+		return runner.TerminalSize{}, fmt.Errorf("unable to get size")
+	}}
+
+	stdin, stdout, cleanup := terminalFdHelper(t)
+	defer cleanup()
+
+	mtu := runner.NewTerminalUtils(mterm, runner.WithCustomFD(stdin, stdout))
+	tsize, err := mtu.UpdateSize(0)
+	if err != nil {
+		t.Fatal("this should never happen")
+	}
+	if tsize[0] != 0 && tsize[1] != 0 {
+		t.Error("terminal update size")
 	}
 }

@@ -289,7 +289,7 @@ type mockTerminal struct {
 	returnMakeRaw    *term.State
 	returnMakeRawErr error
 	getSizeCalled    int
-	getSizeFn        func(fd int) (width, height int, err error)
+	getSizeFn        func(fd int) (tsize runner.TerminalSize, err error)
 }
 
 // func (m *mockTerminal) GetTerminalFd() int {
@@ -310,12 +310,12 @@ func (m *mockTerminal) IsTerminal(fd int) bool {
 	return true
 }
 
-func (m *mockTerminal) GetSize(fd int) (width, height int, err error) {
+func (m *mockTerminal) GetSize(fd int) (tsize runner.TerminalSize, err error) {
 	m.getSizeCalled++
 	if m.getSizeFn != nil {
 		return m.getSizeFn(fd)
 	}
-	return 1, 1, nil
+	return runner.TerminalSize{1, 1}, nil
 }
 
 func (m *mockTerminal) UpdateSize() (width, height int, err error) {

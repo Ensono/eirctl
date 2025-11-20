@@ -345,15 +345,15 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 
 func (e *ContainerExecutor) resizeShellTty(ctx context.Context, containerId string, fd int) {
 	if e.termUtils.term.IsTerminal(fd) {
-		width, height, err := e.termUtils.UpdateSize(fd)
+		tsize, err := e.termUtils.UpdateSize(fd)
 		if err != nil {
 			logrus.Tracef("resizeShellTty: failed to update terminal size: %v", err)
 			return
 		}
 
 		err = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
-			Height: uint(height),
-			Width:  uint(width),
+			Width:  uint(tsize[0]),
+			Height: uint(tsize[1]),
 		})
 
 		if err != nil {
@@ -361,7 +361,7 @@ func (e *ContainerExecutor) resizeShellTty(ctx context.Context, containerId stri
 			return
 		}
 
-		logrus.Tracef("resizeShellTty: resized the terminal to %dx%d", width, height)
+		logrus.Tracef("resizeShellTty: resized the terminal to %dx%d", tsize[0], tsize[1])
 	}
 }
 
