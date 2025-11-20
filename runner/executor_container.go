@@ -171,7 +171,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	bar := progressbar.NewOptions(-1,
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionShowBytes(true),
+		progressbar.OptionShowBytes(false),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),
 		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s[reset]", containerConf.Image)),
