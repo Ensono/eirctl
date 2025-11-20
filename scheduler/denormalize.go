@@ -165,7 +165,14 @@ func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*Ex
 
 func envfileMerge(dst, src *utils.Envfile) {
 	// need to clone the slice as re-assigning simply creates a new pointer and length but not the data array
-	dstEnvFilePath, srcEnvFilePath := slices.Clone(dst.PathValue), slices.Clone(src.PathValue)
+	// dstEnvFilePath, srcEnvFilePath := slices.Clone(dst.PathValue), slices.Clone(src.PathValue)
+	dstEnvFilePath, srcEnvFilePath := []string{}, []string{}
+	for _, v := range dst.PathValue {
+		dstEnvFilePath = append(dstEnvFilePath, v)
+	}
+	for _, v := range src.PathValue {
+		srcEnvFilePath = append(srcEnvFilePath, v)
+	}
 	// we want to merge and overwrite any values in the pipeline with values specified in the stage
 	if err := mergo.Merge(dst, src, func(c *mergo.Config) {
 		c.AppendSlice = true
