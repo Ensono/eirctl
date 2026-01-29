@@ -50,6 +50,8 @@ type ContainerContext struct {
 	userns string
 	// Ports map from host to container
 	ports []string
+	// extraHosts contains custom host-to-IP mappings for /etc/hosts
+	extraHosts []string
 }
 
 type ContainerContextOpt func(cc *ContainerContext)
@@ -118,6 +120,7 @@ func newContainerArgs(cargs []string) *containerArgs {
 	_ = flagSet.StringArrayP("port", "p", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
 	_ = flagSet.StringP("userns", "", "", "")
+	_ = flagSet.StringArray("add-host", []string{}, "")
 	// TODO: refactor this to use first class properties
 	// on the container object in config/container_definition
 
@@ -176,6 +179,10 @@ func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	if err := ca.parseVolumes(cc); err != nil {
 		return err
 	}
+
+	if err := ca.parseExtraHosts(cc); err != nil {
+		return err
+	}
 	// add more parsers here if needed
 	return nil
 }
@@ -190,6 +197,72 @@ func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 		vols = append(vols, expandVolumeString(strings.TrimSpace(v)))
 	}
 	cc.WithVolumes(vols...)
+	return nil
+}
+
+// parseExtraHosts parses --add-host flags and validates host:ip format
+func (ca *containerArgs) parseExtraHosts(cc *ContainerContext) error {
+	hosts, err := ca.flagSet.GetStringArray("add-host")
+	if err != nil {
+		return err
+	}
+	
+	for _, h := range hosts {
+		h = os.ExpandEnv(strings.TrimSpace(h))
+		if h == "" {
+			continue
+		}
+		
+		// Validate format: hostname:ip
+		if err := validateHostMapping(h); err != nil {
+			return fmt.Errorf("invalid --add-host format %q: %w", h, err)
+		}
+		
+		cc.extraHosts = append(cc.extraHosts, h)
+	}
+	return nil
+}
+
+// validateHostMapping validates the host:ip format for --add-host
+func validateHostMapping(mapping string) error {
+	parts := strings.Split(mapping, ":")
+	if len(parts) < 2 {
+		return fmt.Errorf("expected format hostname:ip, got %q", mapping)
+	}
+	
+	// Hostname is everything before the last colon (to support IPv6)
+	hostname := strings.Join(parts[:len(parts)-1], ":")
+	ip := parts[len(parts)-1]
+	
+	// For IPv6, the format might be hostname:[ipv6] or just ipv6
+	// Let's handle both hostname:ipv4 and hostname:ipv6
+	if strings.Contains(mapping, "]:") {
+		// IPv6 in brackets: hostname:[ipv6]
+		closeBracket := strings.LastIndex(mapping, "]")
+		if closeBracket == -1 {
+			return fmt.Errorf("invalid IPv6 format in %q", mapping)
+		}
+		hostname = mapping[:closeBracket+1]
+		if closeBracket+2 < len(mapping) {
+			ip = mapping[closeBracket+2:]
+		} else {
+			return fmt.Errorf("missing IP address in %q", mapping)
+		}
+	} else if strings.Count(mapping, ":") > 1 {
+		// Might be IPv6 without brackets or hostname:ipv6
+		// For simplicity, accept if there are multiple colons
+		// Docker will validate the actual IP format
+		hostname = parts[0]
+		ip = strings.Join(parts[1:], ":")
+	}
+	
+	if hostname == "" {
+		return fmt.Errorf("hostname cannot be empty in %q", mapping)
+	}
+	if ip == "" {
+		return fmt.Errorf("IP address cannot be empty in %q", mapping)
+	}
+	
 	return nil
 }
 
@@ -220,6 +293,11 @@ func (c *ContainerContext) Ports() (map[nat.Port]struct{}, map[nat.Port][]nat.Po
 		return map[nat.Port]struct{}{}, map[nat.Port][]nat.PortBinding{}
 	}
 	return containerPorts, hostPorts
+}
+
+// ExtraHosts returns the custom host-to-IP mappings
+func (c *ContainerContext) ExtraHosts() []string {
+	return c.extraHosts
 }
 
 // BindVolume formatted for bindmount
