@@ -224,37 +224,16 @@ func (ca *containerArgs) parseExtraHosts(cc *ContainerContext) error {
 }
 
 // validateHostMapping validates the host:ip format for --add-host
+// Supports both IPv4 (hostname:192.168.1.1) and IPv6 (hostname:2001:db8::1) formats
 func validateHostMapping(mapping string) error {
-	parts := strings.Split(mapping, ":")
-	if len(parts) < 2 {
+	// Find the first colon to separate hostname from IP
+	colonIdx := strings.Index(mapping, ":")
+	if colonIdx == -1 {
 		return fmt.Errorf("expected format hostname:ip, got %q", mapping)
 	}
 	
-	// Hostname is everything before the last colon (to support IPv6)
-	hostname := strings.Join(parts[:len(parts)-1], ":")
-	ip := parts[len(parts)-1]
-	
-	// For IPv6, the format might be hostname:[ipv6] or just ipv6
-	// Let's handle both hostname:ipv4 and hostname:ipv6
-	if strings.Contains(mapping, "]:") {
-		// IPv6 in brackets: hostname:[ipv6]
-		closeBracket := strings.LastIndex(mapping, "]")
-		if closeBracket == -1 {
-			return fmt.Errorf("invalid IPv6 format in %q", mapping)
-		}
-		hostname = mapping[:closeBracket+1]
-		if closeBracket+2 < len(mapping) {
-			ip = mapping[closeBracket+2:]
-		} else {
-			return fmt.Errorf("missing IP address in %q", mapping)
-		}
-	} else if strings.Count(mapping, ":") > 1 {
-		// Might be IPv6 without brackets or hostname:ipv6
-		// For simplicity, accept if there are multiple colons
-		// Docker will validate the actual IP format
-		hostname = parts[0]
-		ip = strings.Join(parts[1:], ":")
-	}
+	hostname := mapping[:colonIdx]
+	ip := mapping[colonIdx+1:]
 	
 	if hostname == "" {
 		return fmt.Errorf("hostname cannot be empty in %q", mapping)
@@ -263,6 +242,7 @@ func validateHostMapping(mapping string) error {
 		return fmt.Errorf("IP address cannot be empty in %q", mapping)
 	}
 	
+	// Docker runtime will validate the actual IP format
 	return nil
 }
 
