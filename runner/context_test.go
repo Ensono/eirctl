@@ -521,6 +521,115 @@ func Test_ContainerContext_PortArgs(t *testing.T) {
 	}
 }
 
+func Test_ContainerContext_AddHostArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          []string
+		expectErr     bool
+	}{
+		"single --add-host with equals": {
+			containerArgs: []string{"--add-host=myhost:10.0.0.1"},
+			want:          []string{"myhost:10.0.0.1"},
+			expectErr:     false,
+		},
+		"single --add-host without equals": {
+			containerArgs: []string{"--add-host", "myhost:10.0.0.1"},
+			want:          []string{"myhost:10.0.0.1"},
+			expectErr:     false,
+		},
+		"multiple --add-host entries": {
+			containerArgs: []string{
+				"--add-host=host1:192.168.1.1",
+				"--add-host=host2:192.168.1.2",
+				"--add-host", "host3:10.0.0.1",
+			},
+			want:      []string{"host1:192.168.1.1", "host2:192.168.1.2", "host3:10.0.0.1"},
+			expectErr: false,
+		},
+		"--add-host with localhost": {
+			containerArgs: []string{"--add-host=myservice:127.0.0.1"},
+			want:          []string{"myservice:127.0.0.1"},
+			expectErr:     false,
+		},
+		"--add-host with hyphenated hostname": {
+			containerArgs: []string{"--add-host=my-service:172.16.0.1"},
+			want:          []string{"my-service:172.16.0.1"},
+			expectErr:     false,
+		},
+		"--add-host with dotted hostname": {
+			containerArgs: []string{"--add-host=my.service.local:192.168.0.1"},
+			want:          []string{"my.service.local:192.168.0.1"},
+			expectErr:     false,
+		},
+		"--add-host combined with other flags": {
+			containerArgs: []string{
+				"-v", "/tmp:/tmp",
+				"--add-host=db:10.0.0.5",
+				"-p", "8080:80",
+				"--add-host=cache:10.0.0.6",
+			},
+			want:      []string{"db:10.0.0.5", "cache:10.0.0.6"},
+			expectErr: false,
+		},
+		"--add-host with IPv6": {
+			containerArgs: []string{"--add-host=ipv6host:::1"},
+			want:          []string{"ipv6host:::1"},
+			expectErr:     false,
+		},
+		"--add-host with full IPv6": {
+			containerArgs: []string{"--add-host=myhost:2001:db8::1"},
+			want:          []string{"myhost:2001:db8::1"},
+			expectErr:     false,
+		},
+		"invalid --add-host missing IP": {
+			containerArgs: []string{"--add-host=hostname"},
+			want:          []string{},
+			expectErr:     true,
+		},
+		"invalid --add-host missing hostname": {
+			containerArgs: []string{"--add-host=:192.168.1.1"},
+			want:          []string{},
+			expectErr:     true,
+		},
+		"invalid --add-host empty": {
+			containerArgs: []string{"--add-host="},
+			want:          []string{},
+			expectErr:     false, // Empty values are skipped, not errors
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			if err != nil && !tt.expectErr {
+				t.Errorf("not expecting an error: %s", err)
+				t.FailNow()
+			}
+
+			if err == nil && tt.expectErr {
+				t.Errorf("expecting an error but got none")
+				t.FailNow()
+			}
+
+			if !tt.expectErr {
+				got := cc.ExtraHosts()
+				if len(got) != len(tt.want) {
+					t.Errorf("incorrect number of extra hosts, got: %d, wanted: %d\n", len(got), len(tt.want))
+					t.FailNow()
+				}
+
+				for _, wantHost := range tt.want {
+					if !slices.Contains(got, wantHost) {
+						t.Errorf("missing expected host mapping, got: %v, wanted to contain: %s\n", got, wantHost)
+					}
+				}
+			}
+		})
+	}
+}
+
 func Test_ContainerContext_UnsupportedArgs(t *testing.T) {
 	ttests := map[string]struct {
 		containerArgs []string
