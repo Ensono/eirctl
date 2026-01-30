@@ -103,14 +103,6 @@ func contextExecutable(container *utils.Container) (*runner.ContainerContext, er
 		cc := runner.NewContainerContext(container.Name, runner.WithContainerContextPullTimeout(container.PullTimeout))
 		pwd := utils.MustGetwd()
 
-		// When running inside a GitHub Actions container, use GITHUB_WORKSPACE
-		// which contains the actual host path instead of the container-internal path.
-		// This is necessary for Docker-in-Docker scenarios where bind mounts need
-		// to reference paths on the actual host, not inside the outer container.
-		if ghWorkspace, exists := os.LookupEnv("GITHUB_WORKSPACE"); exists && ghWorkspace != "" {
-			pwd = ghWorkspace
-		}
-
 		cc.BindMount = container.EnableBindMount
 
 		cc.WithVolumes(fmt.Sprintf("%s:/eirctl", pwd))
