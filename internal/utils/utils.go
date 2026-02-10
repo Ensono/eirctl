@@ -285,6 +285,7 @@ func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	}
 	readers := []io.ReadCloser{}
 	for _, envfilepath := range envfile.PathValue {
+		envfilepath = os.ExpandEnv(envfilepath)
 		if fileinfo, err := os.Stat(envfilepath); fileinfo != nil && err == nil {
 			f, err := os.Open(envfilepath)
 			if err != nil {

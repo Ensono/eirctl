@@ -465,6 +465,42 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	}
 }
 
+func TestUtils_ReaderFromPath_WithEnvVarExpansion(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "test-envvar-expansion-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	envContent := "ENV_VAR=dev"
+	envFilePath := filepath.Join(tmpDir, "environment.env")
+	if err := os.WriteFile(envFilePath, []byte(envContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("EIRCTL_TEST_ENVFILE_DIR", tmpDir)
+
+	ef := utils.NewEnvFile()
+	ef.WithPath([]string{"$EIRCTL_TEST_ENVFILE_DIR/environment.env"})
+
+	r, success := utils.ReaderFromPath(ef)
+	if !success {
+		t.Fatal("reader failed to create")
+	}
+	if r == nil {
+		t.Fatal("reader empty")
+	}
+
+	b := []byte{}
+	for _, reader := range r {
+		out, _ := io.ReadAll(reader)
+		b = append(b, out...)
+	}
+	if string(b) != envContent {
+		t.Errorf("got %q, want %q", string(b), envContent)
+	}
+}
+
 type tRCloser struct {
 	io.Reader
 }
