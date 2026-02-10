@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -177,12 +178,13 @@ func (gs *GitSource) FileContent() ([]byte, error) {
 		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	contents, err := file.Contents()
+	reader, err := file.Reader()
 	if err != nil {
 		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
+	defer reader.Close()
 
-	return []byte(contents), nil
+	return io.ReadAll(reader)
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {

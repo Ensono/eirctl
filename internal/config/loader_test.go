@@ -910,10 +910,20 @@ tasks:
 
 func Test_ImportFiles_GitWithRefStripsQueryParam(t *testing.T) {
 	scriptContent := "#!/bin/bash\necho from git with ref\n"
-	_, dir := createFilesystemTestRepo(t, map[string]string{
+	repo, dir := createFilesystemTestRepo(t, map[string]string{
 		"scripts/deploy.sh": scriptContent,
 	}, "")
 	defer os.RemoveAll(dir)
+
+	// Create a tag so ?ref= has a real target
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = repo.CreateTag("v1.0.0", head.Hash(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	projectDir, err := os.MkdirTemp("", "import-files-git-ref-*")
 	if err != nil {
@@ -922,11 +932,10 @@ func Test_ImportFiles_GitWithRefStripsQueryParam(t *testing.T) {
 	defer os.RemoveAll(projectDir)
 
 	// git URL with ?ref= query parameter, no dest specified
-	// Note: not actually using a ref since the test repo doesn't have branches,
-	// but this tests that the ?ref= would be stripped from the filename
+	// The ?ref=v1.0.0 points to the tag we just created
 	configContent := fmt.Sprintf(`
 import_files:
-  - src: git::file://%s//scripts/deploy.sh
+  - src: git::file://%s//scripts/deploy.sh?ref=v1.0.0
 
 tasks:
   task1:
@@ -947,6 +956,7 @@ tasks:
 	}
 
 	// File should be at .eirctl/scripts/deploy.sh (basename without path or query)
+	// NOT .eirctl/scripts/deploy.sh?ref=v1.0.0
 	destPath := filepath.Join(projectDir, config.EirctlScriptsDir, "deploy.sh")
 	content, err := os.ReadFile(destPath)
 	if err != nil {
@@ -954,6 +964,46 @@ tasks:
 	}
 	if string(content) != scriptContent {
 		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_PathTraversal(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-traversal-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := "#!/bin/bash\necho pwned\n"
+	scriptFile := filepath.Join(projectDir, "evil.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: %s
+    dest: ../../../etc/evil.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for path traversal in dest")
+	}
+	if !errors.Is(err, config.ErrPathTraversal) {
+		t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrPathTraversal)
 	}
 }
 

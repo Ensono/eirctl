@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
@@ -20,6 +21,12 @@ var ErrConfigNotFound = errors.New("config file not found")
 
 // EirctlScriptsDir is the directory where imported files are placed
 const EirctlScriptsDir = ".eirctl/scripts"
+
+// MaxImportFileSize is the maximum size of an imported file (10MB)
+const MaxImportFileSize = 10 * 1024 * 1024
+
+// httpTimeout is the timeout for HTTP requests when fetching imported files
+const httpTimeout = 30 * time.Second
 
 // Loader reads and parses config files
 //
@@ -311,6 +318,9 @@ var ErrImportKeyClash = errors.New("imported file contains a clash")
 // ErrImportFileFailed occurs when an import_files entry fails to be fetched or written
 var ErrImportFileFailed = errors.New("import file failed")
 
+// ErrPathTraversal occurs when a dest path escapes the project root
+var ErrPathTraversal = errors.New("dest path traverses outside project root")
+
 // GetBaseFilename extracts the basename from a source path, stripping query parameters
 // e.g. "path/file.sh?ref=v1.0" -> "file.sh"
 func GetBaseFilename(src string) string {
@@ -349,6 +359,13 @@ func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
 			destPath = filepath.Join(cl.dir, EirctlScriptsDir, GetBaseFilename(importFile.Src))
 		}
 
+		// Guard against path traversal (e.g. dest: "../../.bashrc")
+		cleanRoot := filepath.Clean(cl.dir) + string(filepath.Separator)
+		cleanDest := filepath.Clean(destPath)
+		if !strings.HasPrefix(cleanDest, cleanRoot) && cleanDest != filepath.Clean(cl.dir) {
+			return fmt.Errorf("%w: %s resolves outside project root %s", ErrPathTraversal, importFile.Dest, cl.dir)
+		}
+
 		// support nested dest paths by creating subdirectories
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 			return fmt.Errorf("%w: failed to create directory for %s: %v", ErrImportFileFailed, destPath, err)
@@ -369,16 +386,21 @@ func (cl *Loader) fetchFileContent(src string) ([]byte, error) {
 	if IsGit(src) {
 		gs, err := NewGitSource(src)
 		if err != nil {
-			return nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
+			return nil, fmt.Errorf("incorrectly formatted git source: %w", err)
 		}
 		if err := gs.Clone(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("git clone failed: %w", err)
 		}
-		return gs.FileContent()
+		content, err := gs.FileContent()
+		if err != nil {
+			return nil, fmt.Errorf("git file retrieval failed: %w", err)
+		}
+		return content, nil
 	}
 
 	if utils.IsURL(src) {
-		resp, err := http.Get(src)
+		client := &http.Client{Timeout: httpTimeout}
+		resp, err := client.Get(src) //nolint:gosec // src is user-provided in config
 		if err != nil {
 			return nil, err
 		}
@@ -387,7 +409,7 @@ func (cl *Loader) fetchFileContent(src string) ([]byte, error) {
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("%d: file request failed - %s", resp.StatusCode, src)
 		}
-		return io.ReadAll(resp.Body)
+		return io.ReadAll(io.LimitReader(resp.Body, MaxImportFileSize))
 	}
 
 	// local filesystem
