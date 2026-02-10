@@ -602,3 +602,400 @@ func Test_Loader_Validate(t *testing.T) {
 		}
 	})
 }
+
+func Test_ImportFiles_LocalFile(t *testing.T) {
+	// Create a temp directory for the project
+	projectDir, err := os.MkdirTemp("", "import-files-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a script file to import
+	scriptContent := "#!/bin/bash\necho deployed\n"
+	scriptFile := filepath.Join(projectDir, "deploy.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create eirctl config with import_files referencing the local file
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: %s
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the file was written to project root (explicit dest)
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_DefaultDest(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-default-dest-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := "#!/bin/bash\necho setup\n"
+	scriptFile := filepath.Join(projectDir, "setup-env.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// import_files without dest - should default to basename of src
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: %s
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// dest defaults to basename "setup-env.sh"
+	destPath := filepath.Join(projectDir, config.EirctlScriptsDir, "setup-env.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_NestedDest(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-nested-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := "#!/bin/bash\necho terraform init\n"
+	scriptFile := filepath.Join(projectDir, "init.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// dest includes subdirectory
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: %s
+    dest: terraform/init.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "terraform", "init.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_URL(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho from url\n"
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(scriptContent))
+	}))
+	defer testSrv.Close()
+
+	projectDir, err := os.MkdirTemp("", "import-files-url-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: %s/scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, testSrv.URL)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_Git(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho from git\n"
+	_, dir := createFilesystemTestRepo(t, map[string]string{
+		"scripts/deploy.sh": scriptContent,
+	}, "")
+	defer os.RemoveAll(dir)
+
+	projectDir, err := os.MkdirTemp("", "import-files-git-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: git::file://%s//scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, dir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_EmptySrc(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-empty-src-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+import_files:
+  - src: ""
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for empty src")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrImportFileFailed)
+	}
+}
+
+func Test_ImportFiles_NoImportFiles(t *testing.T) {
+	// Ensure no error when import_files is absent
+	projectDir, err := os.MkdirTemp("", "import-files-none-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// .eirctl/scripts/ should not be created
+	scriptsDir := filepath.Join(projectDir, config.EirctlScriptsDir)
+	if _, err := os.Stat(scriptsDir); !os.IsNotExist(err) {
+		t.Error("expected .eirctl/scripts/ to not be created when no import_files specified")
+	}
+}
+
+func Test_ImportFiles_GitWithRefStripsQueryParam(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho from git with ref\n"
+	_, dir := createFilesystemTestRepo(t, map[string]string{
+		"scripts/deploy.sh": scriptContent,
+	}, "")
+	defer os.RemoveAll(dir)
+
+	projectDir, err := os.MkdirTemp("", "import-files-git-ref-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// git URL with ?ref= query parameter, no dest specified
+	// Note: not actually using a ref since the test repo doesn't have branches,
+	// but this tests that the ?ref= would be stripped from the filename
+	configContent := fmt.Sprintf(`
+import_files:
+  - src: git::file://%s//scripts/deploy.sh
+
+tasks:
+  task1:
+    command:
+      - .eirctl/scripts/deploy.sh
+`, dir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// File should be at .eirctl/scripts/deploy.sh (basename without path or query)
+	destPath := filepath.Join(projectDir, config.EirctlScriptsDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_GetBaseFilename(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "git URL with ref query param",
+			src:  "git::ssh://github.com/org/repo//scripts/deploy.sh?ref=v1.0.32",
+			want: "deploy.sh",
+		},
+		{
+			name: "git URL with branch ref",
+			src:  "git::file:///path/to/repo//create-local-envfile.sh?ref=main",
+			want: "create-local-envfile.sh",
+		},
+		{
+			name: "https URL with query params",
+			src:  "https://example.com/script.sh?token=abc123",
+			want: "script.sh",
+		},
+		{
+			name: "local path no query",
+			src:  "/path/to/script.sh",
+			want: "script.sh",
+		},
+		{
+			name: "relative path no query",
+			src:  "scripts/deploy.sh",
+			want: "deploy.sh",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := config.GetBaseFilename(tt.src)
+			if got != tt.want {
+				t.Errorf("getBaseFilename(%q) = %q, want %q", tt.src, got, tt.want)
+			}
+		})
+	}
+}

@@ -11,6 +11,18 @@ import (
 
 //go:generate go run ../../tools/schemagenerator/main.go -dir ../../
 
+// ImportFileDefinition defines a file to import from a remote or local source
+// When dest is specified, files are placed relative to the project root.
+// When dest is omitted, files default to .eirctl/scripts/<basename>.
+type ImportFileDefinition struct {
+	// Src is the source path for the file to import
+	// supports the same protocols as import: git::ssh://, git::https://, https://, local filesystem
+	Src string `mapstructure:"src" yaml:"src" json:"src" jsonschema:"required"`
+	// Dest is the destination path relative to the project root
+	// if not specified, defaults to .eirctl/scripts/<basename of src>
+	Dest string `mapstructure:"dest" yaml:"dest,omitempty" json:"dest,omitempty"`
+}
+
 // ConfigDefinition holds the top most config definition
 // this can be parsed from a yaml, json, toml files/mediaTypes
 //
@@ -21,6 +33,9 @@ type ConfigDefinition struct {
 	// Import is a list of additional resources to bring into the main config
 	// these can be remote or local resources
 	Import []string `mapstructure:"import" yaml:"import" json:"import,omitempty" jsonschema:"anyOf_required=import"`
+	// ImportFiles is a list of file definitions to import from remote or local sources
+	// and place into the .eirctl/scripts/ directory
+	ImportFiles []ImportFileDefinition `mapstructure:"import_files" yaml:"import_files,omitempty" json:"import_files,omitempty"`
 	// Contexts is a map of contexts to use
 	// for specific tasks
 	Contexts map[string]*ContextDefinition `mapstructure:"contexts" yaml:"contexts" json:"contexts,omitempty" jsonschema:"anyOf_required=contexts"`

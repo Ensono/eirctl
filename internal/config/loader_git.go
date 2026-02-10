@@ -158,6 +158,33 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 	return cm, nil
 }
 
+// FileContent retrieves the raw bytes of a file from the git repository
+// This is used by import_files to fetch arbitrary files (scripts, configs, etc.)
+// rather than parsing them as YAML config definitions.
+func (gs *GitSource) FileContent() ([]byte, error) {
+	commit, err := gs.getCommit(gs.repo)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	file, err := tree.File(gs.yamlPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	contents, err := file.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	return []byte(contents), nil
+}
+
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
 	if passphrase, found := os.LookupEnv(GitSshPassphrase); found {
 		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(passphrase))

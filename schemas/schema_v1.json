@@ -6,12 +6,10 @@
     "Artifact": {
       "properties": {
         "name": {
-          "type": "string",
-          "description": "Name is the key under which the artifacts will be stored\n\nCurrently this is unused"
+          "type": "string"
         },
         "path": {
-          "type": "string",
-          "description": "Path is the glob like pattern to the\nsource of the file(s) to store as an output"
+          "type": "string"
         },
         "type": {
           "type": "string",
@@ -20,7 +18,6 @@
             "file",
             "env"
           ],
-          "description": "Type is the artifact type\nvalid values are `file`|`dotenv`",
           "default": "dotenv"
         }
       },
@@ -28,14 +25,12 @@
       "type": "object",
       "required": [
         "type"
-      ],
-      "description": "Artifact holds the information about the artifact to produce for the specific task."
+      ]
     },
     "Binary": {
       "properties": {
         "bin": {
-          "type": "string",
-          "description": "Bin is the name of the executable to run\nit must exist on the path\nIf using a default mvdn.sh context then\nensure it is on your path as symlink if you are only using aliases."
+          "type": "string"
         },
         "args": {
           "items": {
@@ -48,8 +43,7 @@
       "type": "object",
       "required": [
         "bin"
-      ],
-      "description": "Binary is a structure for storing binary file path and arguments that should be passed on binary's invocation"
+      ]
     },
     "ConfigDefinition": {
       "properties": {
@@ -57,15 +51,19 @@
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Import is a list of additional resources to bring into the main config\nthese can be remote or local resources"
+          "type": "array"
+        },
+        "import_files": {
+          "items": {
+            "$ref": "#/$defs/ImportFileDefinition"
+          },
+          "type": "array"
         },
         "contexts": {
           "additionalProperties": {
             "$ref": "#/$defs/ContextDefinition"
           },
-          "type": "object",
-          "description": "Contexts is a map of contexts to use\nfor specific tasks"
+          "type": "object"
         },
         "pipelines": {
           "additionalProperties": {
@@ -74,15 +72,13 @@
             },
             "type": "array"
           },
-          "type": "object",
-          "description": "Pipelines are a set of tasks wrapped in additional run conditions\ne.g. depends on or allow failure"
+          "type": "object"
         },
         "tasks": {
           "additionalProperties": {
             "$ref": "#/$defs/TaskDefinition"
           },
-          "type": "object",
-          "description": "Tasks are the most basic building blocks of eirctl"
+          "type": "object"
         },
         "watchers": {
           "additionalProperties": {
@@ -108,27 +104,22 @@
             "raw",
             "cockpit",
             "prefixed"
-          ],
-          "description": "Output sets globally the output type for all tasks and pipelines"
+          ]
         },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Variables are the top most variables and will be merged and overwritten with lower level\nspecifications.\ne.g. variable of Version=123\nwill be overwritten by a variables specified in this order, lowest takes the highest precedence\n- context\n- pipeline\n- task\n- commandline.\nVariables can be used inside templating using the text/template go package"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "ci_meta": {
-          "$ref": "#/$defs/Generator",
-          "description": "Generator defines the options for the desired CI yaml generation\nCurrently these are just map[string]any so that the user can specify the desired behaviour\nNOTE: will provide no build time safety"
+          "$ref": "#/$defs/Generator"
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "description": "ConfigDefinition holds the top most config definition this can be parsed from a yaml, json, toml files/mediaTypes"
+      "type": "object"
     },
     "Container": {
       "properties": {
         "name": {
-          "type": "string",
-          "description": "Name is the name of the container\n\ncan be specified in the following formats\n\n- \u003cimage-name\u003e (Same as using \u003cimage-name\u003e with the latest tag)\n\n- \u003cimage-name\u003e:\u003ctag\u003e\n\n- \u003cimage-name\u003e@\u003cdigest\u003e\n\nIf the known runtime is podman it should include the registry domain\ne.g. `docker.io/alpine:latest`"
+          "type": "string"
         },
         "entrypoint": {
           "$ref": "#/$defs/StringSlice",
@@ -139,38 +130,31 @@
             {
               "type": "array"
             }
-          ],
-          "description": "Entrypoint Overwrites the default ENTRYPOINT of the image"
+          ]
         },
         "enable_dind": {
-          "type": "boolean",
-          "description": "EnableDinD mounts the docker sock...\n\n\u003e highly discouraged"
+          "type": "boolean"
         },
         "enable_mount": {
-          "type": "boolean",
-          "description": "EnableBindMount signifies whether to use the --volume or --mount specification.\nDefault false.\nwill use --volume as a default"
+          "type": "boolean"
         },
         "container_args": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the only the -v|--volume and -u|--user -p|--port args get parsed."
+          "type": "array"
         },
         "shell": {
-          "type": "string",
-          "description": "Shell will be used to run the command in a specific shell on the container\n\nMust exist in the container"
+          "type": "string"
         },
         "shell_args": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
+          "type": "array"
         },
         "pull_timeout": {
           "type": "integer",
-          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled\nDefault: 0\n0 means infinite wait",
           "default": 0
         }
       },
@@ -178,8 +162,7 @@
       "type": "object",
       "required": [
         "name"
-      ],
-      "description": "Container is the specific context for containers only available to docker API compliant implementations"
+      ]
     },
     "ContextDefinition": {
       "properties": {
@@ -190,53 +173,43 @@
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Up runs once at the beginning of the usage of the context\nThese are run in the mvdn.sh on the host"
+          "type": "array"
         },
         "down": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Down runs once at the end of the usage of the context\nThese are run in the mvdn.sh on the host"
+          "type": "array"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Before runs any commands prior to the tasks' commands\nThese are run in the mvdn.sh on the host"
+          "type": "array"
         },
         "after": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "After runs after the commads of the task that use this context have run\nNB: these are run irrespective of the state of the task, this can be useful\nfor clean up operations and similar.\nThese are run in the mvdn.sh on the host"
+          "type": "array"
         },
         "env": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Env is supplied from config file definition and is merged with the\ncurrent process environment variables list\n\nUser supplied env map will overwrite any keys inside the process env\nTODO: check this is desired behaviour"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "envfile": {
-          "$ref": "#/$defs/Envfile",
-          "description": "Envfile is a special block for use in executables that support file mapping\ne.g. podman or docker\n\nNote: Envfile in the container context will ignore the generate flag\nit will however respect all the other directives of include/exclude and modify operations"
+          "$ref": "#/$defs/Envfile"
         },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Variables"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "executable": {
-          "$ref": "#/$defs/Binary",
-          "description": "Executable block holds the exec info"
+          "$ref": "#/$defs/Binary"
         },
         "quote": {
-          "type": "string",
-          "description": "Quote is the quote char to use when parsing commands into executables like docker"
+          "type": "string"
         },
         "container": {
-          "$ref": "#/$defs/Container",
-          "description": "Container is the specific context for containers\nonly available to docker API compliant implementations\n\ne.g. docker and podman\n\nThe aim is to remove some of the boilerplate away from the existing more\ngeneric context and introduce a specific context for tasks run in containers.\n\nExample:\n\n```yaml\ncontainer:\n  image:\n    name: alpine\n    # entrypoint: \"\"\n    # shell: sh # default sh\n    # args: nil\n```"
+          "$ref": "#/$defs/Container"
         }
       },
       "additionalProperties": false,
@@ -264,8 +237,7 @@
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "list of variables to be excluded\nfrom the injection into container runtimes\n\nCurrently this is based on a prefix\n\nExample:\nHOME=foo,HOMELAB=bar\n\nBoth of these will be skipped"
+          "type": "array"
         },
         "include": {
           "items": {
@@ -282,37 +254,31 @@
             {
               "type": "array"
             }
-          ],
-          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions.\n\nPath supports both a single value or a list specification"
+          ]
         },
         "replace_char": {
           "type": "string"
         },
         "quote": {
-          "type": "boolean",
-          "description": "Quote specify the quote character to use"
+          "type": "boolean"
         },
         "modify": {
           "items": {
             "$ref": "#/$defs/ModifyEnv"
           },
-          "type": "array",
-          "description": "Modify specifies the modifications to make to each env var and whether it meets the criteria\nexample:\n- pattern: \"^(?P\u003ckeyword\u003eTF_VAR_)(?P\u003cvarname\u003e.*)\"\n\t operation: lower\nthe inputs are validated at task/pipeline build time and will fail if the\n\u003ckeyword\u003e and \u003cvarname\u003e sub expressions are not present in the `pattern`"
+          "type": "array"
         },
         "generated_dir": {
-          "type": "string",
-          "description": "defaults to .eirctl in the current directory\nagain this should be hidden from the user..."
+          "type": "string"
         }
       },
       "additionalProperties": false,
-      "type": "object",
-      "description": "Envile is a structure for storing the information required to generate an envfile which can be consumed by the specified binary"
+      "type": "object"
     },
     "Generator": {
       "properties": {
         "version": {
-          "type": "string",
-          "description": "Version sets the version of eirctl to use for generation of default tasks, defaults to the current version of the binary"
+          "type": "string"
         },
         "targetOpts": {
           "type": "object"
@@ -320,6 +286,21 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ImportFileDefinition": {
+      "properties": {
+        "src": {
+          "type": "string"
+        },
+        "dest": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "src"
+      ]
     },
     "ModifyEnv": {
       "properties": {
@@ -358,20 +339,16 @@
       ],
       "properties": {
         "name": {
-          "type": "string",
-          "description": "Name is the friendly name to give to pipeline"
+          "type": "string"
         },
         "condition": {
-          "type": "string",
-          "description": "Condition evaluates whether to run this task or not within a given Schedule (Pipeline).\nThis always runs in the default Executor and does not inherit any pipeline or task variables and environment.\n\nThe condition must be a valid shell syntax and returns a non-zero (0) exit code for the task to be skipped inside a pipeline."
+          "type": "string"
         },
         "task": {
-          "type": "string",
-          "description": "Task is the pointer to the task to run\nit has to match the key in tasks map"
+          "type": "string"
         },
         "pipeline": {
-          "type": "string",
-          "description": "Pipeline is the name of the pipeline to run\nTask and Pipeline are mutually exclusive\nif both are specified task will win"
+          "type": "string"
         },
         "depends_on": {
           "$ref": "#/$defs/StringSlice",
@@ -382,32 +359,25 @@
             {
               "type": "array"
             }
-          ],
-          "description": "DependsOn"
+          ]
         },
         "allow_failure": {
-          "type": "boolean",
-          "description": "AllowFailure"
+          "type": "boolean"
         },
         "dir": {
-          "type": "string",
-          "description": "Dir is the place where to run the task(s) in.\nIf empty - currentDir is used"
+          "type": "string"
         },
         "env": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Env is the Key: Value map of env vars to inject into the tasks within this pipeline"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "envfile": {
-          "$ref": "#/$defs/Envfile",
-          "description": "EnvFile definition to set on the stage (eirctl pipeline)\n\nIf a list is supplied than the order in which they are supplied will be respected\nlater elements in the list will overwrite keys specified previously"
+          "$ref": "#/$defs/Envfile"
         },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Variables is the Key: Value map of vars vars to inject into the tasks"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "ci_meta": {
-          "type": "object",
-          "description": "Generator PipelineLevel"
+          "type": "object"
         }
       },
       "additionalProperties": false,
@@ -419,22 +389,19 @@
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Vars is a list of required variables by the task\nIt is case sensitive\nIt checks both the default vars, supplied vars, and Environment variables"
+          "type": "array"
         },
         "env": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Env will identify any missing environment variables\nIt checks complete env vars - merged from global \u003e context \u003e pipeline \u003e task"
+          "type": "array"
         },
         "args": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Args checks any args supplied after `--`"
+          "type": "array"
         }
       },
       "additionalProperties": false,
@@ -473,26 +440,22 @@
             {
               "type": "array"
             }
-          ],
-          "description": "Command is the actual command to run in either a specified executable or\nin mvdn.shell"
+          ]
         },
         "after": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "After runs after the commads of the task have completed\nIf a task errors these are not run"
+          "type": "array"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array",
-          "description": "Before runs before the commads of the task have run"
+          "type": "array"
         },
         "context": {
-          "type": "string",
-          "description": "Context is the pointer to the key in the context map\nit must exist else it will fallback to default context"
+          "type": "string"
         },
         "variations": {
           "items": {
@@ -501,12 +464,10 @@
             },
             "type": "object"
           },
-          "type": "array",
-          "description": "Variations is per execution env var mutator\nthe number of variations in the list defines the number of times the command will be run\nif using the default executor, see `ResetContext` if you need"
+          "type": "array"
         },
         "dir": {
-          "type": "string",
-          "description": "Dir to run the command from\nIf empty defaults to current directory"
+          "type": "string"
         },
         "timeout": {
           "type": "integer"
@@ -521,29 +482,23 @@
           "$ref": "#/$defs/Artifact"
         },
         "env": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Env key=value map that will overwrite everything set at a higher level"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "envfile": {
-          "$ref": "#/$defs/Envfile",
-          "description": "EnvFile is an object points to a path of an env file.\n\nThis file is read dynamically each time before the task execution.\nAny keys specified in the `env` key=value map will overwrite those set in the env file.\n\nThe precedence of environment setting can be summarized as below\nContext \u003c Pipeline \u003c Task\n\nThis means that whilst all env vars will be merged downwards to the task\ni.e. key specified at a task level will overwrite those set at any level above.\n\nSetting a key in an envfile with the same name will be overwritten by an `env.key`."
+          "$ref": "#/$defs/Envfile"
         },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
-          "description": "Variables merged with others if any already priovided\nThese will overwrite any previously set keys"
+          "$ref": "#/$defs/EnvVarMapType"
         },
         "reset_context": {
           "type": "boolean",
-          "description": "ResetContext ensures each invocation of the variation is run with a Reset on the executor.\nCurrently only applies to a default executor and when run in variations.",
           "default": false
         },
         "ci_meta": {
-          "type": "object",
-          "description": "Generator is the CI meta properties that will only be used during a generate process"
+          "type": "object"
         },
         "required": {
-          "$ref": "#/$defs/RequiredInput",
-          "description": "Required specifies any required inputs into the task"
+          "$ref": "#/$defs/RequiredInput"
         }
       },
       "additionalProperties": false,

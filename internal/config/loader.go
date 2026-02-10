@@ -3,10 +3,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
@@ -15,6 +17,9 @@ import (
 
 // ErrConfigNotFound occurs when requested config file does not exists
 var ErrConfigNotFound = errors.New("config file not found")
+
+// EirctlScriptsDir is the directory where imported files are placed
+const EirctlScriptsDir = ".eirctl/scripts"
 
 // Loader reads and parses config files
 //
@@ -82,6 +87,12 @@ func (cl *Loader) Load(file string) (*Config, error) {
 
 	def, err := cl.load(file)
 	if err != nil {
+		return nil, err
+	}
+
+	// Process import_files entries - fetch files from remote/local sources
+	// and write them to .eirctl/scripts/ directory
+	if err := cl.processImportFiles(def); err != nil {
 		return nil, err
 	}
 
@@ -296,6 +307,101 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 }
 
 var ErrImportKeyClash = errors.New("imported file contains a clash")
+
+// ErrImportFileFailed occurs when an import_files entry fails to be fetched or written
+var ErrImportFileFailed = errors.New("import file failed")
+
+// GetBaseFilename extracts the basename from a source path, stripping query parameters
+// e.g. "path/file.sh?ref=v1.0" -> "file.sh"
+func GetBaseFilename(src string) string {
+	// For git URLs, strip the ?ref= part before getting basename
+	if idx := strings.Index(src, "?"); idx != -1 {
+		src = src[:idx]
+	}
+	return filepath.Base(src)
+}
+
+// processImportFiles processes the import_files entries from the config definition
+// fetching file content from git/URL/local sources.
+// When dest is specified, files are written relative to the project root.
+// When dest is omitted, files are written to .eirctl/scripts/<basename>.
+func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
+	if len(config.ImportFiles) == 0 {
+		return nil
+	}
+
+	for _, importFile := range config.ImportFiles {
+		if importFile.Src == "" {
+			return fmt.Errorf("%w: import_files entry has empty src", ErrImportFileFailed)
+		}
+
+		content, err := cl.fetchFileContent(importFile.Src)
+		if err != nil {
+			return fmt.Errorf("%w: failed to fetch %s: %v", ErrImportFileFailed, importFile.Src, err)
+		}
+
+		var destPath string
+		if importFile.Dest != "" {
+			// explicit dest is relative to the project root
+			destPath = filepath.Join(cl.dir, importFile.Dest)
+		} else {
+			// default to .eirctl/scripts/<basename> (strip query params)
+			destPath = filepath.Join(cl.dir, EirctlScriptsDir, GetBaseFilename(importFile.Src))
+		}
+
+		// support nested dest paths by creating subdirectories
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("%w: failed to create directory for %s: %v", ErrImportFileFailed, destPath, err)
+		}
+
+		// write with executable permissions for scripts
+		if err := os.WriteFile(destPath, content, 0755); err != nil {
+			return fmt.Errorf("%w: failed to write %s: %v", ErrImportFileFailed, destPath, err)
+		}
+		logrus.Debugf("import_files: %s -> %s", importFile.Src, destPath)
+	}
+
+	return nil
+}
+
+// fetchFileContent retrieves the raw bytes of a file from a git, URL, or local source
+func (cl *Loader) fetchFileContent(src string) ([]byte, error) {
+	if IsGit(src) {
+		gs, err := NewGitSource(src)
+		if err != nil {
+			return nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
+		}
+		if err := gs.Clone(); err != nil {
+			return nil, err
+		}
+		return gs.FileContent()
+	}
+
+	if utils.IsURL(src) {
+		resp, err := http.Get(src)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("%d: file request failed - %s", resp.StatusCode, src)
+		}
+		return io.ReadAll(resp.Body)
+	}
+
+	// local filesystem
+	localPath := src
+	if !filepath.IsAbs(src) {
+		localPath = filepath.Join(cl.dir, src)
+	}
+
+	if !utils.FileExists(localPath) {
+		return nil, fmt.Errorf("%s: file not found", localPath)
+	}
+
+	return os.ReadFile(localPath)
+}
 
 // mergeExistingWithImported merges top level keys only and errors on duplicate tasks/pipelines/contexts via imports
 //
