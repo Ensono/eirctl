@@ -440,7 +440,9 @@ func TestUtils_DefaultTaskctlEnv(t *testing.T) {
 
 func TestUtils_ReaderFromPath(t *testing.T) {
 	t.Parallel()
-	tf, _ := os.CreateTemp("", "test-reader-*.env")
+	testDir := filepath.Join("testdata", "sandbox_test")
+	os.MkdirAll(testDir, 0755)
+	tf, _ := os.CreateTemp(testDir, "test-reader-*.env")
 	_, err := tf.Write([]byte(`FOO=bar`))
 	if err != nil {
 		t.Fatal(err)
@@ -466,19 +468,22 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 }
 
 func TestUtils_ReaderFromPath_WithEnvVarExpansion(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "test-envvar-expansion-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
+	testDir := filepath.Join("testdata", "sandbox_test_expand")
+	os.MkdirAll(testDir, 0755)
+	defer os.RemoveAll(testDir)
 
 	envContent := "ENV_VAR=dev"
-	envFilePath := filepath.Join(tmpDir, "environment.env")
+	envFilePath := filepath.Join(testDir, "environment.env")
 	if err := os.WriteFile(envFilePath, []byte(envContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("EIRCTL_TEST_ENVFILE_DIR", tmpDir)
+	// Get the absolute path of testDir so the env var expands to an absolute path inside the sandbox
+	absTestDir, err := filepath.Abs(testDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EIRCTL_TEST_ENVFILE_DIR", absTestDir)
 
 	ef := utils.NewEnvFile()
 	ef.WithPath([]string{"$EIRCTL_TEST_ENVFILE_DIR/environment.env"})
@@ -498,6 +503,62 @@ func TestUtils_ReaderFromPath_WithEnvVarExpansion(t *testing.T) {
 	}
 	if string(b) != envContent {
 		t.Errorf("got %q, want %q", string(b), envContent)
+	}
+}
+
+func TestIsPathInsideSandbox(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("path inside working directory", func(t *testing.T) {
+		p := filepath.Join(wd, "configs", "app.env")
+		if !utils.IsPathInsideSandbox(p) {
+			t.Errorf("expected %q to be inside sandbox", p)
+		}
+	})
+
+	t.Run("relative path stays in project", func(t *testing.T) {
+		if !utils.IsPathInsideSandbox("subdir/file.env") {
+			t.Error("expected relative path to be inside sandbox")
+		}
+	})
+
+	t.Run("path outside sandbox is rejected", func(t *testing.T) {
+		if utils.IsPathInsideSandbox("/etc/shadow") {
+			t.Error("expected /etc/shadow to be outside sandbox")
+		}
+	})
+
+	t.Run("path traversal is rejected", func(t *testing.T) {
+		p := filepath.Join(wd, "..", "..", "etc", "passwd")
+		if utils.IsPathInsideSandbox(p) {
+			t.Errorf("expected traversal path %q to be outside sandbox", p)
+		}
+	})
+}
+
+func TestUtils_ReaderFromPath_OutsideSandbox(t *testing.T) {
+	// Point an env var to a system directory outside the project.
+	// The file doesn't need to exist — the sandbox check should
+	// reject it before os.Stat is called.
+	outsidePath := "/etc"
+	if runtime.GOOS == "windows" {
+		outsidePath = `C:\Windows`
+	}
+
+	t.Setenv("EVIL_PATH", outsidePath)
+
+	ef := utils.NewEnvFile()
+	ef.WithPath([]string{"$EVIL_PATH/secret.env"})
+
+	r, _ := utils.ReaderFromPath(ef)
+	if len(r) > 0 {
+		for _, reader := range r {
+			reader.Close()
+		}
+		t.Error("expected no readers for path outside sandbox")
 	}
 }
 

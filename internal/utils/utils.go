@@ -277,8 +277,34 @@ func MustGetUserHomeDir() string {
 	return hd
 }
 
+// ErrPathOutsideSandbox is returned when a resolved path escapes the allowed directories.
+var ErrPathOutsideSandbox = errors.New("resolved path is outside allowed directories")
+
+// IsPathInsideSandbox checks whether the resolved path is contained within
+// the project working directory.
+// This prevents environment variable expansion from being used to redirect
+// file reads to arbitrary locations on the filesystem, which is important
+// because configs can cross the HTTP/local filesystem trust boundary.
+func IsPathInsideSandbox(resolvedPath string) bool {
+	absPath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return false
+	}
+	absPath = filepath.Clean(absPath)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	wd = filepath.Clean(wd)
+	return strings.HasPrefix(absPath, wd+string(filepath.Separator)) || absPath == wd
+}
+
 // ReaderFromPath returns an io.ReaderCloser from provided path
-// Returning false if the file does not exist or is unable to read it
+// Returning false if the file does not exist or is unable to read it.
+// Environment variables in paths are expanded, but the resolved path
+// is sandboxed to the project working directory to prevent path
+// traversal attacks via compromised remote configs.
 func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	if envfile == nil {
 		return nil, false
@@ -286,6 +312,10 @@ func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	readers := []io.ReadCloser{}
 	for _, envfilepath := range envfile.PathValue {
 		envfilepath = os.ExpandEnv(envfilepath)
+		if !IsPathInsideSandbox(envfilepath) {
+			logrus.Warnf("envfile path %q resolves outside the project directory, skipping", envfilepath)
+			continue
+		}
 		if fileinfo, err := os.Stat(envfilepath); fileinfo != nil && err == nil {
 			f, err := os.Open(envfilepath)
 			if err != nil {
