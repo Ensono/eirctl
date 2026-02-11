@@ -537,6 +537,50 @@ func TestIsPathInsideSandbox(t *testing.T) {
 			t.Errorf("expected traversal path %q to be outside sandbox", p)
 		}
 	})
+
+	t.Run("symlink to outside is rejected", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink creation requires elevated privileges on Windows")
+		}
+		// Create a symlink inside the working directory pointing outside
+		linkDir := filepath.Join("testdata", "symlink_test")
+		os.MkdirAll(linkDir, 0755)
+		defer os.RemoveAll(linkDir)
+
+		linkPath := filepath.Join(linkDir, "escape")
+		os.Remove(linkPath) // clean up any prior run
+		if err := os.Symlink("/etc", linkPath); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+
+		target := filepath.Join(linkPath, "passwd")
+		if utils.IsPathInsideSandbox(target) {
+			t.Errorf("expected symlinked path %q to be outside sandbox", target)
+		}
+	})
+
+	t.Run("symlink within project is allowed", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink creation requires elevated privileges on Windows")
+		}
+		// Create a real file and a symlink to it, both inside the working directory
+		linkDir := filepath.Join("testdata", "symlink_test_happy")
+		os.MkdirAll(linkDir, 0755)
+		defer os.RemoveAll(linkDir)
+
+		realFile := filepath.Join(linkDir, "real.env")
+		os.WriteFile(realFile, []byte("OK=true"), 0644)
+
+		linkPath := filepath.Join(linkDir, "link.env")
+		os.Remove(linkPath)
+		if err := os.Symlink(realFile, linkPath); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+
+		if !utils.IsPathInsideSandbox(linkPath) {
+			t.Errorf("expected symlinked path %q within project to be inside sandbox", linkPath)
+		}
+	})
 }
 
 func TestUtils_ReaderFromPath_OutsideSandbox(t *testing.T) {

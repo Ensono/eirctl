@@ -285,19 +285,28 @@ var ErrPathOutsideSandbox = errors.New("resolved path is outside allowed directo
 // This prevents environment variable expansion from being used to redirect
 // file reads to arbitrary locations on the filesystem, which is important
 // because configs can cross the HTTP/local filesystem trust boundary.
+// Symlinks are resolved to their real target to prevent symlink-based bypasses.
 func IsPathInsideSandbox(resolvedPath string) bool {
 	absPath, err := filepath.Abs(resolvedPath)
 	if err != nil {
 		return false
 	}
-	absPath = filepath.Clean(absPath)
+	// Resolve symlinks to get the real path on disk
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If the file doesn't exist yet, fall back to the cleaned abs path
+		realPath = filepath.Clean(absPath)
+	}
 
 	wd, err := os.Getwd()
 	if err != nil {
 		return false
 	}
-	wd = filepath.Clean(wd)
-	return strings.HasPrefix(absPath, wd+string(filepath.Separator)) || absPath == wd
+	realWd, err := filepath.EvalSymlinks(wd)
+	if err != nil {
+		realWd = filepath.Clean(wd)
+	}
+	return strings.HasPrefix(realPath, realWd+string(filepath.Separator)) || realPath == realWd
 }
 
 // ReaderFromPath returns an io.ReaderCloser from provided path

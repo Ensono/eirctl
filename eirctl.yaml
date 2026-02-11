@@ -15,6 +15,27 @@ contexts:
     container:
       name: mirror.gcr.io/bash:5.0.18-alpine3.22
 
+  powershell:
+    container:
+      name: docker.io/ensono/eir-infrastructure:1.2.35
+      shell: pwsh
+      shell_args:
+        - "-NoProfile"
+        - "-NonInteractive"
+        - "-c"
+      container_args:
+        - -v ${EIRCTL_SSH_DIRECTORY}:/root/.ssh
+      # This needs to be true if you wan to run docker in docker e.g. build images within a container
+      enable_dind: true
+      # Provides writable access to host-mounted volumes
+      enable_mount: true
+    env:
+      PSModulePath: /modules
+    envfile:
+      path:
+        #- ${ENV_FILE_LOCATION} # Example of a custom envfile that could be used for specific tasks
+        - ../myenv.env
+
 pipelines:
   build:binary:
     - task: clean
@@ -146,3 +167,11 @@ tasks:
         head -20 .coverage/out
         echo "Coverage file line count:"
         wc -l .coverage/out
+  
+  mytest:
+    context: powershell
+    description: Updates the build number for the project
+    command:
+      - |
+        echo ${env:MESSAGE}
+  
