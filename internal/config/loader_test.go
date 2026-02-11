@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1681,5 +1682,323 @@ tasks:
 	}
 	if _, ok := cfg.Tasks["main_task"]; !ok {
 		t.Error("expected main_task from main config")
+	}
+}
+
+func Test_ImportFiles_URL_Non200Status(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer testSrv.Close()
+
+	projectDir, err := os.MkdirTemp("", "import-url-404-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, testSrv.URL)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for non-200 HTTP response")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_URL_ContentLengthTooLarge(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set Content-Length much larger than MaxImportFileSize (10MB)
+		w.Header().Set("Content-Length", "999999999999")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("small body"))
+	}))
+	defer testSrv.Close()
+
+	projectDir, err := os.MkdirTemp("", "import-url-toolarge-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/bigfile.bin
+    dest: bigfile.bin
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, testSrv.URL)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for oversized Content-Length")
+	}
+	if !strings.Contains(err.Error(), "remote file too large") {
+		t.Errorf("expected 'remote file too large' error, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_LocalFileNotFound(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-notfound-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+import:
+  - src: nonexistent-script.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for missing local file")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_LocalDirNotADirectory(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-notadir-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a regular file, but reference it with trailing slash (directory import)
+	regularFile := filepath.Join(projectDir, "notadir")
+	if err := os.WriteFile(regularFile, []byte("i am a file"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Use trailing slash to trigger directory import on a non-directory path
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/
+    dest: scripts/
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, regularFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for non-directory path with trailing slash")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_LocalDirEmpty(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-emptydir-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create an empty directory to import
+	emptyDir := filepath.Join(projectDir, "empty")
+	if err := os.MkdirAll(emptyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/
+    dest: scripts/
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, emptyDir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for empty directory import")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_DirectoryHashBadFormat(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-dirhash-badformat-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a source directory with a file
+	srcDir := filepath.Join(projectDir, "scripts")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "run.sh"), []byte("#!/bin/bash\necho run\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/
+    dest: imported-scripts/
+    hash: not-a-valid-hash-format
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, srcDir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for bad hash format on directory import")
+	}
+	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_DirectoryHashUnsupportedAlgorithm(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-dirhash-unsupported-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a source directory with a file
+	srcDir := filepath.Join(projectDir, "scripts")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "run.sh"), []byte("#!/bin/bash\necho run\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/
+    dest: imported-scripts/
+    hash: md5:d41d8cd98f00b204e9800998ecf8427e
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, srcDir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for unsupported hash algorithm on directory import")
+	}
+	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_DirStatError(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-dir-staterr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+import:
+  - src: /nonexistent/path/that/does/not/exist/
+    dest: scripts/
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory path")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
 	}
 }
