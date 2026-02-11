@@ -1049,3 +1049,219 @@ func Test_GetBaseFilename(t *testing.T) {
 		})
 	}
 }
+
+func Test_IsDirectoryImport(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{
+			name: "git URL with trailing slash",
+			src:  "git::ssh://github.com/org/repo//scripts/",
+			want: true,
+		},
+		{
+			name: "git URL with trailing slash and ref",
+			src:  "git::ssh://github.com/org/repo//scripts/?ref=main",
+			want: true,
+		},
+		{
+			name: "git URL without trailing slash",
+			src:  "git::ssh://github.com/org/repo//scripts/deploy.sh",
+			want: false,
+		},
+		{
+			name: "local path with trailing slash",
+			src:  "scripts/",
+			want: true,
+		},
+		{
+			name: "local path without trailing slash",
+			src:  "scripts/deploy.sh",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := config.IsDirectoryImport(tt.src)
+			if got != tt.want {
+				t.Errorf("IsDirectoryImport(%q) = %v, want %v", tt.src, got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_ImportFiles_LocalDir(t *testing.T) {
+	// Create a source directory with multiple files in a nested structure
+	srcDir, err := os.MkdirTemp("", "import-dir-src-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(srcDir)
+
+	files := map[string]string{
+		"deploy.sh":       "#!/bin/bash\necho deploy\n",
+		"init.sh":         "#!/bin/bash\necho init\n",
+		"sub/nested.sh":   "#!/bin/bash\necho nested\n",
+	}
+	for relPath, content := range files {
+		fullPath := filepath.Join(srcDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	projectDir, err := os.MkdirTemp("", "import-dir-project-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Write eirctl config that imports the directory (trailing slash)
+	cfgContent := fmt.Sprintf(`import_files:
+  - src: %s/
+`, srcDir)
+	cfgPath := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// All files should be in .eirctl/scripts/ preserving relative paths
+	for relPath, expectedContent := range files {
+		destPath := filepath.Join(projectDir, ".eirctl", "scripts", relPath)
+		content, err := os.ReadFile(destPath)
+		if err != nil {
+			t.Errorf("expected file at %s, got error: %v", destPath, err)
+			continue
+		}
+		if string(content) != expectedContent {
+			t.Errorf("file %s: got %q, want %q", relPath, string(content), expectedContent)
+		}
+	}
+}
+
+func Test_ImportFiles_LocalDirExplicitDest(t *testing.T) {
+	srcDir, err := os.MkdirTemp("", "import-dir-dest-src-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(srcDir)
+
+	if err := os.WriteFile(filepath.Join(srcDir, "build.sh"), []byte("#!/bin/bash\necho build\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir, err := os.MkdirTemp("", "import-dir-dest-project-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	cfgContent := fmt.Sprintf(`import_files:
+  - src: %s/
+    dest: my-scripts
+`, srcDir)
+	cfgPath := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "my-scripts", "build.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != "#!/bin/bash\necho build\n" {
+		t.Errorf("got %q, want %q", string(content), "#!/bin/bash\necho build\n")
+	}
+}
+
+func Test_ImportFiles_GitDir(t *testing.T) {
+	// Create git repo with a scripts/ directory containing multiple files
+	_, dir := createFilesystemTestRepo(t, map[string]string{
+		"scripts/deploy.sh": "#!/bin/bash\necho deploy from git\n",
+		"scripts/init.sh":   "#!/bin/bash\necho init from git\n",
+		"other/unrelated":   "should not be imported",
+	}, "")
+	defer os.RemoveAll(dir)
+
+	projectDir, err := os.MkdirTemp("", "import-gitdir-project-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	cfgContent := fmt.Sprintf(`import_files:
+  - src: git::file://%s//scripts/
+`, dir)
+	cfgPath := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// deploy.sh and init.sh should be in .eirctl/scripts/
+	for _, name := range []string{"deploy.sh", "init.sh"} {
+		destPath := filepath.Join(projectDir, ".eirctl", "scripts", name)
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			t.Errorf("expected file %s to exist", destPath)
+		}
+	}
+
+	// unrelated file from other/ should NOT be present
+	unrelatedPath := filepath.Join(projectDir, ".eirctl", "scripts", "unrelated")
+	if _, err := os.Stat(unrelatedPath); !os.IsNotExist(err) {
+		t.Errorf("did not expect %s to exist", unrelatedPath)
+	}
+}
+
+func Test_ImportFiles_DirURLNotSupported(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-dir-url-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	cfgContent := `import_files:
+  - src: https://example.com/scripts/
+`
+	cfgPath := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(cfgPath)
+	if err == nil {
+		t.Fatal("expected error for HTTP directory import, got nil")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}

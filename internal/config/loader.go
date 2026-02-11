@@ -331,10 +331,34 @@ func GetBaseFilename(src string) string {
 	return filepath.Base(src)
 }
 
+// IsDirectoryImport returns true if the src path indicates a directory import.
+// A trailing slash on the file/directory path (after stripping query params) signals
+// that the import target is a directory rather than a single file.
+func IsDirectoryImport(src string) bool {
+	// strip query params first
+	clean := src
+	if idx := strings.Index(clean, "?"); idx != -1 {
+		clean = clean[:idx]
+	}
+
+	// For git URLs, check the path portion after //
+	if IsGit(clean) {
+		parts := strings.SplitN(clean, "//", 3)
+		if len(parts) == 3 {
+			return strings.HasSuffix(parts[2], "/")
+		}
+		return false
+	}
+
+	return strings.HasSuffix(clean, "/") || strings.HasSuffix(clean, string(filepath.Separator))
+}
+
 // processImportFiles processes the import_files entries from the config definition
 // fetching file content from git/URL/local sources.
 // When dest is specified, files are written relative to the project root.
 // When dest is omitted, files are written to .eirctl/scripts/<basename>.
+// A trailing slash on the src path signals a directory import — all files in the
+// directory are fetched and written preserving their relative structure.
 func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
 	if len(config.ImportFiles) == 0 {
 		return nil
@@ -345,37 +369,77 @@ func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
 			return fmt.Errorf("%w: import_files entry has empty src", ErrImportFileFailed)
 		}
 
+		if IsDirectoryImport(importFile.Src) {
+			if err := cl.processDirectoryImport(importFile); err != nil {
+				return err
+			}
+			continue
+		}
+
 		content, err := cl.fetchFileContent(importFile.Src)
 		if err != nil {
 			return fmt.Errorf("%w: failed to fetch %s: %v", ErrImportFileFailed, importFile.Src, err)
 		}
 
+		if err := cl.writeImportedFile(importFile.Src, importFile.Dest, content); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeImportedFile writes a single imported file to the appropriate destination,
+// applying path traversal protection.
+func (cl *Loader) writeImportedFile(src, dest string, content []byte) error {
+	var destPath string
+	if dest != "" {
+		// explicit dest is relative to the project root
+		destPath = filepath.Join(cl.dir, dest)
+	} else {
+		// default to .eirctl/scripts/<basename> (strip query params)
+		destPath = filepath.Join(cl.dir, EirctlScriptsDir, GetBaseFilename(src))
+	}
+
+	// Guard against path traversal (e.g. dest: "../../.bashrc")
+	cleanRoot := filepath.Clean(cl.dir) + string(filepath.Separator)
+	cleanDest := filepath.Clean(destPath)
+	if !strings.HasPrefix(cleanDest, cleanRoot) && cleanDest != filepath.Clean(cl.dir) {
+		return fmt.Errorf("%w: %s resolves outside project root %s", ErrPathTraversal, dest, cl.dir)
+	}
+
+	// support nested dest paths by creating subdirectories
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return fmt.Errorf("%w: failed to create directory for %s: %v", ErrImportFileFailed, destPath, err)
+	}
+
+	// write with executable permissions for scripts
+	if err := os.WriteFile(destPath, content, 0755); err != nil {
+		return fmt.Errorf("%w: failed to write %s: %v", ErrImportFileFailed, destPath, err)
+	}
+	logrus.Debugf("import_files: %s -> %s", src, destPath)
+	return nil
+}
+
+// processDirectoryImport handles a single import_files entry that targets a directory.
+// All files within the directory are fetched and written preserving relative paths.
+func (cl *Loader) processDirectoryImport(importFile ImportFileDefinition) error {
+	files, err := cl.fetchDirContent(importFile.Src)
+	if err != nil {
+		return fmt.Errorf("%w: failed to fetch directory %s: %v", ErrImportFileFailed, importFile.Src, err)
+	}
+
+	for relPath, content := range files {
 		var destPath string
 		if importFile.Dest != "" {
-			// explicit dest is relative to the project root
-			destPath = filepath.Join(cl.dir, importFile.Dest)
+			destPath = filepath.Join(importFile.Dest, relPath)
 		} else {
-			// default to .eirctl/scripts/<basename> (strip query params)
-			destPath = filepath.Join(cl.dir, EirctlScriptsDir, GetBaseFilename(importFile.Src))
+			destPath = filepath.Join(EirctlScriptsDir, relPath)
 		}
 
-		// Guard against path traversal (e.g. dest: "../../.bashrc")
-		cleanRoot := filepath.Clean(cl.dir) + string(filepath.Separator)
-		cleanDest := filepath.Clean(destPath)
-		if !strings.HasPrefix(cleanDest, cleanRoot) && cleanDest != filepath.Clean(cl.dir) {
-			return fmt.Errorf("%w: %s resolves outside project root %s", ErrPathTraversal, importFile.Dest, cl.dir)
+		if err := cl.writeImportedFile(importFile.Src, destPath, content); err != nil {
+			return err
 		}
-
-		// support nested dest paths by creating subdirectories
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return fmt.Errorf("%w: failed to create directory for %s: %v", ErrImportFileFailed, destPath, err)
-		}
-
-		// write with executable permissions for scripts
-		if err := os.WriteFile(destPath, content, 0755); err != nil {
-			return fmt.Errorf("%w: failed to write %s: %v", ErrImportFileFailed, destPath, err)
-		}
-		logrus.Debugf("import_files: %s -> %s", importFile.Src, destPath)
 	}
 
 	return nil
@@ -423,6 +487,80 @@ func (cl *Loader) fetchFileContent(src string) ([]byte, error) {
 	}
 
 	return os.ReadFile(localPath)
+}
+
+// ErrDirImportNotSupported occurs when attempting to import a directory over HTTP
+var ErrDirImportNotSupported = errors.New("directory import not supported over HTTP")
+
+// fetchDirContent retrieves all files in a directory from a git or local source.
+// Returns a map of relative file paths to their content.
+// Directory import is not supported for plain URL sources.
+func (cl *Loader) fetchDirContent(src string) (map[string][]byte, error) {
+	if IsGit(src) {
+		gs, err := NewGitSource(src)
+		if err != nil {
+			return nil, fmt.Errorf("incorrectly formatted git source: %w", err)
+		}
+		if err := gs.Clone(); err != nil {
+			return nil, fmt.Errorf("git clone failed: %w", err)
+		}
+		files, err := gs.DirContent()
+		if err != nil {
+			return nil, fmt.Errorf("git directory retrieval failed: %w", err)
+		}
+		return files, nil
+	}
+
+	if utils.IsURL(src) {
+		return nil, ErrDirImportNotSupported
+	}
+
+	// local filesystem directory
+	localPath := src
+	if !filepath.IsAbs(src) {
+		localPath = filepath.Join(cl.dir, src)
+	}
+
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("%s: directory not found: %w", localPath, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s: not a directory", localPath)
+	}
+
+	result := make(map[string][]byte)
+	err = filepath.WalkDir(localPath, func(filePath string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(localPath, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to compute relative path: %w", err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", filePath, err)
+		}
+
+		// normalise to forward slashes for consistency across platforms
+		result[filepath.ToSlash(relPath)] = content
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%s: directory is empty", localPath)
+	}
+
+	return result, nil
 }
 
 // mergeExistingWithImported merges top level keys only and errors on duplicate tasks/pipelines/contexts via imports
