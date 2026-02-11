@@ -636,10 +636,10 @@ func Test_GitSource_FileContent(t *testing.T) {
 
 func Test_GitSource_DirContent(t *testing.T) {
 	repo := createTestRepo(t, map[string]string{
-		"scripts/deploy.sh":       "#!/bin/bash\necho deploy\n",
-		"scripts/init.sh":         "#!/bin/bash\necho init\n",
-		"scripts/sub/nested.sh":   "#!/bin/bash\necho nested\n",
-		"other/unrelated.txt":     "should not appear",
+		"scripts/deploy.sh":     "#!/bin/bash\necho deploy\n",
+		"scripts/init.sh":       "#!/bin/bash\necho init\n",
+		"scripts/sub/nested.sh": "#!/bin/bash\necho nested\n",
+		"other/unrelated.txt":   "should not appear",
 	}, "", "")
 
 	t.Run("retrieves all files in directory", func(t *testing.T) {

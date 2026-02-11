@@ -1102,9 +1102,9 @@ func Test_ImportFiles_LocalDir(t *testing.T) {
 	defer os.RemoveAll(srcDir)
 
 	files := map[string]string{
-		"deploy.sh":       "#!/bin/bash\necho deploy\n",
-		"init.sh":         "#!/bin/bash\necho init\n",
-		"sub/nested.sh":   "#!/bin/bash\necho nested\n",
+		"deploy.sh":     "#!/bin/bash\necho deploy\n",
+		"init.sh":       "#!/bin/bash\necho init\n",
+		"sub/nested.sh": "#!/bin/bash\necho nested\n",
 	}
 	for relPath, content := range files {
 		fullPath := filepath.Join(srcDir, relPath)
