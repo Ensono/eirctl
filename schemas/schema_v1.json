@@ -55,17 +55,32 @@
       "properties": {
         "import": {
           "items": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "src": {
+                    "type": "string",
+                    "description": "Source path for the import"
+                  },
+                  "hash": {
+                    "type": "string",
+                    "description": "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"
+                  },
+                  "dest": {
+                    "type": "string",
+                    "description": "Destination path relative to project root (signals file import)"
+                  }
+                },
+                "required": ["src"]
+              }
+            ]
           },
           "type": "array",
-          "description": "Import is a list of additional resources to bring into the main config\nthese can be remote or local resources"
-        },
-        "import_files": {
-          "items": {
-            "$ref": "#/$defs/ImportFileDefinition"
-          },
-          "type": "array",
-          "description": "ImportFiles is a list of file definitions to import from remote or local sources\nand place into the .eirctl/scripts/ directory"
+          "description": "Import is a list of additional resources to bring into the main config.\nSupports both plain strings (backward compatible config imports) and objects with src/hash/dest fields.\nEntries with a dest field are treated as file imports and written to disk."
         },
         "contexts": {
           "additionalProperties": {
@@ -327,24 +342,6 @@
       },
       "additionalProperties": false,
       "type": "object"
-    },
-    "ImportFileDefinition": {
-      "properties": {
-        "src": {
-          "type": "string",
-          "description": "Src is the source path for the file to import\nsupports the same protocols as import: git::ssh://, git::https://, https://, local filesystem"
-        },
-        "dest": {
-          "type": "string",
-          "description": "Dest is the destination path relative to the project root\nif not specified, defaults to .eirctl/scripts/\u003cbasename of src\u003e"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "src"
-      ],
-      "description": "ImportFileDefinition defines a file to import from a remote or local source When dest is specified, files are placed relative to the project root."
     },
     "ModifyEnv": {
       "properties": {

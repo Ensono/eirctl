@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,9 +21,6 @@ import (
 
 // ErrConfigNotFound occurs when requested config file does not exists
 var ErrConfigNotFound = errors.New("config file not found")
-
-// EirctlScriptsDir is the directory where imported files are placed
-const EirctlScriptsDir = ".eirctl/scripts"
 
 // MaxImportFileSize is the maximum size of an imported file (10MB)
 const MaxImportFileSize = 10 * 1024 * 1024
@@ -97,8 +97,8 @@ func (cl *Loader) Load(file string) (*Config, error) {
 		return nil, err
 	}
 
-	// Process import_files entries - fetch files from remote/local sources
-	// and write them to .eirctl/scripts/ directory
+	// Process file import entries - fetch files from remote/local sources
+	// and write them to the specified dest path
 	if err := cl.processImportFiles(def); err != nil {
 		return nil, err
 	}
@@ -235,7 +235,14 @@ func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 // parseImports map[string]any is a pointer for intents and purpose so we mutate it here with recursive merges
 func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) error {
 
-	for _, val := range baseConfig.Import {
+	for _, entry := range baseConfig.Import {
+		// Skip file imports — they are handled by processImportFiles
+		if entry.IsFileImport() {
+			continue
+		}
+
+		val := entry.Src
+
 		if utils.IsURL(val) {
 			if cl.imports[val] {
 				// already visited and parsed import file
@@ -315,11 +322,17 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 
 var ErrImportKeyClash = errors.New("imported file contains a clash")
 
-// ErrImportFileFailed occurs when an import_files entry fails to be fetched or written
+// ErrImportFileFailed occurs when a file import entry fails to be fetched or written
 var ErrImportFileFailed = errors.New("import file failed")
 
 // ErrPathTraversal occurs when a dest path escapes the project root
 var ErrPathTraversal = errors.New("dest path traverses outside project root")
+
+// ErrHashMismatch occurs when a downloaded file's hash does not match the expected hash
+var ErrHashMismatch = errors.New("integrity hash mismatch")
+
+// ErrUnsupportedHashAlgorithm occurs when an unsupported hash algorithm is specified
+var ErrUnsupportedHashAlgorithm = errors.New("unsupported hash algorithm")
 
 // GetBaseFilename extracts the basename from a source path, stripping query parameters
 // e.g. "path/file.sh?ref=v1.0" -> "file.sh"
@@ -353,20 +366,28 @@ func IsDirectoryImport(src string) bool {
 	return strings.HasSuffix(clean, "/") || strings.HasSuffix(clean, string(filepath.Separator))
 }
 
-// processImportFiles processes the import_files entries from the config definition
-// fetching file content from git/URL/local sources.
-// When dest is specified, files are written relative to the project root.
-// When dest is omitted, files are written to .eirctl/scripts/<basename>.
+// processImportFiles processes file import entries from the import list,
+// fetching file content from git/URL/local sources and optionally verifying
+// integrity hashes. The dest field is required and specifies where files are
+// written relative to the project root.
 // A trailing slash on the src path signals a directory import — all files in the
 // directory are fetched and written preserving their relative structure.
 func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
-	if len(config.ImportFiles) == 0 {
+	var fileImports []ImportEntry
+
+	for _, entry := range config.Import {
+		if entry.IsFileImport() {
+			fileImports = append(fileImports, entry)
+		}
+	}
+
+	if len(fileImports) == 0 {
 		return nil
 	}
 
-	for _, importFile := range config.ImportFiles {
+	for _, importFile := range fileImports {
 		if importFile.Src == "" {
-			return fmt.Errorf("%w: import_files entry has empty src", ErrImportFileFailed)
+			return fmt.Errorf("%w: import entry has empty src", ErrImportFileFailed)
 		}
 
 		if IsDirectoryImport(importFile.Src) {
@@ -381,6 +402,13 @@ func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
 			return fmt.Errorf("%w: failed to fetch %s: %v", ErrImportFileFailed, importFile.Src, err)
 		}
 
+		// Verify hash if specified
+		if importFile.Hash != "" {
+			if err := verifyHash(content, importFile.Hash); err != nil {
+				return fmt.Errorf("%w: %s", err, importFile.Src)
+			}
+		}
+
 		if err := cl.writeImportedFile(importFile.Src, importFile.Dest, content); err != nil {
 			return err
 		}
@@ -389,17 +417,10 @@ func (cl *Loader) processImportFiles(config *ConfigDefinition) error {
 	return nil
 }
 
-// writeImportedFile writes a single imported file to the appropriate destination,
-// applying path traversal protection.
+// writeImportedFile writes a single imported file to the specified destination,
+// applying path traversal protection. dest is required and relative to the project root.
 func (cl *Loader) writeImportedFile(src, dest string, content []byte) error {
-	var destPath string
-	if dest != "" {
-		// explicit dest is relative to the project root
-		destPath = filepath.Join(cl.dir, dest)
-	} else {
-		// default to .eirctl/scripts/<basename> (strip query params)
-		destPath = filepath.Join(cl.dir, EirctlScriptsDir, GetBaseFilename(src))
-	}
+	destPath := filepath.Join(cl.dir, dest)
 
 	// Guard against path traversal (e.g. dest: "../../.bashrc")
 	cleanRoot := filepath.Clean(cl.dir) + string(filepath.Separator)
@@ -417,25 +438,28 @@ func (cl *Loader) writeImportedFile(src, dest string, content []byte) error {
 	if err := os.WriteFile(destPath, content, 0755); err != nil {
 		return fmt.Errorf("%w: failed to write %s: %v", ErrImportFileFailed, destPath, err)
 	}
-	logrus.Debugf("import_files: %s -> %s", src, destPath)
+	logrus.Debugf("import: %s -> %s", src, destPath)
 	return nil
 }
 
-// processDirectoryImport handles a single import_files entry that targets a directory.
+// processDirectoryImport handles a single import entry that targets a directory.
 // All files within the directory are fetched and written preserving relative paths.
-func (cl *Loader) processDirectoryImport(importFile ImportFileDefinition) error {
+// If a hash is specified, the canonical hash of the directory is verified.
+func (cl *Loader) processDirectoryImport(importFile ImportEntry) error {
 	files, err := cl.fetchDirContent(importFile.Src)
 	if err != nil {
 		return fmt.Errorf("%w: failed to fetch directory %s: %v", ErrImportFileFailed, importFile.Src, err)
 	}
 
-	for relPath, content := range files {
-		var destPath string
-		if importFile.Dest != "" {
-			destPath = filepath.Join(importFile.Dest, relPath)
-		} else {
-			destPath = filepath.Join(EirctlScriptsDir, relPath)
+	// Verify directory hash if specified
+	if importFile.Hash != "" {
+		if err := verifyDirectoryHash(files, importFile.Hash); err != nil {
+			return fmt.Errorf("%w: %s", err, importFile.Src)
 		}
+	}
+
+	for relPath, content := range files {
+		destPath := filepath.Join(importFile.Dest, relPath)
 
 		if err := cl.writeImportedFile(importFile.Src, destPath, content); err != nil {
 			return err
@@ -561,6 +585,67 @@ func (cl *Loader) fetchDirContent(src string) (map[string][]byte, error) {
 	}
 
 	return result, nil
+}
+
+// verifyHash checks that the SHA-256 hash of content matches the expected hash.
+// expectedHash must be in the format "algorithm:hex_digest", e.g.
+// "sha256:236d1b7e77d01309bf704065c74b3e4baf589dac240a7b199c4c22e9fc4630e6"
+// Currently only sha256 is supported.
+func verifyHash(content []byte, expectedHash string) error {
+	parts := strings.SplitN(expectedHash, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("%w: hash must be in format 'algorithm:hex_digest', got %q", ErrUnsupportedHashAlgorithm, expectedHash)
+	}
+	algorithm, expectedDigest := parts[0], parts[1]
+
+	switch strings.ToLower(algorithm) {
+	case "sha256":
+		h := sha256.Sum256(content)
+		actualDigest := hex.EncodeToString(h[:])
+		if actualDigest != expectedDigest {
+			return fmt.Errorf("%w: expected %s:%s, got %s:%s", ErrHashMismatch, algorithm, expectedDigest, algorithm, actualDigest)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %s (supported: sha256)", ErrUnsupportedHashAlgorithm, algorithm)
+	}
+}
+
+// verifyDirectoryHash verifies the canonical hash of a directory import.
+// Files are sorted lexicographically by path and concatenated as "<path>\n<content>"
+// before hashing, ensuring a deterministic digest regardless of filesystem ordering.
+func verifyDirectoryHash(files map[string][]byte, expectedHash string) error {
+	// Sort file paths for canonical ordering
+	paths := make([]string, 0, len(files))
+	for p := range files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	// Build canonical content: concatenate "<path>\n<content>" for each file
+	h := sha256.New()
+	for _, p := range paths {
+		h.Write([]byte(p))
+		h.Write([]byte("\n"))
+		h.Write(files[p])
+	}
+
+	parts := strings.SplitN(expectedHash, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("%w: hash must be in format 'algorithm:hex_digest', got %q", ErrUnsupportedHashAlgorithm, expectedHash)
+	}
+	algorithm, expectedDigest := parts[0], parts[1]
+
+	switch strings.ToLower(algorithm) {
+	case "sha256":
+		actualDigest := hex.EncodeToString(h.Sum(nil))
+		if actualDigest != expectedDigest {
+			return fmt.Errorf("%w: expected %s:%s, got %s:%s", ErrHashMismatch, algorithm, expectedDigest, algorithm, actualDigest)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %s (supported: sha256)", ErrUnsupportedHashAlgorithm, algorithm)
+	}
 }
 
 // mergeExistingWithImported merges top level keys only and errors on duplicate tasks/pipelines/contexts via imports
