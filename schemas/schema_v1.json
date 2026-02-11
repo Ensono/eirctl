@@ -54,33 +54,8 @@
     "ConfigDefinition": {
       "properties": {
         "import": {
-          "items": {
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "src": {
-                    "type": "string",
-                    "description": "Source path for the import"
-                  },
-                  "hash": {
-                    "type": "string",
-                    "description": "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"
-                  },
-                  "dest": {
-                    "type": "string",
-                    "description": "Destination path relative to project root (signals file import)"
-                  }
-                },
-                "required": ["src"]
-              }
-            ]
-          },
-          "type": "array",
-          "description": "Import is a list of additional resources to bring into the main config.\nSupports both plain strings (backward compatible config imports) and objects with src/hash/dest fields.\nEntries with a dest field are treated as file imports and written to disk."
+          "$ref": "#/$defs/ImportList",
+          "description": "Import is a list of additional resources to bring into the main config.\nSupports both plain strings (backward compatible config imports) and\nobjects with src/hash/dest fields. Entries with a dest field are treated\nas file imports and written to disk; all others are config imports."
         },
         "contexts": {
           "additionalProperties": {
@@ -342,6 +317,36 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ImportList": {
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "properties": {
+              "src": {
+                "type": "string",
+                "description": "Source path for the import"
+              },
+              "hash": {
+                "type": "string",
+                "description": "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"
+              },
+              "dest": {
+                "type": "string",
+                "description": "Destination path relative to project root (signals file import)"
+              }
+            },
+            "type": "object",
+            "required": [
+              "src"
+            ]
+          }
+        ]
+      },
+      "type": "array"
     },
     "ModifyEnv": {
       "properties": {
