@@ -51,24 +51,6 @@
       ],
       "description": "Binary is a structure for storing binary file path and arguments that should be passed on binary's invocation"
     },
-    "ImportFileDefinition": {
-      "properties": {
-        "src": {
-          "type": "string",
-          "description": "Src is the source path for the file to import\nsupports the same protocols as import: git::ssh://, git::https://, https://, local filesystem"
-        },
-        "dest": {
-          "type": "string",
-          "description": "Dest is the destination path relative to the project root\nif not specified, defaults to .eirctl/scripts/<basename of src>"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "src"
-      ],
-      "description": "ImportFileDefinition defines a file to import from a remote or local source.\nWhen dest is specified, files are placed relative to the project root.\nWhen dest is omitted, files default to .eirctl/scripts/<basename>."
-    },
     "ConfigDefinition": {
       "properties": {
         "import": {
@@ -345,6 +327,24 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ImportFileDefinition": {
+      "properties": {
+        "src": {
+          "type": "string",
+          "description": "Src is the source path for the file to import\nsupports the same protocols as import: git::ssh://, git::https://, https://, local filesystem"
+        },
+        "dest": {
+          "type": "string",
+          "description": "Dest is the destination path relative to the project root\nif not specified, defaults to .eirctl/scripts/\u003cbasename of src\u003e"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "src"
+      ],
+      "description": "ImportFileDefinition defines a file to import from a remote or local source When dest is specified, files are placed relative to the project root."
     },
     "ModifyEnv": {
       "properties": {
