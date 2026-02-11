@@ -497,7 +497,22 @@ func (cl *Loader) fetchFileContent(src string) ([]byte, error) {
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("%d: file request failed - %s", resp.StatusCode, src)
 		}
-		return io.ReadAll(io.LimitReader(resp.Body, MaxImportFileSize))
+
+		// Fail fast if Content-Length indicates the file is too large.
+		if resp.ContentLength > 0 && resp.ContentLength > MaxImportFileSize {
+			return nil, fmt.Errorf("remote file too large: %d bytes (max %d bytes)", resp.ContentLength, MaxImportFileSize)
+		}
+
+		// Use LimitReader at MaxImportFileSize+1 so we can detect truncation.
+		data, err := io.ReadAll(io.LimitReader(resp.Body, MaxImportFileSize+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) > MaxImportFileSize {
+			return nil, fmt.Errorf("remote file too large: exceeds max allowed size of %d bytes", MaxImportFileSize)
+		}
+
+		return data, nil
 	}
 
 	// local filesystem

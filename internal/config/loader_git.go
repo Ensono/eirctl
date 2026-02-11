@@ -159,9 +159,11 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 	return cm, nil
 }
 
-// FileContent retrieves the raw bytes of a file from the git repository
+// FileContent retrieves the raw bytes of a file from the git repository.
 // This is used by file imports to fetch arbitrary files (scripts, configs, etc.)
-// rather than parsing them as YAML config definitions.
+// rather than parsing them as YAML config definitions. It does not perform any
+// sanitization, validation, or integrity checking of the file content; callers are
+// responsible for performing any required content validation or hash verification.
 func (gs *GitSource) FileContent() ([]byte, error) {
 	commit, err := gs.getCommit(gs.repo)
 	if err != nil {
