@@ -35,6 +35,7 @@ var (
 	// must have a repo url and path to file specified
 	gitRegexp                    = regexp.MustCompile(`^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`)
 	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import, must satisfy this regex `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\\?ref=([^&]+))?$`")
+	ErrSSHConfig                 = errors.New("incorrect ssh config file")
 	ErrGitTagBranchRevisionWrong = errors.New("tag or branch or revision was not found")
 	ErrGitOperation              = errors.New("git operation failed")
 )
@@ -228,6 +229,7 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 		sshConf.ConfigFile = sshDefaultConf.ConfigFile
 	}
 
+	ssh_config.DefaultUserSettings.IgnoreErrors = true
 	sshCfgFile := &ssh_config.Config{}
 	if sshConf.ConfigFile != "" {
 		f, err := os.Open(sshConf.ConfigFile)
@@ -235,15 +237,14 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 			return nil, err
 		}
 		defer f.Close()
+
 		sshCfgFile, err = ssh_config.Decode(f)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w (%s)\n %v", ErrSSHConfig, sshConf.ConfigFile, err)
 		}
 	}
 
-	if err := processSSHConfig(sshCfgFile, sshConf, host); err != nil {
-		return nil, err
-	}
+	processSSHConfig(sshCfgFile, sshConf, host)
 
 	if sshConf.IdentityFile == "" {
 		sshConf.IdentityFile = sshDefaultConf.IdentityFile
@@ -343,8 +344,8 @@ func parseDefaultSshConfigFilePaths() *SSHConfigAuth {
 	return defaultFilePaths
 }
 
-// processSSHConfig extracts the relevant info from a config file, merging with
-func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
+// processSSHConfig extracts the relevant info from a config file, merging with the overrides and defaults
+func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
 
 	if sshConfig.Port == "" {
 		filePort, _ := fileSSHCfg.Get(hostname, "Port")
@@ -373,5 +374,4 @@ func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, h
 		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
 		sshConfig.IdentityFile = fileIdentityFile
 	}
-	return nil
 }

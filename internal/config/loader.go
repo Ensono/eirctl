@@ -170,7 +170,7 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 			logrus.Debugf("import (%s) is a git path", file)
 			gs, err := NewGitSource(file)
 			if err != nil {
-				return false, nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
+				return false, nil, fmt.Errorf("loader error: %v", err)
 			}
 			if err := gs.Clone(); err != nil {
 				return false, nil, err
