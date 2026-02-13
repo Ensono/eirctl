@@ -1,15 +1,78 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/invopop/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+	"gopkg.in/yaml.v3"
 )
 
 //go:generate go run ../../tools/schemagenerator/main.go -dir ../../
+
+// ImportEntry represents an entry in the unified import list.
+// Supports both plain string form (backward compatible config import)
+// and object form with src, hash, and dest fields.
+//
+// Plain strings are treated as config imports (YAML merged into config).
+// Objects with a dest field are treated as file imports (written to disk).
+// The dest field is required for file imports and specifies the path relative to the project root.
+// Objects without dest are treated as config imports with optional hash verification.
+type ImportEntry struct {
+	Src  string `yaml:"src" json:"src"`
+	Hash string `yaml:"hash,omitempty" json:"hash,omitempty"`
+	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
+}
+
+// IsFileImport returns true if this entry should be handled as a file import
+// (written to disk rather than parsed as config). An entry is a file import
+// when dest is explicitly set.
+func (ie *ImportEntry) IsFileImport() bool {
+	return ie.Dest != ""
+}
+
+// UnmarshalYAML supports both string and object forms in the import list.
+func (ie *ImportEntry) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		// Backwards compat: plain string
+		ie.Src = value.Value
+		return nil
+	}
+	if value.Kind == yaml.MappingNode {
+		type plain ImportEntry
+		return value.Decode((*plain)(ie))
+	}
+	return fmt.Errorf("import entry must be a string or object, got %v", value.Kind)
+}
+
+// ImportList is a list of ImportEntry items supporting heterogeneous YAML (strings and objects).
+type ImportList []ImportEntry
+
+// JSONSchema provides the JSON schema for ImportList, allowing both string and object items.
+func (ImportList) JSONSchema() *jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("src", &jsonschema.Schema{Type: "string", Description: "Source path for the import"})
+	props.Set("hash", &jsonschema.Schema{Type: "string", Description: "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"})
+	props.Set("dest", &jsonschema.Schema{Type: "string", Description: "Destination path relative to project root (signals file import)"})
+
+	return &jsonschema.Schema{
+		Type: "array",
+		Items: &jsonschema.Schema{
+			OneOf: []*jsonschema.Schema{
+				{Type: "string"},
+				{
+					Type:       "object",
+					Properties: props,
+					Required:   []string{"src"},
+				},
+			},
+		},
+	}
+}
 
 // ConfigDefinition holds the top most config definition
 // this can be parsed from a yaml, json, toml files/mediaTypes
@@ -18,9 +81,11 @@ import (
 // correct content-type or file extension must be specified
 // to successfully decode/unmarshal into type
 type ConfigDefinition struct {
-	// Import is a list of additional resources to bring into the main config
-	// these can be remote or local resources
-	Import []string `mapstructure:"import" yaml:"import" json:"import,omitempty" jsonschema:"anyOf_required=import"`
+	// Import is a list of additional resources to bring into the main config.
+	// Supports both plain strings (backward compatible config imports) and
+	// objects with src/hash/dest fields. Entries with a dest field are treated
+	// as file imports and written to disk; all others are config imports.
+	Import ImportList `mapstructure:"import" yaml:"import" json:"import,omitempty" jsonschema:"anyOf_required=import"`
 	// Contexts is a map of contexts to use
 	// for specific tasks
 	Contexts map[string]*ContextDefinition `mapstructure:"contexts" yaml:"contexts" json:"contexts,omitempty" jsonschema:"anyOf_required=contexts"`

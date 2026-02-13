@@ -592,3 +592,103 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 		}
 	})
 }
+
+func Test_GitSource_FileContent(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho hello world\n"
+	repo := createTestRepo(t, map[string]string{
+		"scripts/deploy.sh": scriptContent,
+		"README.md":         "# Test Repo",
+	}, "", "")
+
+	t.Run("retrieves raw file content from git repo", func(t *testing.T) {
+		gs, err := config.NewGitSource("git::file:///dummy//scripts/deploy.sh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		content, err := gs.FileContent()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if string(content) != scriptContent {
+			t.Errorf("got %q, wanted %q", string(content), scriptContent)
+		}
+	})
+
+	t.Run("returns error for non-existent file", func(t *testing.T) {
+		gs, err := config.NewGitSource("git::file:///dummy//nonexistent.sh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		_, err = gs.FileContent()
+		if err == nil {
+			t.Fatal("expected error for non-existent file")
+		}
+		if !errors.Is(err, config.ErrGitOperation) {
+			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
+		}
+	})
+}
+
+func Test_GitSource_DirContent(t *testing.T) {
+	repo := createTestRepo(t, map[string]string{
+		"scripts/deploy.sh":     "#!/bin/bash\necho deploy\n",
+		"scripts/init.sh":       "#!/bin/bash\necho init\n",
+		"scripts/sub/nested.sh": "#!/bin/bash\necho nested\n",
+		"other/unrelated.txt":   "should not appear",
+	}, "", "")
+
+	t.Run("retrieves all files in directory", func(t *testing.T) {
+		gs, err := config.NewGitSource("git::file:///dummy//scripts/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		files, err := gs.DirContent()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expectedFiles := map[string]string{
+			"deploy.sh":     "#!/bin/bash\necho deploy\n",
+			"init.sh":       "#!/bin/bash\necho init\n",
+			"sub/nested.sh": "#!/bin/bash\necho nested\n",
+		}
+
+		if len(files) != len(expectedFiles) {
+			t.Fatalf("got %d files, want %d", len(files), len(expectedFiles))
+		}
+
+		for name, wantContent := range expectedFiles {
+			gotContent, ok := files[name]
+			if !ok {
+				t.Errorf("expected file %q not found in result", name)
+				continue
+			}
+			if string(gotContent) != wantContent {
+				t.Errorf("file %q: got %q, want %q", name, string(gotContent), wantContent)
+			}
+		}
+	})
+
+	t.Run("returns error for non-existent directory", func(t *testing.T) {
+		gs, err := config.NewGitSource("git::file:///dummy//nonexistent/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		_, err = gs.DirContent()
+		if err == nil {
+			t.Fatal("expected error for non-existent directory")
+		}
+		if !errors.Is(err, config.ErrGitOperation) {
+			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
+		}
+	})
+}

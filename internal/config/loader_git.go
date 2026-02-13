@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -156,6 +157,84 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 		return nil, err
 	}
 	return cm, nil
+}
+
+// FileContent retrieves the raw bytes of a file from the git repository.
+// This is used by file imports to fetch arbitrary files (scripts, configs, etc.)
+// rather than parsing them as YAML config definitions. It does not perform any
+// sanitization, validation, or integrity checking of the file content; callers are
+// responsible for performing any required content validation or hash verification.
+func (gs *GitSource) FileContent() ([]byte, error) {
+	commit, err := gs.getCommit(gs.repo)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	file, err := tree.File(gs.yamlPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	reader, err := file.Reader()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+	defer reader.Close()
+
+	return io.ReadAll(reader)
+}
+
+// DirContent retrieves all files under a directory path from the git repository.
+// It returns a map of relative file paths (within the directory) to their contents.
+// The directory path is taken from gs.yamlPath with any trailing slash stripped.
+func (gs *GitSource) DirContent() (map[string][]byte, error) {
+	commit, err := gs.getCommit(gs.repo)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	rootTree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	dirPath := strings.TrimSuffix(gs.yamlPath, "/")
+
+	subtree, err := rootTree.Tree(dirPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: directory %q not found: %v", ErrGitOperation, dirPath, err)
+	}
+
+	result := make(map[string][]byte)
+	err = subtree.Files().ForEach(func(f *object.File) error {
+		reader, err := f.Reader()
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", f.Name, err)
+		}
+		defer reader.Close()
+
+		content, err := io.ReadAll(reader)
+		if err != nil {
+			return fmt.Errorf("failed to read content of %s: %w", f.Name, err)
+		}
+
+		result[f.Name] = content
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%w\nError: directory %q is empty", ErrGitOperation, dirPath)
+	}
+
+	return result, nil
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
