@@ -56,6 +56,7 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		UsernsMode:   container.UsernsMode(containerContext.userns),
 		PortBindings: hostPorts,
 		AutoRemove:   true,
+		ExtraHosts:   containerContext.ExtraHosts(),
 	}
 	for _, volume := range containerContext.BindMounts() {
 		if containerContext.BindMount {

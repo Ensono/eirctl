@@ -14,10 +14,26 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
+      pr_ref: ${{ steps.get-pr-ref.outputs.ref }}
     steps:
+      - name: Get PR ref
+        id: get-pr-ref
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            return pr.data.head.ref;
+      
       - uses: actions/checkout@v5
         with:
+          ref: ${{ steps.get-pr-ref.outputs.result }}
           fetch-depth: 0
+      
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v3.0
         with:
@@ -28,15 +44,19 @@ jobs:
 
   release:
     runs-on: ubuntu-24.04
-    container:
-      image: public.ecr.aws/docker/library/golang:1-trixie
     needs: set-version-tag
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ needs.set-version-tag.outputs.pr_ref }}
           fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
 
       - name: set up git for tag pushing
         run: |
