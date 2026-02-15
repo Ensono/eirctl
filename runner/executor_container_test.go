@@ -288,7 +288,13 @@ type mockTerminal struct {
 	restoreCalled    bool
 	returnMakeRaw    *term.State
 	returnMakeRawErr error
+	getSizeCalled    int
+	getSizeFn        func(fd int) (tsize runner.TerminalSize, err error)
 }
+
+// func (m *mockTerminal) GetTerminalFd() int {
+// 	return 0
+// }
 
 func (m *mockTerminal) MakeRaw(fd int) (*term.State, error) {
 	m.makeRawCalled = true
@@ -304,8 +310,16 @@ func (m *mockTerminal) IsTerminal(fd int) bool {
 	return true
 }
 
-func (m *mockTerminal) GetSize(fd int) (width, height int, err error) {
-	return 1, 1, nil
+func (m *mockTerminal) GetSize(fd int) (tsize runner.TerminalSize, err error) {
+	m.getSizeCalled++
+	if m.getSizeFn != nil {
+		return m.getSizeFn(fd)
+	}
+	return runner.TerminalSize{1, 1}, nil
+}
+
+func (m *mockTerminal) UpdateSize() (width, height int, err error) {
+	return 2, 2, nil
 }
 
 type MockConn struct {
@@ -401,7 +415,7 @@ func mockContainerClientHelper(t *testing.T, respCh <-chan container.WaitRespons
 	}
 }
 
-func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerExecutor, *runner.ExecutionContext) {
+func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerExecutor, *runner.ExecutionContext, func()) {
 	t.Helper()
 	configContext := &runner.ExecutionContext{
 		Env: variables.FromMap(map[string]string{"FOO": "bar"}),
@@ -420,9 +434,13 @@ func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerE
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	ce.Term = &mockTerminal{returnMakeRawErr: nil}
-	return ce, configContext
+	stdin, _ := os.CreateTemp("", "stdin-*")
+	stdout, _ := os.CreateTemp("", "stdout-*")
+	ce.WithTerminalUtils(runner.NewTerminalUtils(&mockTerminal{}, runner.WithCustomFD(stdin, stdout)))
+	return ce, configContext, func() {
+		defer os.Remove(stdin.Name())
+		defer os.Remove(stdout.Name())
+	}
 }
 
 func Test_ContainerExecutor_shell(t *testing.T) {
@@ -437,7 +455,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
 
-		ce, configContext := mockClientHelper(t, mcc)
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		go func() {
 			_, _ = conn.Write([]byte("hello\n"))
@@ -475,7 +494,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			return fmt.Errorf("fail")
 		}
 
-		ce, configContext := mockClientHelper(t, mcc)
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		go func() {
 			_, _ = conn.Write([]byte("hello\n"))
@@ -512,7 +532,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			return types.HijackedResponse{}, fmt.Errorf("faile")
 		}
 
-		ce, configContext := mockClientHelper(t, mcc)
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		go func() {
 			_, _ = conn.Write([]byte("hello\n"))
@@ -572,7 +593,7 @@ func (s *safeReaderWriter) Write(p []byte) (int, error) {
 	return s.LogsWriter.Write(p)
 }
 
-func Test_ContainerExecutor_execute(t *testing.T) {
+func Test_ContainerExecutor_Execute(t *testing.T) {
 	t.Run("succeeds with image in cache", func(t *testing.T) {
 		t.Parallel()
 		respCh := make(chan container.WaitResponse)
@@ -584,7 +605,8 @@ func Test_ContainerExecutor_execute(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		go func() {
@@ -633,7 +655,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		cancelCtx, cancel := context.WithCancel(context.Background())
@@ -683,7 +706,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc.close = func() error {
 			return nil
 		}
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
@@ -714,7 +738,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			return nil
 		}
 
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
@@ -744,7 +769,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			return fmt.Errorf("failed to start container")
 		}
 
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
 		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
 			Env:    variables.NewVariables(),
 			Vars:   variables.NewVariables(),
@@ -774,8 +801,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			return nil, fmt.Errorf("failed")
 		}
 
-		ce, _ := mockClientHelper(t, mcc)
-
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 
 		go func() {
@@ -815,7 +842,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 		ew := &errWriter{
 			err:  fmt.Errorf("throw here"),
 			resp: 10,
@@ -852,7 +880,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, errdefs.ErrNotFound
 		}
-		ce, _ := mockClientHelper(t, mcc)
+
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		go func() {
@@ -903,7 +933,8 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, fmt.Errorf("unable to inspect")
 		}
-		ce, _ := mockClientHelper(t, mcc)
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		go func() {
@@ -954,7 +985,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 			}
 			return resp, nil
 		}
-		ce, _ := mockClientHelper(t, mcc)
+
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
 
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		go func() {
@@ -1039,7 +1072,8 @@ func Test_ContainerExecutor_Execute_Cancelled_CleanUp(t *testing.T) {
 		return nil
 	}
 
-	ce, _ := mockClientHelper(t, mcc)
+	ce, _, cleanup := mockClientHelper(t, mcc)
+	defer cleanup()
 
 	_, err := ce.Execute(cancelCtx, &runner.Job{Command: `pwd
 for i in $(seq 1 10); do echo "hello, iteration $i"; done`,

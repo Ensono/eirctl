@@ -25,7 +25,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/schollz/progressbar/v3"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -57,36 +56,11 @@ type ContainerExecutorIface interface {
 	ContainerResize(ctx context.Context, containerID string, options container.ResizeOptions) error
 }
 
-type Terminal interface {
-	MakeRaw(fd int) (*term.State, error)
-	Restore(fd int, state *term.State) error
-	IsTerminal(fd int) bool
-	GetSize(fd int) (width, height int, err error)
-}
-
-type realTerminal struct{}
-
-func (t realTerminal) MakeRaw(fd int) (*term.State, error) {
-	return term.MakeRaw(fd)
-}
-
-func (t realTerminal) Restore(fd int, state *term.State) error {
-	return term.Restore(fd, state)
-}
-
-func (t realTerminal) IsTerminal(fd int) bool {
-	return term.IsTerminal(fd)
-}
-
-func (t realTerminal) GetSize(fd int) (width, height int, err error) {
-	return term.GetSize(fd)
-}
-
 type ContainerExecutor struct {
 	// containerClient
 	cc          ContainerExecutorIface
 	execContext *ExecutionContext
-	Term        Terminal
+	termUtils   *TerminalUtils
 }
 
 type ContainerOpts func(*ContainerExecutor)
@@ -104,11 +78,12 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 		return nil, err
 	}
 
-	// execContext.container
+	tu := NewTerminalUtils(&realTerminal{})
+
 	ce := &ContainerExecutor{
 		cc:          c,
 		execContext: execContext,
-		Term:        realTerminal{},
+		termUtils:   tu,
 	}
 
 	for _, opt := range opts {
@@ -125,6 +100,10 @@ func WithContainerClient(client ContainerExecutorIface) ContainerOpts {
 }
 
 func (e *ContainerExecutor) WithReset(doReset bool) {}
+
+func (e *ContainerExecutor) WithTerminalUtils(tu *TerminalUtils) {
+	e.termUtils = tu
+}
 
 // Execute executes given job with provided context
 // Returns job output
@@ -192,7 +171,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	bar := progressbar.NewOptions(-1,
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionSetWriter(ansi.NewAnsiStdout()),
-		progressbar.OptionShowBytes(true),
+		progressbar.OptionShowBytes(false),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),
 		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s[reset]", containerConf.Image)),
@@ -208,7 +187,6 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 }
 
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
-
 	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -287,8 +265,13 @@ func (e *ContainerExecutor) execute(ctx context.Context, containerConfig *contai
 
 // shell runs the interactive mode for a given context
 func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) ([]byte, error) {
+	// only initialise the terminal size and FD interrogator here
+	size, fd := e.termUtils.InitInteractiveTerminal()
 
 	mutateShellContainerConfig(containerConfig)
+
+	hostConfig.ConsoleSize = [2]uint{uint(size[0]), uint(size[1])}
+
 	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
@@ -309,31 +292,28 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	defer attachedResp.Close()
 
 	// Set terminal to raw mode
-	fd := int(os.Stdin.Fd())
-	if e.Term.IsTerminal(fd) {
-		logrus.Tracef("Making Terminal Raw")
-		oldState, err := e.Term.MakeRaw(fd)
+	if e.termUtils.term.IsTerminal(fd) {
+		logrus.Tracef("executor_container.shell: Making Terminal Raw")
+		oldState, err := e.termUtils.term.MakeRaw(int(e.termUtils.stdInFd.Fd()))
 		if err != nil {
 			return nil, err
 		}
-		// defer e.Term.Restore(fd, oldState)
+
 		defer func() {
-			_ = e.Term.Restore(fd, oldState)
+			_ = e.termUtils.term.Restore(int(e.termUtils.stdInFd.Fd()), oldState)
 		}()
 	}
-
-	e.resizeShellTTY(ctx, fd, createdContainer.ID)
 
 	// Start container with a defined shell
 	if err := e.cc.ContainerStart(ctx, createdContainer.ID, container.StartOptions{}); err != nil {
 		return nil, fmt.Errorf("%v\n%w", err, ErrContainerStart)
 	}
 
-	sigCh := resizeSignal()
+	sigCh := resizeSignal(fd)
 	go func() {
 		for range sigCh {
 			logrus.Tracef("terminal window resized")
-			e.resizeShellTTY(ctx, fd, createdContainer.ID)
+			e.resizeShellTty(ctx, createdContainer.ID, fd)
 		}
 	}()
 
@@ -363,17 +343,25 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	return []byte{}, nil
 }
 
-func (e *ContainerExecutor) resizeShellTTY(ctx context.Context, fd int, containerId string) {
-	if e.Term.IsTerminal(fd) {
-		width, height, err := e.Term.GetSize(fd)
+func (e *ContainerExecutor) resizeShellTty(ctx context.Context, containerId string, fd int) {
+	if e.termUtils.term.IsTerminal(fd) {
+		tsize, err := e.termUtils.UpdateSize(fd)
 		if err != nil {
-			logrus.Tracef("failed to get terminal size: %v", err)
+			logrus.Tracef("resizeShellTty: failed to update terminal size: %v", err)
 			return
 		}
-		_ = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
-			Height: uint(height),
-			Width:  uint(width),
+
+		err = e.cc.ContainerResize(ctx, containerId, container.ResizeOptions{
+			Width:  uint(tsize[0]),
+			Height: uint(tsize[1]),
 		})
+
+		if err != nil {
+			logrus.Tracef("resizeShellTty: failed to resize the terminal: %s", err.Error())
+			return
+		}
+
+		logrus.Tracef("resizeShellTty: resized the terminal to %dx%d", tsize[0], tsize[1])
 	}
 }
 
