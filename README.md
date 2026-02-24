@@ -354,6 +354,16 @@ The runner package:
 
 - [TaskRunner](runner/runner.go)'s `Run` method is a useful scheduling flow where multiple tasks need coordinating.
 
+## Troubleshooting
+
+### Windows - TLS Certificate Errors When Downloading Go Packages in Container
+
+The error `tls: failed to verify certificate: x509: certificate signed by unknown authority` can occur when downloading Go packages within a container. This is often due to corporate proxies like Cisco Umbrella intercepting HTTPS traffic.
+
+**Workaround**: Set the `GOPROXY` environment variable to `direct` to bypass the proxy. 
+
+Setting `GOPROXY=direct` forces Go to fetch packages directly from their source repositories, bypassing any proxies that may be intercepting certificates.
+
 ## How to contribute?
 
 Feel free to contribute in any way you want. Share ideas, submit issues, create pull requests.

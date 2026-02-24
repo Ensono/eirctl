@@ -184,12 +184,16 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// Arrange
 		executable := runner.NewContainerContext("alpine:3.21.3")
 
-		envfileTemp1, err := os.CreateTemp("", "exclude-*.env")
+		testDir := filepath.Join("testdata", "envfile_test")
+		os.MkdirAll(testDir, 0755)
+		defer os.RemoveAll(testDir)
+
+		envfileTemp1, err := os.CreateTemp(testDir, "exclude-*.env")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		envfileTemp2, err := os.CreateTemp("", "exclude2-*.env")
+		envfileTemp2, err := os.CreateTemp(testDir, "exclude2-*.env")
 		if err != nil {
 			t.Fatal(err)
 		}
