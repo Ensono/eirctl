@@ -78,6 +78,7 @@ go build -o bin/eirctl cmd/main.go
 eirctl test:unit     # Runs tests with coverage in containers
 eirctl lints        # golangci-lint + vulnerability scanning
 eirctl show:coverage # Opens HTML coverage report
+eirctl tidy # Runs go mod tidy 
 ```
 
 ### CI Generation

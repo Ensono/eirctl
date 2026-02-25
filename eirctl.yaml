@@ -132,6 +132,7 @@ tasks:
 
   tidy:
     name: "tidy me up"
+    context: go1x
     command:
       - go mod tidy
 

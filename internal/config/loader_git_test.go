@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -138,7 +140,7 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cleanUp := createDummySshConf(t)
 			defer cleanUp()
-			gs, err := config.NewGitSource(tt.rawString)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -275,7 +277,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 			idfile, configFile, setupClean := tt.cleanUp()
 			defer setupClean()
 
-			gs, err := config.NewGitSource(tt.rawString)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -349,7 +351,7 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 			idfile, configFile, setupClean := tt.cleanUp()
 			defer setupClean()
 
-			gs, err := config.NewGitSource(tt.rawString)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -384,7 +386,7 @@ func Test_NewGitSource_ValidInput_withSSH_COMMAND_hostname_port(t *testing.T) {
 	setupClean := setup()
 	defer setupClean()
 
-	gs, err := config.NewGitSource("git::ssh://github.com/example/repo//config.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://github.com/example/repo//config.yaml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -408,7 +410,7 @@ func TestGitSource_Config_FromHead(t *testing.T) {
 		"config.yaml": cfgWriter.String(),
 	}, "", "")
 
-	gs, err := config.NewGitSource("git::ssh://bar.org//config.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://bar.org//config.yaml"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -441,7 +443,7 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 		"my.yaml": cfgWriter.String(),
 	}, "refs/remotes/origin/feature/foo", "")
 
-	gs, err := config.NewGitSource("git::https://example.com/org/repo//my.yaml?ref=feature/foo")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::https://example.com/org/repo//my.yaml?ref=feature/foo"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -461,7 +463,7 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 }
 
 func TestNewGitSource_InvalidFormat(t *testing.T) {
-	_, err := config.NewGitSource("invalid-url-format")
+	_, err := config.NewGitSource(schema.ImportEntry{Src: "invalid-url-format"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -483,7 +485,7 @@ func TestGitSource_Config_FileNotFound(t *testing.T) {
 		"my.yaml": cfgWriter.String(),
 	}, "", "")
 
-	gs, err := config.NewGitSource("git::file://path/on/disk/repo//missing.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file://path/on/disk/repo//missing.yaml"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -513,7 +515,7 @@ func Test_LoaderGit_Integration(t *testing.T) {
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			gs, err := config.NewGitSource(tt.rawStr)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawStr})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -601,91 +603,32 @@ func Test_GitSource_FileContent(t *testing.T) {
 	}, "", "")
 
 	t.Run("retrieves raw file content from git repo", func(t *testing.T) {
-		gs, err := config.NewGitSource("git::file:///dummy//scripts/deploy.sh")
+		gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file:///dummy//scripts/deploy.sh"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		gs.WithRepo(repo)
 
-		content, err := gs.FileContent()
+		content, err := gs.File()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if string(content) != scriptContent {
-			t.Errorf("got %q, wanted %q", string(content), scriptContent)
+		got, _ := io.ReadAll(content)
+		if string(got) != scriptContent {
+			t.Errorf("got %q, wanted %q", string(got), scriptContent)
 		}
 	})
 
 	t.Run("returns error for non-existent file", func(t *testing.T) {
-		gs, err := config.NewGitSource("git::file:///dummy//nonexistent.sh")
+		gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file:///dummy//nonexistent.sh"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		gs.WithRepo(repo)
 
-		_, err = gs.FileContent()
+		_, err = gs.File()
 		if err == nil {
 			t.Fatal("expected error for non-existent file")
-		}
-		if !errors.Is(err, config.ErrGitOperation) {
-			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
-		}
-	})
-}
-
-func Test_GitSource_DirContent(t *testing.T) {
-	repo := createTestRepo(t, map[string]string{
-		"scripts/deploy.sh":     "#!/bin/bash\necho deploy\n",
-		"scripts/init.sh":       "#!/bin/bash\necho init\n",
-		"scripts/sub/nested.sh": "#!/bin/bash\necho nested\n",
-		"other/unrelated.txt":   "should not appear",
-	}, "", "")
-
-	t.Run("retrieves all files in directory", func(t *testing.T) {
-		gs, err := config.NewGitSource("git::file:///dummy//scripts/")
-		if err != nil {
-			t.Fatal(err)
-		}
-		gs.WithRepo(repo)
-
-		files, err := gs.DirContent()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expectedFiles := map[string]string{
-			"deploy.sh":     "#!/bin/bash\necho deploy\n",
-			"init.sh":       "#!/bin/bash\necho init\n",
-			"sub/nested.sh": "#!/bin/bash\necho nested\n",
-		}
-
-		if len(files) != len(expectedFiles) {
-			t.Fatalf("got %d files, want %d", len(files), len(expectedFiles))
-		}
-
-		for name, wantContent := range expectedFiles {
-			gotContent, ok := files[name]
-			if !ok {
-				t.Errorf("expected file %q not found in result", name)
-				continue
-			}
-			if string(gotContent) != wantContent {
-				t.Errorf("file %q: got %q, want %q", name, string(gotContent), wantContent)
-			}
-		}
-	})
-
-	t.Run("returns error for non-existent directory", func(t *testing.T) {
-		gs, err := config.NewGitSource("git::file:///dummy//nonexistent/")
-		if err != nil {
-			t.Fatal(err)
-		}
-		gs.WithRepo(repo)
-
-		_, err = gs.DirContent()
-		if err == nil {
-			t.Fatal("expected error for non-existent directory")
 		}
 		if !errors.Is(err, config.ErrGitOperation) {
 			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)

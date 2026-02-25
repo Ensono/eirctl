@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
@@ -617,7 +618,7 @@ func Test_ImportFiles_LocalFile(t *testing.T) {
 
 	// Create a script file to import
 	scriptContent := "#!/bin/bash\necho deployed\n"
-	scriptFile := filepath.Join(projectDir, "deploy.sh")
+	scriptFile := filepath.Join(projectDir, "source-deploy.sh")
 	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +627,7 @@ func Test_ImportFiles_LocalFile(t *testing.T) {
 	configContent := fmt.Sprintf(`
 import:
   - src: %s
-    dest: deploy.sh
+    dest: target-deploy.sh
 
 tasks:
   task1:
@@ -647,7 +648,7 @@ tasks:
 	}
 
 	// Verify the file was written to project root (explicit dest)
-	destPath := filepath.Join(projectDir, "deploy.sh")
+	destPath := filepath.Join(projectDir, "target-deploy.sh")
 	content, err := os.ReadFile(destPath)
 	if err != nil {
 		t.Fatalf("expected file at %s, got error: %v", destPath, err)
@@ -896,92 +897,6 @@ tasks:
 	}
 	if !errors.Is(err, config.ErrPathTraversal) {
 		t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrPathTraversal)
-	}
-}
-
-func Test_GetBaseFilename(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			name: "git URL with ref query param",
-			src:  "git::ssh://github.com/org/repo//scripts/deploy.sh?ref=v1.0.32",
-			want: "deploy.sh",
-		},
-		{
-			name: "git URL with branch ref",
-			src:  "git::file:///path/to/repo//create-local-envfile.sh?ref=main",
-			want: "create-local-envfile.sh",
-		},
-		{
-			name: "https URL with query params",
-			src:  "https://example.com/script.sh?token=abc123",
-			want: "script.sh",
-		},
-		{
-			name: "local path no query",
-			src:  "/path/to/script.sh",
-			want: "script.sh",
-		},
-		{
-			name: "relative path no query",
-			src:  "scripts/deploy.sh",
-			want: "deploy.sh",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := config.GetBaseFilename(tt.src)
-			if got != tt.want {
-				t.Errorf("getBaseFilename(%q) = %q, want %q", tt.src, got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_IsDirectoryImport(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want bool
-	}{
-		{
-			name: "git URL with trailing slash",
-			src:  "git::ssh://github.com/org/repo//scripts/",
-			want: true,
-		},
-		{
-			name: "git URL with trailing slash and ref",
-			src:  "git::ssh://github.com/org/repo//scripts/?ref=main",
-			want: true,
-		},
-		{
-			name: "git URL without trailing slash",
-			src:  "git::ssh://github.com/org/repo//scripts/deploy.sh",
-			want: false,
-		},
-		{
-			name: "local path with trailing slash",
-			src:  "scripts/",
-			want: true,
-		},
-		{
-			name: "local path without trailing slash",
-			src:  "scripts/deploy.sh",
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := config.IsDirectoryImport(tt.src)
-			if got != tt.want {
-				t.Errorf("IsDirectoryImport(%q) = %v, want %v", tt.src, got, tt.want)
-			}
-		})
 	}
 }
 
@@ -1296,7 +1211,7 @@ tasks:
 	if err == nil {
 		t.Fatal("expected error for unsupported hash algorithm, got nil")
 	}
-	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+	if !errors.Is(err, schema.ErrUnsupportedHashAlgorithm) {
 		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
 	}
 }
@@ -1337,7 +1252,7 @@ tasks:
 	if err == nil {
 		t.Fatal("expected error for bad hash format, got nil")
 	}
-	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+	if !errors.Is(err, schema.ErrUnsupportedHashAlgorithm) {
 		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
 	}
 }
@@ -1920,7 +1835,7 @@ tasks:
 	if err == nil {
 		t.Fatal("expected error for bad hash format on directory import")
 	}
-	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+	if !errors.Is(err, schema.ErrUnsupportedHashAlgorithm) {
 		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
 	}
 }
@@ -1964,7 +1879,7 @@ tasks:
 	if err == nil {
 		t.Fatal("expected error for unsupported hash algorithm on directory import")
 	}
-	if !errors.Is(err, config.ErrUnsupportedHashAlgorithm) {
+	if !errors.Is(err, schema.ErrUnsupportedHashAlgorithm) {
 		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
 	}
 }

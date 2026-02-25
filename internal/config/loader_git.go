@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -41,11 +42,13 @@ var (
 )
 
 type GitSource struct {
+	SshConfig *SSHConfigAuth
 	repo      *git.Repository
 	gcOpts    *git.CloneOptions
 	yamlPath  string
 	tag       string
-	SshConfig *SSHConfigAuth
+	// entry is the file or directory options struct to check out and store as a file or parse as a ConfigDefinition
+	entry schema.ImportEntry
 }
 
 type SSHConfigAuth struct {
@@ -62,19 +65,22 @@ func IsGit(raw string) bool {
 
 // NewGitSource converts an import string of type git
 // to a parseable git clone and checkout object
-func NewGitSource(raw string) (*GitSource, error) {
-	gs := &GitSource{gcOpts: &git.CloneOptions{
-		// specifically set this here so that later it is a known value
-		RemoteName: remoteRef,
-		Depth:      0,
-	}}
+func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
+	gs := &GitSource{
+		gcOpts: &git.CloneOptions{
+			// specifically set this here so that later it is a known value
+			RemoteName: remoteRef,
+			Depth:      0,
+		},
+		entry: entry,
+	}
 
-	gitImportParts := gitRegexp.FindStringSubmatch(raw)
+	gitImportParts := gitRegexp.FindStringSubmatch(entry.Src)
 
 	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitImportParts)
 
 	if len(gitImportParts) != 5 {
-		return gs, fmt.Errorf("import %s, %w", raw, ErrIncorrectlyFormattedGit)
+		return gs, fmt.Errorf("import %s, %w", entry.Src, ErrIncorrectlyFormattedGit)
 	}
 
 	switch gitImportParts[1] {
@@ -125,116 +131,40 @@ func (gs *GitSource) WithRepo(repo *git.Repository) {
 	gs.repo = repo
 }
 
-func (gs *GitSource) Config() (*ConfigDefinition, error) {
-	logrus.Trace("loader_git.Config: gs.getCommit")
-	commit, err := gs.getCommit(gs.repo)
+func (gs *GitSource) File() (io.ReadCloser, error) {
+	tree, err := gs.tree()
 	if err != nil {
 		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	logrus.Trace("loader_git.Config: commit.Tree")
-	tree, err := commit.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	logrus.Trace("loader_git.Config: tree.File")
+	logrus.Trace("loader_git.File: tree.File")
 	file, err := tree.File(gs.yamlPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
 	}
 
-	logrus.Trace("loader_git.Config: file.Reader")
+	logrus.Trace("loader_git.File: file.Reader")
 	contents, err := file.Reader()
 	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w\nFailed to read: %v", ErrGitOperation, err)
 	}
+	return contents, nil
+}
 
+func (gs *GitSource) Config() (*ConfigDefinition, error) {
+
+	contents, err := gs.File()
+	if err != nil {
+		return nil, err
+	}
 	defer contents.Close()
 
 	cm := &ConfigDefinition{}
+
 	if err := yaml.NewDecoder(contents).Decode(&cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
-}
-
-// FileContent retrieves the raw bytes of a file from the git repository.
-// This is used by file imports to fetch arbitrary files (scripts, configs, etc.)
-// rather than parsing them as YAML config definitions. It does not perform any
-// sanitization, validation, or integrity checking of the file content; callers are
-// responsible for performing any required content validation or hash verification.
-func (gs *GitSource) FileContent() ([]byte, error) {
-	commit, err := gs.getCommit(gs.repo)
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	file, err := tree.File(gs.yamlPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	reader, err := file.Reader()
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-	defer reader.Close()
-
-	return io.ReadAll(reader)
-}
-
-// DirContent retrieves all files under a directory path from the git repository.
-// It returns a map of relative file paths (within the directory) to their contents.
-// The directory path is taken from gs.yamlPath with any trailing slash stripped.
-func (gs *GitSource) DirContent() (map[string][]byte, error) {
-	commit, err := gs.getCommit(gs.repo)
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	rootTree, err := commit.Tree()
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	dirPath := strings.TrimSuffix(gs.yamlPath, "/")
-
-	subtree, err := rootTree.Tree(dirPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: directory %q not found: %v", ErrGitOperation, dirPath, err)
-	}
-
-	result := make(map[string][]byte)
-	err = subtree.Files().ForEach(func(f *object.File) error {
-		reader, err := f.Reader()
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", f.Name, err)
-		}
-		defer reader.Close()
-
-		content, err := io.ReadAll(reader)
-		if err != nil {
-			return fmt.Errorf("failed to read content of %s: %w", f.Name, err)
-		}
-
-		result[f.Name] = content
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
-	}
-
-	if len(result) == 0 {
-		return nil, fmt.Errorf("%w\nError: directory %q is empty", ErrGitOperation, dirPath)
-	}
-
-	return result, nil
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
@@ -295,6 +225,24 @@ func (gs *GitSource) getCommit(r *git.Repository) (*object.Commit, error) {
 		return nil, fmt.Errorf("get HEAD: %w", err)
 	}
 	return r.CommitObject(ref.Hash())
+}
+
+// tree grabs hold of a tree at the relevant commit_sha/branch/tag
+//
+// Abstracted away for future use of directory walking or plain file retrieval
+func (gs *GitSource) tree() (*object.Tree, error) {
+	logrus.Trace("loader_git.File: gs.getCommit")
+	commit, err := gs.getCommit(gs.repo)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nError: %v", ErrGitOperation, err)
+	}
+
+	logrus.Trace("loader_git.File: commit.Tree")
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("%w\nFailed to get git tree: %v", ErrGitOperation, err)
+	}
+	return tree, nil
 }
 
 func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
