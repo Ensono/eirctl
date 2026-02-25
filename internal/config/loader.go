@@ -42,7 +42,6 @@ type Loader struct {
 	dir           string
 	homeDir       string
 	strictDecoder bool
-	osOp          any
 }
 
 // NewConfigLoader is Loader constructor
