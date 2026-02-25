@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
@@ -26,10 +25,7 @@ var ErrConfigNotFound = errors.New("config file not found")
 // MaxImportFileSize is the maximum size of an imported file (10MB)
 const MaxImportFileSize = 10 * 1024 * 1024
 
-// httpTimeout is the timeout for HTTP requests when fetching imported files
-const httpTimeout = 30 * time.Second
-
-// os implementation
+// TODO: os implementation for easier testability
 //
 // os.Create
 // os.MkdirAll
@@ -46,6 +42,7 @@ type Loader struct {
 	dir           string
 	homeDir       string
 	strictDecoder bool
+	osOp          any
 }
 
 // NewConfigLoader is Loader constructor
