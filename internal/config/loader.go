@@ -233,7 +233,7 @@ func (cl *Loader) load(file schema.ImportEntry) (*ConfigDefinition, error) {
 	for _, fn := range getGetConfigFunc {
 		ok, cfg, err := fn(cl, file)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, in file: (%+v)", err, file)
 		}
 		if ok && cfg != nil {
 			config = cfg
@@ -265,7 +265,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			}
 			importedConfig, err := cl.load(entry)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load import (%+v) error: %w", entry, err)
 			}
 			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
@@ -284,7 +284,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			}
 			importedConfig, err := cl.load(entry)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load import (%+v) error: %w", entry, err)
 			}
 			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
@@ -293,6 +293,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			continue
 		}
 
+		// the last import fallback is a file import
 		var importFile string
 
 		// This is the value passed in if the loaded file was originally a URL
@@ -314,12 +315,12 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 
 		fi, err := os.Stat(importFile)
 		if err != nil {
-			return fmt.Errorf("%s: %v", importFile, err)
+			return fmt.Errorf("%w, %s: %v", ErrImportFileFailed, importFile, err)
 		}
 		if fi.IsDir() {
 			importedConfig, err := cl.loadDir(importFile)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load dir import error: %w", err)
 			}
 			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
@@ -329,7 +330,7 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 		}
 		importedConfig, err := cl.load(entry)
 		if err != nil {
-			return fmt.Errorf("load import error: %v", err)
+			return fmt.Errorf("load import (%+v) error: %w", entry, err)
 		}
 		if err := mergeExistingWithImported(baseConfig, importedConfig, importFile); err != nil {
 			return err
@@ -423,7 +424,7 @@ func (cl *Loader) readURL(urlStr schema.ImportEntry) (*ConfigDefinition, error) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%d: config request failed - %s", resp.StatusCode, urlStr)
+		return nil, fmt.Errorf("%w, %d: config request failed - %s", ErrImportFileFailed, resp.StatusCode, urlStr)
 	}
 
 	cm := &ConfigDefinition{}

@@ -63,8 +63,10 @@ func (s *StringSlice) UnmarshalYAML(value *yaml.Node) error {
 type ImportEntry struct {
 	// Src of the config or file
 	Src string `yaml:"src" json:"src"`
-	// Hash is the
+	// Hash is the sha256:$SUM of the file
+	// currently only sha256 is supported but others might be supported in the future
 	Hash string `yaml:"hash,omitempty" json:"hash,omitempty"`
+	// Dest is the destination on local disk where the file can be picked up from
 	Dest string `yaml:"dest,omitempty" json:"dest,omitempty"`
 }
 
@@ -93,6 +95,9 @@ var ErrUnsupportedHashFormat = errors.New("unsupported hash format, must be in '
 // ErrUnsupportedHashAlgorithm ensures the hash algorithm is supported
 var ErrUnsupportedHashAlgorithm = errors.New("unsupported hash, must be one of ['sha256']")
 
+// ErrSrcEmpty ensures an empty string for source throws an error
+var ErrSrcEmpty = errors.New("import entry source must not be empty")
+
 // HasHash checks whether a hash verification has been provided and should be performed
 func (ie *ImportEntry) HasHash() (bool, ParsedHash, error) {
 	if len(ie.Hash) > 0 {
@@ -112,8 +117,11 @@ func (ie *ImportEntry) HasHash() (bool, ParsedHash, error) {
 func (ie *ImportEntry) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.ScalarNode {
 		// Backwards compat: plain string is assigned as Src
-		ie.Src = value.Value
-		return nil
+		if len(value.Value) > 0 {
+			ie.Src = value.Value
+			return nil
+		}
+		return fmt.Errorf("%w", ErrSrcEmpty)
 	}
 	if value.Kind == yaml.MappingNode {
 		// casting the mapping node into the `ImportEntry` type
@@ -124,8 +132,11 @@ func (ie *ImportEntry) UnmarshalYAML(value *yaml.Node) error {
 		if err := value.Decode(&tmp); err != nil {
 			return err
 		}
-		*ie = ImportEntry(tmp)
-		return nil
+		if len(tmp.Src) > 0 {
+			*ie = ImportEntry(tmp)
+			return nil
+		}
+		return fmt.Errorf("%w", ErrSrcEmpty)
 	}
 	return fmt.Errorf("import entry must be a string or object, got %v", value.Kind)
 }
