@@ -291,10 +291,9 @@ func IsPathInsideSandbox(resolvedPath string) bool {
 	if err != nil {
 		return false
 	}
-	// Resolve symlinks to get the real path on disk
+
 	realPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		// If the file doesn't exist yet, fall back to the cleaned abs path
 		realPath = filepath.Clean(absPath)
 	}
 
@@ -302,11 +301,23 @@ func IsPathInsideSandbox(resolvedPath string) bool {
 	if err != nil {
 		return false
 	}
+
 	realWd, err := filepath.EvalSymlinks(wd)
 	if err != nil {
 		realWd = filepath.Clean(wd)
 	}
-	return strings.HasPrefix(realPath, realWd+string(filepath.Separator)) || realPath == realWd
+
+	rel, err := filepath.Rel(realWd, realPath)
+	if err != nil {
+		return false
+	}
+
+	// If rel starts with "..", then realPath is outside realWd
+	if rel == "." {
+		return true
+	}
+
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
 }
 
 // ReaderFromPath returns an io.ReaderCloser from provided path
