@@ -20,7 +20,7 @@ var DefaultFileNames = []string{"eirctl.yaml", "tasks.yaml"}
 // Config is a eirctl internal config structure
 type Config struct {
 	SourceFile string
-	Import     []string
+	Import     ImportList
 	Contexts   map[string]*runner.ExecutionContext
 	Pipelines  map[string]*scheduler.ExecutionGraph
 	Tasks      map[string]*task.Task
