@@ -1,13 +1,19 @@
 package config
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -15,6 +21,17 @@ import (
 
 // ErrConfigNotFound occurs when requested config file does not exists
 var ErrConfigNotFound = errors.New("config file not found")
+
+// MaxImportFileSize is the maximum size of an imported file (10MB)
+const MaxImportFileSize = 10 * 1024 * 1024
+
+// TODO: os implementation for easier testability
+//
+// os.Create
+// os.MkdirAll
+// os.Stat
+// os.Open
+// os.ReadFile
 
 // Loader reads and parses config files
 //
@@ -58,6 +75,9 @@ type loaderContext struct {
 }
 
 // Load loads and parses requested config file
+// This only called from the command itself and would be initially pointing to the local eirctl.yaml
+//
+// NOTE: it then recursively builds a full config definition based on all the imports
 func (cl *Loader) Load(file string) (*Config, error) {
 	cl.reset()
 	lc := &loaderContext{
@@ -80,7 +100,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 		file = path.Join(cl.dir, file)
 	}
 
-	def, err := cl.load(file)
+	def, err := cl.load(schema.ImportEntry{Src: file})
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +109,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// Overwrite globally loaded config with
 	// locally set config file
 	err = cl.dst.merge(localCfg)
@@ -115,7 +136,7 @@ func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 		return cl.dst, nil
 	}
 
-	def, err := cl.load(file)
+	def, err := cl.load(schema.ImportEntry{Src: file})
 	if err != nil {
 		return nil, err
 	}
@@ -153,20 +174,20 @@ func (cl *Loader) reset() {
 	cl.imports = make(map[string]bool)
 }
 
-type ConfigFunc func(cl *Loader, file string) (bool, *ConfigDefinition, error)
+type ConfigFunc func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error)
 
 // maintain the order of the slice as it's being loaded/validated
 var getGetConfigFunc []ConfigFunc = []ConfigFunc{
-	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
-		if utils.IsURL(file) {
+	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
+		if utils.IsURL(file.Src) {
 			logrus.Debugf("import (%s) is a URL", file)
 			cfg, err := cl.readURL(file)
 			return cfg != nil && err == nil, cfg, err
 		}
 		return false, nil, nil
 	},
-	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
-		if IsGit(file) {
+	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
+		if IsGit(file.Src) {
 			logrus.Debugf("import (%s) is a git path", file)
 			gs, err := NewGitSource(file)
 			if err != nil {
@@ -175,13 +196,23 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 			if err := gs.Clone(); err != nil {
 				return false, nil, err
 			}
+			if file.IsFileImport() {
+				contents, err := gs.File()
+				if err != nil {
+					return false, nil, err
+				}
+				if err := cl.writeImportedFile(file, contents); err != nil {
+					return false, nil, err
+				}
+				return true, &ConfigDefinition{}, nil
+			}
 			cfg, err := gs.Config()
 			return cfg != nil && err == nil, cfg, err
 		}
 		return false, nil, nil
 	},
-	func(cl *Loader, file string) (bool, *ConfigDefinition, error) {
-		if !utils.FileExists(file) {
+	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
+		if !utils.FileExists(file.Src) {
 			return false, nil, fmt.Errorf("%s: %w", file, ErrConfigNotFound)
 		}
 		cfg, err := cl.readFile(file)
@@ -191,14 +222,14 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 
 // load is called with the base eirctl.yaml file for the first time
 // recursively called by other imports if they exist and their imports
-func (cl *Loader) load(file string) (*ConfigDefinition, error) {
+func (cl *Loader) load(file schema.ImportEntry) (*ConfigDefinition, error) {
 	// ensures a recursive forever loop does not occur and set file to visited
-	cl.imports[file] = true
+	cl.imports[file.Src] = true
 	config := &ConfigDefinition{}
 	for _, fn := range getGetConfigFunc {
 		ok, cfg, err := fn(cl, file)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, in file: (%+v)", err, file)
 		}
 		if ok && cfg != nil {
 			config = cfg
@@ -208,84 +239,94 @@ func (cl *Loader) load(file string) (*ConfigDefinition, error) {
 
 	// The config will be cumulatively built over the imports
 	// NOTE: we want to fail on duplicate keys detected
-	if err := cl.parseImports(config, filepath.Dir(file)); err != nil {
+	if err := cl.parseImports(config, filepath.Dir(file.Src)); err != nil {
 		return nil, err
 	}
 	return config, nil
 }
 
-// parseImports map[string]any is a pointer for intents and purpose so we mutate it here with recursive merges
+// parseImports map[string]any is a pointer for all intents and purpose so we mutate it here with recursive merges
+//
+// NOTE: we also write any file imports to disk (their `Dest` location)
 func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) error {
 
-	for _, val := range baseConfig.Import {
-		if utils.IsURL(val) {
-			if cl.imports[val] {
+	for _, entry := range baseConfig.Import {
+		// Handle URI resources first
+		// continue to next when done or error
+		if utils.IsURL(entry.Src) {
+			if cl.imports[entry.Src] {
 				// already visited and parsed import file
 				// continuing to next
 				continue
 			}
-			importedConfig, err := cl.load(val)
+			importedConfig, err := cl.load(entry)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load import (%+v) error: %w", entry, err)
 			}
-			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
 			}
 			// iterate through next import
 			continue
 		}
 
-		if IsGit(val) {
-			if cl.imports[val] {
+		// Handle Git resources second
+		// continue to next when done or error
+		if IsGit(entry.Src) {
+			if cl.imports[entry.Src] {
 				// already visited and parsed import file
 				// continuing to next
 				continue
 			}
-			importedConfig, err := cl.load(val)
+			importedConfig, err := cl.load(entry)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load import (%+v) error: %w", entry, err)
 			}
-			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
 			}
 			// iterate through next import
 			continue
 		}
 
+		// the last import fallback is a file import
 		var importFile string
 
 		// This is the value passed in if the loaded file was originally a URL
 		// TODO: Need to talk through the intentions here, as this magically
 		// worked for *nix systems but not Windows...
 		if importDir != "http:" {
-			importFile = filepath.Join(importDir, val)
+			importFile = filepath.Join(importDir, entry.Src)
 		}
 
-		if filepath.IsAbs(val) {
-			importFile = val
+		if filepath.IsAbs(entry.Src) {
+			importFile = entry.Src
 		}
+		// setting the Src to absolute path here
+		entry.Src = importFile
+
 		if cl.imports[importFile] {
 			continue
 		}
 
 		fi, err := os.Stat(importFile)
 		if err != nil {
-			return fmt.Errorf("%s: %v", importFile, err)
+			return fmt.Errorf("%w, %s: %v", ErrImportFileFailed, importFile, err)
 		}
 		if fi.IsDir() {
 			importedConfig, err := cl.loadDir(importFile)
 			if err != nil {
-				return fmt.Errorf("load import error: %v", err)
+				return fmt.Errorf("load dir import error: %w", err)
 			}
-			if err := mergeExistingWithImported(baseConfig, importedConfig, val); err != nil {
+			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
 			}
 			// iterate through next import
 			continue
 		}
-		importedConfig, err := cl.load(importFile)
+		importedConfig, err := cl.load(entry)
 		if err != nil {
-			return fmt.Errorf("load import error: %v", err)
+			return fmt.Errorf("load import (%+v) error: %w", entry, err)
 		}
 		if err := mergeExistingWithImported(baseConfig, importedConfig, importFile); err != nil {
 			return err
@@ -359,7 +400,7 @@ func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
 			continue
 		}
 
-		cml, err := cl.load(importFile)
+		cml, err := cl.load(schema.ImportEntry{Src: importFile})
 		if err != nil {
 			return nil, fmt.Errorf("%s: %v", importFile, err)
 		}
@@ -371,30 +412,48 @@ func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
 	return cm, nil
 }
 
-func (cl *Loader) readURL(urlStr string) (*ConfigDefinition, error) {
-	resp, err := http.Get(urlStr)
+func (cl *Loader) readURL(urlStr schema.ImportEntry) (*ConfigDefinition, error) {
+	resp, err := http.Get(urlStr.Src)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%d: config request failed - %s", resp.StatusCode, urlStr)
+		return nil, fmt.Errorf("%w, %d: config request failed - %s", ErrImportFileFailed, resp.StatusCode, urlStr)
 	}
+
 	cm := &ConfigDefinition{}
+
+	if urlStr.IsFileImport() {
+		if err := cl.writeImportedFile(urlStr, resp.Body); err != nil {
+			return nil, err
+		}
+		return cm, nil
+	}
+
 	if err := yaml.NewDecoder(resp.Body).Decode(&cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
 }
 
-func (cl *Loader) readFile(filename string) (*ConfigDefinition, error) {
-	data, err := os.ReadFile(filename)
+func (cl *Loader) readFile(entry schema.ImportEntry) (*ConfigDefinition, error) {
+	data, err := os.Open(entry.Src)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %v", filename, err)
+		return nil, fmt.Errorf("%s: %v", entry.Src, err)
 	}
+
 	cm := &ConfigDefinition{}
-	if err := yaml.Unmarshal(data, &cm); err != nil {
+
+	if entry.IsFileImport() {
+		if err := cl.writeImportedFile(entry, data); err != nil {
+			return nil, err
+		}
+		return cm, nil
+	}
+
+	if err := yaml.NewDecoder(data).Decode(cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
@@ -415,4 +474,88 @@ func (cl *Loader) ResolveDefaultConfigFile() (file string, err error) {
 	}
 
 	return file, fmt.Errorf("default config resolution failed: %w", ErrConfigNotFound)
+}
+
+// ErrImportFileFailed occurs when a file import entry fails to be fetched or written
+var ErrImportFileFailed = errors.New("import file failed")
+
+// ErrPathTraversal occurs when a dest path escapes the project root
+var ErrPathTraversal = errors.New("dest path traverses outside project root")
+
+// ErrHashMismatch occurs when a downloaded file's hash does not match the expected hash
+var ErrHashMismatch = errors.New("integrity hash mismatch")
+
+// writeImportedFile writes a single imported file to the specified destination,
+// applying path traversal protection. dest is required and relative to the project root.
+func (cl *Loader) writeImportedFile(entry schema.ImportEntry, content io.ReadCloser) error {
+	defer content.Close()
+
+	checkHash, h, err := entry.HasHash()
+	if err != nil {
+		return err
+	}
+
+	if checkHash {
+		// bytes for hash checking and content writing
+		hb, cb := &bytes.Buffer{}, &bytes.Buffer{}
+		// Copying the reader into multiple writers
+		if _, err := io.Copy(io.MultiWriter(hb, cb), content); err != nil {
+			return err
+		}
+		if err := VerifyHash(hb.Bytes(), h.Typ, h.Val); err != nil {
+			return err
+		}
+		return storeImportedFile(cl.Dir(), entry, cb)
+	}
+	return storeImportedFile(cl.Dir(), entry, content)
+}
+
+// storeImportedFiles writes files to dest
+func storeImportedFile(baseDir string, entry schema.ImportEntry, content io.Reader) error {
+	cleanDest := filepath.Clean(filepath.Join(baseDir, entry.Dest))
+	if filepath.IsAbs(entry.Dest) {
+		cleanDest = filepath.Clean(entry.Dest)
+	}
+
+	// keeping this here for now - but should be gated in the future as
+	// there are genuine reasons writing outside of project root
+	if !strings.HasPrefix(cleanDest, filepath.Clean(baseDir)) {
+		return fmt.Errorf("%w: %s resolves outside project root %s", ErrPathTraversal, entry.Dest, baseDir)
+	}
+
+	// support nested dest paths by creating subdirectories
+	if err := os.MkdirAll(filepath.Dir(cleanDest), 0755); err != nil {
+		return fmt.Errorf("%w: failed to create directory for %s: %v", ErrImportFileFailed, cleanDest, err)
+	}
+
+	f, err := os.Create(cleanDest)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(f, content); err != nil {
+		// copy error
+		return err
+	}
+	logrus.Debugf("import: %s -> %s", entry.Src, cleanDest)
+	return nil
+}
+
+// VerifyHash checks that the SHA-256 hash of content matches the expected hash.
+// expectedHash must be in the format "algorithm:hex_digest", e.g.
+// "sha256:236d1b7e77d01309bf704065c74b3e4baf589dac240a7b199c4c22e9fc4630e6"
+// Currently only sha256 is supported.
+func VerifyHash(content []byte, hashTyp schema.HashType, expectedDigest string) error {
+
+	switch hashTyp {
+	case schema.Sha256:
+		h := sha256.Sum256(content)
+		actualDigest := hex.EncodeToString(h[:])
+		if actualDigest != expectedDigest {
+			return fmt.Errorf("%w: expected %s:%s, got %s:%s", ErrHashMismatch, hashTyp, expectedDigest, hashTyp, actualDigest)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: %s is unsupported (supported: sha256)", schema.ErrUnsupportedHashAlgorithm, hashTyp)
+	}
 }

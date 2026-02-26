@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
@@ -599,6 +602,811 @@ func Test_Loader_Validate(t *testing.T) {
 		}
 		if !errors.Is(err, config.ErrValidation) {
 			t.Errorf("incorrect error type thrown, got %q, wanted %q", err, config.ErrValidation)
+		}
+	})
+}
+
+func Test_ImportFiles_LocalFile(t *testing.T) {
+	// Create a temp directory for the project
+	projectDir, err := os.MkdirTemp("", "import-files-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a script file to import
+	scriptContent := "#!/bin/bash\necho deployed\n"
+	scriptFile := filepath.Join(projectDir, "source-deploy.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create eirctl config with import referencing the local file
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: target-deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the file was written to project root (explicit dest)
+	destPath := filepath.Join(projectDir, "target-deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_NestedDest(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-nested-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := "#!/bin/bash\necho terraform init\n"
+	scriptFile := filepath.Join(projectDir, "init.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// dest includes subdirectory
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: terraform/init.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "terraform", "init.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_URL(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho from url\n"
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(scriptContent))
+	}))
+	defer testSrv.Close()
+
+	projectDir, err := os.MkdirTemp("", "import-files-url-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, testSrv.URL)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_Git(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho from git\n"
+	_, dir := createFilesystemTestRepo(t, map[string]string{
+		"scripts/deploy.sh": scriptContent,
+	}, "")
+	defer os.RemoveAll(dir)
+
+	projectDir, err := os.MkdirTemp("", "import-files-git-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: git::file://%s//scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, dir)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != scriptContent {
+		t.Errorf("got %q, wanted %q", string(content), scriptContent)
+	}
+}
+
+func Test_ImportFiles_EmptySrc(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-empty-src-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+import:
+  - src: ""
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for empty src")
+	}
+	if !errors.Is(err, schema.ErrSrcEmpty) {
+		t.Errorf("incorrect error type, got %v, wanted %v", err, schema.ErrSrcEmpty)
+	}
+}
+
+func Test_ImportFiles_NoImportFiles(t *testing.T) {
+	// Ensure no error when no file imports are present
+	projectDir, err := os.MkdirTemp("", "import-files-none-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func Test_ImportFiles_PathTraversal(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-files-traversal-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := "#!/bin/bash\necho pwned\n"
+	scriptFile := filepath.Join(projectDir, "evil.sh")
+	if err := os.WriteFile(scriptFile, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: ../../../etc/evil.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for path traversal in dest")
+	}
+	if !errors.Is(err, config.ErrPathTraversal) {
+		t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrPathTraversal)
+	}
+}
+
+// sha256Hex computes the SHA-256 hex digest of content.
+func sha256Hex(content []byte) string {
+	h := sha256.Sum256(content)
+	return hex.EncodeToString(h[:])
+}
+
+func Test_ImportFiles_HashMatch(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-hash-match-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho secure\n")
+	scriptFile := filepath.Join(projectDir, "secure.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hash := "sha256:" + sha256Hex(scriptContent)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: secure.sh
+    hash: %s
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile, hash)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("expected no error for matching hash, got: %v", err)
+	}
+
+	destPath := filepath.Join(projectDir, "secure.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != string(scriptContent) {
+		t.Errorf("got %q, wanted %q", string(content), string(scriptContent))
+	}
+}
+
+func Test_ImportFiles_HashMismatch(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-hash-mismatch-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho tampered\n")
+	scriptFile := filepath.Join(projectDir, "tampered.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Use a deliberately wrong hash
+	wrongHash := "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: tampered.sh
+    hash: %s
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile, wrongHash)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for hash mismatch, got nil")
+	}
+	if !errors.Is(err, config.ErrHashMismatch) {
+		t.Errorf("expected ErrHashMismatch, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_UnsupportedHashAlgorithm(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-hash-unsupported-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho algo\n")
+	scriptFile := filepath.Join(projectDir, "algo.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: algo.sh
+    hash: md5:d41d8cd98f00b204e9800998ecf8427e
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for unsupported hash algorithm, got nil")
+	}
+	if !errors.Is(err, schema.ErrUnsupportedHashAlgorithm) {
+		t.Errorf("expected ErrUnsupportedHashAlgorithm, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_HashBadFormat(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-hash-badformat-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho badformat\n")
+	scriptFile := filepath.Join(projectDir, "bad.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: bad.sh
+    hash: nocolon
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for bad hash format, got nil")
+	}
+	if !errors.Is(err, schema.ErrUnsupportedHashFormat) {
+		t.Errorf("expected ErrUnsupportedHashFormat, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_NoHashSkipsVerification(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-nohash-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho nohash\n")
+	scriptFile := filepath.Join(projectDir, "nohash.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// No hash field — should succeed without verification
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: nohash.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("expected no error when hash is omitted, got: %v", err)
+	}
+}
+
+func Test_UnifiedImport_MixedStringAndObject(t *testing.T) {
+	// Create a project dir with a shared config and a script file
+	projectDir, err := os.MkdirTemp("", "unified-import-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	// Create a shared config to import as string
+	sharedConfig := `
+tasks:
+  shared_task:
+    command:
+      - echo shared
+`
+	sharedFile := filepath.Join(projectDir, "shared.yaml")
+	if err := os.WriteFile(sharedFile, []byte(sharedConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a script to import as file
+	scriptContent := []byte("#!/bin/bash\necho from unified\n")
+	scriptFile := filepath.Join(projectDir, "deploy.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hash := "sha256:" + sha256Hex(scriptContent)
+
+	// Unified import: string entry (config) + object entry (file import with hash)
+	configContent := fmt.Sprintf(`
+import:
+  - shared.yaml
+  - src: %s
+    dest: deploy.sh
+    hash: %s
+
+tasks:
+  main_task:
+    command:
+      - echo main
+`, scriptFile, hash)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	cfg, err := cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the shared config task was imported
+	if _, ok := cfg.Tasks["shared_task"]; !ok {
+		t.Error("expected shared_task from config import")
+	}
+	if _, ok := cfg.Tasks["main_task"]; !ok {
+		t.Error("expected main_task from main config")
+	}
+
+	// Verify the file was written
+	destPath := filepath.Join(projectDir, "deploy.sh")
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected file at %s, got error: %v", destPath, err)
+	}
+	if string(content) != string(scriptContent) {
+		t.Errorf("got %q, wanted %q", string(content), string(scriptContent))
+	}
+}
+
+func Test_UnifiedImport_ObjectConfigImportWithHash(t *testing.T) {
+	// Object form in import without dest = config import, hash should be silently accepted
+	// (hash verification for config imports is a follow-up)
+	projectDir, err := os.MkdirTemp("", "unified-config-hash-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	sharedConfig := `
+tasks:
+  hashed_task:
+    command:
+      - echo hashed
+`
+	sharedFile := filepath.Join(projectDir, "hashed.yaml")
+	if err := os.WriteFile(sharedFile, []byte(sharedConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Object form without dest — treated as config import
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+
+tasks:
+  main_task:
+    command:
+      - echo main
+`, sharedFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	cfg, err := cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := cfg.Tasks["hashed_task"]; !ok {
+		t.Error("expected hashed_task from config import via object form")
+	}
+}
+
+func Test_UnifiedImport_FileImportHashMismatch(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "unified-file-hash-mismatch-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	scriptContent := []byte("#!/bin/bash\necho bad\n")
+	scriptFile := filepath.Join(projectDir, "bad.sh")
+	if err := os.WriteFile(scriptFile, scriptContent, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s
+    dest: bad.sh
+    hash: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, scriptFile)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for hash mismatch in unified import")
+	}
+	if !errors.Is(err, config.ErrHashMismatch) {
+		t.Errorf("expected ErrHashMismatch, got: %v", err)
+	}
+}
+
+func Test_UnifiedImport_BackwardCompatStringOnly(t *testing.T) {
+	// Ensure pure string imports still work (backward compatibility)
+	projectDir, err := os.MkdirTemp("", "unified-compat-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	sharedConfig := `
+tasks:
+  compat_task:
+    command:
+      - echo compat
+`
+	sharedFile := filepath.Join(projectDir, "compat.yaml")
+	if err := os.WriteFile(sharedFile, []byte(sharedConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	configContent := `
+import:
+  - compat.yaml
+
+tasks:
+  main_task:
+    command:
+      - echo main
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	cfg, err := cl.Load(configFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := cfg.Tasks["compat_task"]; !ok {
+		t.Error("expected compat_task from string config import")
+	}
+	if _, ok := cfg.Tasks["main_task"]; !ok {
+		t.Error("expected main_task from main config")
+	}
+}
+
+func Test_ImportFiles_URL_Non200Status(t *testing.T) {
+	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer testSrv.Close()
+
+	projectDir, err := os.MkdirTemp("", "import-url-404-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := fmt.Sprintf(`
+import:
+  - src: %s/scripts/deploy.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`, testSrv.URL)
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for non-200 HTTP response")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_ImportFiles_LocalFileNotFound(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "import-notfound-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	configContent := `
+import:
+  - src: nonexistent-script.sh
+    dest: deploy.sh
+
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+
+	configFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	_, err = cl.Load(configFile)
+	if err == nil {
+		t.Fatal("expected error for missing local file")
+	}
+	if !errors.Is(err, config.ErrImportFileFailed) {
+		t.Errorf("expected ErrImportFileFailed, got: %v", err)
+	}
+}
+
+func Test_VerifyHash_error(t *testing.T) {
+	t.Run("unknown hash type", func(t *testing.T) {
+		err := config.VerifyHash([]byte(`fooo`), schema.HashType("unknown"), "fooo123")
+		if err == nil {
+			t.Error("failed to throw an error")
 		}
 	})
 }
