@@ -1401,3 +1401,12 @@ tasks:
 		t.Errorf("expected ErrImportFileFailed, got: %v", err)
 	}
 }
+
+func Test_VerifyHash_error(t *testing.T) {
+	t.Run("unknown hash type", func(t *testing.T) {
+		err := config.VerifyHash([]byte(`fooo`), schema.HashType("unknown"), "fooo123")
+		if err == nil {
+			t.Error("failed to throw an error")
+		}
+	})
+}
