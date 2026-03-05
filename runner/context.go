@@ -15,6 +15,7 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/go-connections/nat"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
@@ -88,6 +89,11 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	for _, v := range vols {
 		c.volumes[v] = struct{}{}
 	}
+	return c
+}
+
+func (c *ContainerContext) WithPlatform(v string) *ContainerContext {
+	c.platform = v
 	return c
 }
 
@@ -302,8 +308,19 @@ func (c *ContainerContext) ExtraHosts() []string {
 	return c.extraHosts
 }
 
-func (c *ContainerContext) Platofrm() string {
-	return c.platform
+var ErrPlatformFormatIncorrect = errors.New("platform needs to be provided in os/architecture")
+
+func (c *ContainerContext) Platform() (*ocispec.Platform, error) {
+	platform := &ocispec.Platform{}
+	splitPlatform := strings.SplitN(c.platform, "/", 2)
+	// the platform must be supplied in the form of `os/arch`
+	if len(splitPlatform) != 2 {
+		return nil, fmt.Errorf("%w, got %q", ErrPlatformFormatIncorrect, c.platform)
+	}
+	platform.OS = splitPlatform[0]
+	platform.Architecture = splitPlatform[1]
+
+	return platform, nil
 }
 
 func (c *ContainerContext) CapabilitiesAdd() []string {

@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -622,6 +624,272 @@ func Test_ContainerContext_AddHostArgs(t *testing.T) {
 						t.Errorf("missing expected host mapping, got: %v, wanted to contain: %s\n", got, wantHost)
 					}
 				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_Platform_WithPlatform(t *testing.T) {
+	ttests := map[string]struct {
+		platformStr string
+		want        *ocispec.Platform
+		expectErr   bool
+	}{
+		"valid linux/arm64": {
+			platformStr: "linux/arm64",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"valid darwin/amd64": {
+			platformStr: "darwin/amd64",
+			want: &ocispec.Platform{
+				OS:           "darwin",
+				Architecture: "amd64",
+			},
+			expectErr: false,
+		},
+		"invalid missing slash": {
+			platformStr: "linux-arm64",
+			want:        nil,
+			expectErr:   true,
+		},
+		"invalid only os": {
+			platformStr: "linux",
+			want:        nil,
+			expectErr:   true,
+		},
+		"invalid empty string": {
+			platformStr: "",
+			want:        nil,
+			expectErr:   true,
+		},
+		// NOTE: This currently passes your implementation because SplitN(..., 2)
+		// keeps everything after the first slash in the arch field.
+		"allows extra slash in arch portion": {
+			platformStr: "linux/arm64/v8",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64/v8",
+			},
+			expectErr: false,
+		},
+		// NOTE: This also currently passes (arch becomes empty string).
+		// If you later add validation for non-empty OS/arch, flip this to expectErr=true.
+		"empty arch currently allowed": {
+			platformStr: "linux/",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "",
+			},
+			expectErr: false,
+		},
+		"empty os currently allowed": {
+			platformStr: "/arm64",
+			want: &ocispec.Platform{
+				OS:           "",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+	}
+
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cc := runner.NewContainerContext("image:latest").WithPlatform(tt.platformStr)
+
+			got, err := cc.Platform()
+
+			if err != nil && !tt.expectErr {
+				t.Fatalf("not expecting an error: %s", err)
+			}
+			if err == nil && tt.expectErr {
+				t.Fatal("expecting an error but got none")
+			}
+
+			if tt.expectErr {
+				if !errors.Is(err, runner.ErrPlatformFormatIncorrect) {
+					t.Fatalf("expected ErrPlatformFormatIncorrect, got: %v", err)
+				}
+				return
+			}
+
+			if got == nil {
+				t.Fatal("expected platform, got nil")
+			}
+			if got.OS != tt.want.OS {
+				t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+			}
+			if got.Architecture != tt.want.Architecture {
+				t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_Platform_ParseContainerArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          *ocispec.Platform
+		expectErr     bool
+	}{
+		"--platform with equals": {
+			containerArgs: []string{"--platform=linux/arm64"},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"--platform without equals": {
+			containerArgs: []string{"--platform", "linux/amd64"},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "amd64",
+			},
+			expectErr: false,
+		},
+		"--platform combined with other flags": {
+			containerArgs: []string{
+				"-v", "/tmp:/tmp",
+				"--platform=linux/arm64",
+				"-p", "8080:80",
+				"--add-host=db:10.0.0.5",
+			},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"invalid --platform missing slash": {
+			containerArgs: []string{"--platform=linux"},
+			want:          nil,
+			expectErr:     true,
+		},
+		"invalid --platform empty value": {
+			containerArgs: []string{"--platform="},
+			want:          nil,
+			expectErr:     true,
+		},
+	}
+
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			// ParseContainerArgs does not validate platform format by itself (it trims and sets it).
+			// So we only treat parse errors here; format errors come from cc.Platform().
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+
+			got, perr := cc.Platform()
+			if perr != nil && !tt.expectErr {
+				t.Fatalf("not expecting an error: %s", perr)
+			}
+			if perr == nil && tt.expectErr {
+				t.Fatal("expecting an error but got none")
+			}
+
+			if tt.expectErr {
+				if !errors.Is(perr, runner.ErrPlatformFormatIncorrect) {
+					t.Fatalf("expected ErrPlatformFormatIncorrect, got: %v", perr)
+				}
+				return
+			}
+
+			if got.OS != tt.want.OS {
+				t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+			}
+			if got.Architecture != tt.want.Architecture {
+				t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
+			}
+		})
+	}
+}
+
+func TestContainerContext_Platform(t *testing.T) {
+	tests := []struct {
+		name        string
+		platformStr string
+		expected    *ocispec.Platform
+		expectErr   bool
+	}{
+		{
+			name:        "valid linux arm64",
+			platformStr: "linux/arm64",
+			expected: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+		},
+		{
+			name:        "valid darwin amd64",
+			platformStr: "darwin/amd64",
+			expected: &ocispec.Platform{
+				OS:           "darwin",
+				Architecture: "amd64",
+			},
+		},
+		{
+			name:        "missing slash",
+			platformStr: "linux-arm64",
+			expectErr:   true,
+		},
+		{
+			name:        "only os",
+			platformStr: "linux",
+			expectErr:   true,
+		},
+		{
+			name:        "empty string",
+			platformStr: "",
+			expectErr:   true,
+		},
+		{
+			name:        "extra separator allowed in arch portion",
+			platformStr: "linux/arm64/v8",
+			expected: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64/v8",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc := &runner.ContainerContext{}
+
+			result, err := cc.WithPlatform(tt.platformStr).Platform()
+
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if !errors.Is(err, runner.ErrPlatformFormatIncorrect) {
+					t.Fatalf("expected ErrPlatformFormatIncorrect, got %v", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.OS != tt.expected.OS {
+				t.Fatalf("expected OS %q, got %q", tt.expected.OS, result.OS)
+			}
+
+			if result.Architecture != tt.expected.Architecture {
+				t.Fatalf("expected arch %q, got %q", tt.expected.Architecture, result.Architecture)
 			}
 		})
 	}
