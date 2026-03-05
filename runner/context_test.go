@@ -604,20 +604,17 @@ func Test_ContainerContext_AddHostArgs(t *testing.T) {
 			_, err := cc.ParseContainerArgs(tt.containerArgs)
 
 			if err != nil && !tt.expectErr {
-				t.Errorf("not expecting an error: %s", err)
-				t.FailNow()
+				t.Fatalf("not expecting an error: %s", err)
 			}
 
 			if err == nil && tt.expectErr {
-				t.Errorf("expecting an error but got none")
-				t.FailNow()
+				t.Fatal("expecting an error but got none")
 			}
 
 			if !tt.expectErr {
 				got := cc.ExtraHosts()
 				if len(got) != len(tt.want) {
-					t.Errorf("incorrect number of extra hosts, got: %d, wanted: %d\n", len(got), len(tt.want))
-					t.FailNow()
+					t.Fatalf("incorrect number of extra hosts, got: %d, wanted: %d\n", len(got), len(tt.want))
 				}
 
 				for _, wantHost := range tt.want {

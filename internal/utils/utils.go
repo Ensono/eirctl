@@ -254,6 +254,15 @@ func escapeWinPaths(path string) string {
 	return strings.NewReplacer(`\`, `\\`).Replace(path)
 }
 
+// NormalizeHome accepts a string in any format and
+// converts any HOME type env var pointer into full string.
+//
+// Special consideration will be put on `~[tilde]` and replaced by HOME variable,
+// making it available across platforms/environments where the [tilde] symbol is not short hand $HOME
+//
+//	`-v ${HOME}/foo:/app/foo` => `/Users/me/foo:/app/foo`
+//
+//	`~/bar` => `/Users/me/bar`
 func NormalizeHome(v string) string {
 	home := MustGetUserHomeDir()
 	v = os.Expand(v, func(s string) string {

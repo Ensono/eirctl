@@ -68,6 +68,7 @@ func platformContainerConfig(containerContext *ContainerContext, cEnv []string, 
 		PortBindings: hostPorts,
 		AutoRemove:   true,
 		ExtraHosts:   containerContext.ExtraHosts(),
+		CapAdd:       containerContext.CapabilitiesAdd(),
 	}
 
 	// Only mount of type bind can be used on windows

@@ -52,6 +52,14 @@ type ContainerContext struct {
 	ports []string
 	// extraHosts contains custom host-to-IP mappings for /etc/hosts
 	extraHosts []string
+	// platform sets the platform compatibility layer
+	platform string
+	// capabilities adds any capabilities as per the [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+	//
+	// e.g. --cap-add=SYS_ADMIN adds the `CAP_SYS_ADMIN` from the linux man page
+	//
+	// the special case of adding all capabilities can be done via `--cap-add=ALL`
+	capabilities []string
 }
 
 type ContainerContextOpt func(cc *ContainerContext)
@@ -119,8 +127,10 @@ func newContainerArgs(cargs []string) *containerArgs {
 	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
 	_ = flagSet.StringArrayP("port", "p", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
-	_ = flagSet.StringP("userns", "", "", "")
+	_ = flagSet.String("userns", "", "")
 	_ = flagSet.StringArray("add-host", []string{}, "")
+	_ = flagSet.StringArray("cap-add", []string{}, "")
+	_ = flagSet.String("platform", "", "")
 	// TODO: refactor this to use first class properties
 	// on the container object in config/container_definition
 
@@ -136,23 +146,29 @@ func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext
 	return c, nil
 }
 
+// parserFunc
+type parserFunc func(cc *ContainerContext) error
+
 func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	osArgs := []string{}
 	for _, v := range ca.args {
 		// expand env on the whole slice item in case
 		// both the key and value are both coming from an env variable
-		osArgs = append(osArgs, strings.Fields(os.ExpandEnv(v))...)
+		// The key/flag name should never come from a variable "¯\_(ツ)_/¯" but you never know...
+		//
+		// This ensures env expansion on containerArgs happens in a single place
+		osArgs = append(osArgs, strings.Fields(utils.NormalizeHome(os.ExpandEnv(v)))...)
 	}
 
 	if err := ca.flagSet.Parse(osArgs); err != nil {
 		return err
 	}
-
 	user, err := ca.flagSet.GetString("user")
+
 	if err != nil {
 		return err
 	}
-	cc.user = os.ExpandEnv(strings.TrimSpace(user))
+	cc.user = strings.TrimSpace(user)
 
 	ports, err := ca.flagSet.GetStringArray("port")
 	if err != nil {
@@ -174,15 +190,23 @@ func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	if err != nil {
 		return err
 	}
-	cc.userns = os.ExpandEnv(strings.TrimSpace(userns))
+	cc.userns = strings.TrimSpace(userns)
 
-	if err := ca.parseVolumes(cc); err != nil {
+	platform, err := ca.flagSet.GetString("platform")
+	if err != nil {
 		return err
 	}
+	cc.platform = strings.TrimSpace(platform)
 
-	if err := ca.parseExtraHosts(cc); err != nil {
-		return err
+	for _, fn := range []parserFunc{
+		ca.parseVolumes, ca.parseExtraHosts,
+		ca.parseAddCapability,
+	} {
+		if err := fn(cc); err != nil {
+			return err
+		}
 	}
+
 	// add more parsers here if needed
 	return nil
 }
@@ -194,7 +218,7 @@ func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 		return err
 	}
 	for _, v := range volArgs {
-		vols = append(vols, expandVolumeString(strings.TrimSpace(v)))
+		vols = append(vols, strings.TrimSpace(v))
 	}
 	cc.WithVolumes(vols...)
 	return nil
@@ -206,19 +230,30 @@ func (ca *containerArgs) parseExtraHosts(cc *ContainerContext) error {
 	if err != nil {
 		return err
 	}
-	
+
 	for _, h := range hosts {
-		h = os.ExpandEnv(strings.TrimSpace(h))
+		h = strings.TrimSpace(h)
 		if h == "" {
 			continue
 		}
-		
+
 		// Validate format: hostname:ip
 		if err := validateHostMapping(h); err != nil {
 			return fmt.Errorf("invalid --add-host format %q: %w", h, err)
 		}
-		
+
 		cc.extraHosts = append(cc.extraHosts, h)
+	}
+	return nil
+}
+
+func (ca *containerArgs) parseAddCapability(cc *ContainerContext) error {
+	caps, err := ca.flagSet.GetStringArray("cap-add")
+	if err != nil {
+		return err
+	}
+	for _, v := range caps {
+		cc.capabilities = append(cc.capabilities, v)
 	}
 	return nil
 }
@@ -231,32 +266,19 @@ func validateHostMapping(mapping string) error {
 	if colonIdx == -1 {
 		return fmt.Errorf("expected format hostname:ip, got %q", mapping)
 	}
-	
+
 	hostname := mapping[:colonIdx]
 	ip := mapping[colonIdx+1:]
-	
+
 	if hostname == "" {
 		return fmt.Errorf("hostname cannot be empty in %q", mapping)
 	}
 	if ip == "" {
 		return fmt.Errorf("IP address cannot be empty in %q", mapping)
 	}
-	
+
 	// Docker runtime will validate the actual IP format
 	return nil
-}
-
-// expandVolumeString accepts a string in the form of:
-//
-//	`-v /path/on/host:/path/in/container`
-//
-// converts any env into full string, for example:
-//
-//	`-v ${HOME}/foo:/app/foo` => `/Users/me/foo:/app/foo`
-//
-// Special consideration will be put on `~` and replaced by HOME variable
-func expandVolumeString(vol string) string {
-	return os.ExpandEnv(utils.NormalizeHome(vol))
 }
 
 func (c *ContainerContext) Volumes() map[string]struct{} {
@@ -278,6 +300,14 @@ func (c *ContainerContext) Ports() (map[nat.Port]struct{}, map[nat.Port][]nat.Po
 // ExtraHosts returns the custom host-to-IP mappings
 func (c *ContainerContext) ExtraHosts() []string {
 	return c.extraHosts
+}
+
+func (c *ContainerContext) Platofrm() string {
+	return c.platform
+}
+
+func (c *ContainerContext) CapabilitiesAdd() []string {
+	return c.capabilities
 }
 
 // BindVolume formatted for bindmount
