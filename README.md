@@ -280,6 +280,13 @@ It uses the native Go API for OCI compliant runtimes (docker, podman, containerd
 > [!IMPORTANT]
 > This means you don't need the docker cli installed
 
+The `container_args` section supports several Docker-compatible flags:
+- `-v, --volume`: Mount volumes (supports environment variable expansion like `$HOME`, `$PWD`, `~`)
+- `-p, --port`: Port mappings
+- `-u, --user`: User and group IDs
+- `--userns`: User namespace mode (e.g., `private`, `host`, `container:id`)
+- `--add-host`: Add custom host-to-IP mappings (e.g., `--add-host=hostname:ip`)
+
 There are however _three_ ways of achieving the same thing
 
 ```yaml
@@ -293,6 +300,8 @@ contexts:
         - -v $HOME/foo:/foo
         - -v ~/bar:/bar
         - -p 10000:80
+        - --add-host=myhost:10.0.0.1
+        - --add-host=myother:127.0.0.1
       shell: sh
       shell_args:
         - -c

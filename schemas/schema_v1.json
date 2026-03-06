@@ -152,7 +152,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the only the -v|--volume and -u|--user -p|--port args get parsed."
+          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the following args get parsed\n -v|--volume\n -u|--user\n -p|--port\n --userns\n --add-host\n --cap-add\n\t\tallows `ALL` as well as most of the CAPs from this [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html) --cap-drop is not supported\n\t\tCAP_ must be dropped from the key when supplied as an arg to --cap-add\n --platform\n\t\tmust be supplied in the `os/arch` format e.g. linux/arm64 or linux/arm64/v8 or windows/amd64 or darwin/amd64"
         },
         "shell": {
           "type": "string",

@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -515,6 +517,305 @@ func Test_ContainerContext_PortArgs(t *testing.T) {
 						t.Errorf("incorrect host port translation, got: %s, wanted: %v\n",
 							pb.HostPort, tt.wantHostPort)
 					}
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_AddHostArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          []string
+		expectErr     bool
+	}{
+		"single --add-host with equals": {
+			containerArgs: []string{"--add-host=myhost:10.0.0.1"},
+			want:          []string{"myhost:10.0.0.1"},
+			expectErr:     false,
+		},
+		"single --add-host without equals": {
+			containerArgs: []string{"--add-host", "myhost:10.0.0.1"},
+			want:          []string{"myhost:10.0.0.1"},
+			expectErr:     false,
+		},
+		"multiple --add-host entries": {
+			containerArgs: []string{
+				"--add-host=host1:192.168.1.1",
+				"--add-host=host2:192.168.1.2",
+				"--add-host", "host3:10.0.0.1",
+			},
+			want:      []string{"host1:192.168.1.1", "host2:192.168.1.2", "host3:10.0.0.1"},
+			expectErr: false,
+		},
+		"--add-host with localhost": {
+			containerArgs: []string{"--add-host=myservice:127.0.0.1"},
+			want:          []string{"myservice:127.0.0.1"},
+			expectErr:     false,
+		},
+		"--add-host with hyphenated hostname": {
+			containerArgs: []string{"--add-host=my-service:172.16.0.1"},
+			want:          []string{"my-service:172.16.0.1"},
+			expectErr:     false,
+		},
+		"--add-host with dotted hostname": {
+			containerArgs: []string{"--add-host=my.service.local:192.168.0.1"},
+			want:          []string{"my.service.local:192.168.0.1"},
+			expectErr:     false,
+		},
+		"--add-host combined with other flags": {
+			containerArgs: []string{
+				"-v", "/tmp:/tmp",
+				"--add-host=db:10.0.0.5",
+				"-p", "8080:80",
+				"--add-host=cache:10.0.0.6",
+			},
+			want:      []string{"db:10.0.0.5", "cache:10.0.0.6"},
+			expectErr: false,
+		},
+		"--add-host with IPv6": {
+			containerArgs: []string{"--add-host=ipv6host:::1"},
+			want:          []string{"ipv6host:::1"},
+			expectErr:     false,
+		},
+		"--add-host with full IPv6": {
+			containerArgs: []string{"--add-host=myhost:2001:db8::1"},
+			want:          []string{"myhost:2001:db8::1"},
+			expectErr:     false,
+		},
+		"invalid --add-host missing IP": {
+			containerArgs: []string{"--add-host=hostname"},
+			want:          []string{},
+			expectErr:     true,
+		},
+		"invalid --add-host missing hostname": {
+			containerArgs: []string{"--add-host=:192.168.1.1"},
+			want:          []string{},
+			expectErr:     true,
+		},
+		"invalid --add-host empty": {
+			containerArgs: []string{"--add-host="},
+			want:          []string{},
+			expectErr:     false, // Empty values are skipped, not errors
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			if err != nil && !tt.expectErr {
+				t.Fatalf("not expecting an error: %s", err)
+			}
+
+			if err == nil && tt.expectErr {
+				t.Fatal("expecting an error but got none")
+			}
+
+			if !tt.expectErr {
+				got := cc.ExtraHosts()
+				if len(got) != len(tt.want) {
+					t.Fatalf("incorrect number of extra hosts, got: %d, wanted: %d\n", len(got), len(tt.want))
+				}
+
+				for _, wantHost := range tt.want {
+					if !slices.Contains(got, wantHost) {
+						t.Errorf("missing expected host mapping, got: %v, wanted to contain: %s\n", got, wantHost)
+					}
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_Platform_WithPlatform(t *testing.T) {
+	ttests := map[string]struct {
+		platformStr string
+		want        *ocispec.Platform
+		expectErr   bool
+	}{
+		"valid linux/arm64": {
+			platformStr: "linux/arm64",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"valid darwin/amd64": {
+			platformStr: "darwin/amd64",
+			want: &ocispec.Platform{
+				OS:           "darwin",
+				Architecture: "amd64",
+			},
+			expectErr: false,
+		},
+		"invalid missing slash": {
+			platformStr: "linux-arm64",
+			want:        nil,
+			expectErr:   true,
+		},
+		"invalid only os": {
+			platformStr: "linux",
+			want:        nil,
+			expectErr:   true,
+		},
+		"invalid empty string": {
+			platformStr: "",
+			want:        nil,
+			expectErr:   false,
+		},
+		"allows extra slash in arch portion": {
+			platformStr: "linux/arm64/v8",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64/v8",
+			},
+			expectErr: false,
+		},
+		"empty arch currently allowed": {
+			platformStr: "linux/",
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "",
+			},
+			expectErr: false,
+		},
+		"empty os currently allowed": {
+			platformStr: "/arm64",
+			want: &ocispec.Platform{
+				OS:           "",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+	}
+
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cc := runner.NewContainerContext("image:latest").WithPlatform(tt.platformStr)
+
+			got, err := cc.Platform()
+
+			if err != nil && !tt.expectErr {
+				t.Fatalf("not expecting an error: %s", err)
+			}
+			if err == nil && tt.expectErr {
+				t.Fatal("expecting an error but got none")
+			}
+
+			if tt.expectErr {
+				if !errors.Is(err, runner.ErrPlatformFormatIncorrect) {
+					t.Fatalf("expected ErrPlatformFormatIncorrect, got: %v", err)
+				}
+				return
+			}
+			if tt.want != nil && got == nil {
+				t.Fatal("expected platform got nil")
+			}
+
+			if tt.want != nil {
+				if got == nil {
+					t.Fatal("expected platform, got nil")
+				}
+				if got.OS != tt.want.OS {
+					t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+				}
+				if got.Architecture != tt.want.Architecture {
+					t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerContext_Platform_ParseContainerArgs(t *testing.T) {
+	ttests := map[string]struct {
+		containerArgs []string
+		want          *ocispec.Platform
+		expectErr     bool
+	}{
+		"--platform with equals": {
+			containerArgs: []string{"--platform=linux/arm64"},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"--platform without equals": {
+			containerArgs: []string{"--platform", "linux/amd64"},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "amd64",
+			},
+			expectErr: false,
+		},
+		"--platform combined with other flags": {
+			containerArgs: []string{
+				"-v", "/tmp:/tmp",
+				"--platform=linux/arm64",
+				"-p", "8080:80",
+				"--add-host=db:10.0.0.5",
+			},
+			want: &ocispec.Platform{
+				OS:           "linux",
+				Architecture: "arm64",
+			},
+			expectErr: false,
+		},
+		"invalid --platform missing slash": {
+			containerArgs: []string{"--platform=linux"},
+			want:          nil,
+			expectErr:     true,
+		},
+		"invalid --platform empty value": {
+			containerArgs: []string{"--platform="},
+			want:          nil,
+			expectErr:     false,
+		},
+	}
+
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cc := runner.NewContainerContext("image:latest")
+			_, err := cc.ParseContainerArgs(tt.containerArgs)
+
+			// ParseContainerArgs does not validate platform format by itself (it trims and sets it).
+			// So we only treat parse errors here; format errors come from cc.Platform().
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+
+			got, perr := cc.Platform()
+			if perr != nil && !tt.expectErr {
+				t.Fatalf("not expecting an error: %s", perr)
+			}
+			if perr == nil && tt.expectErr {
+				t.Fatal("expecting an error but got none")
+			}
+
+			if tt.expectErr {
+				if !errors.Is(perr, runner.ErrPlatformFormatIncorrect) {
+					t.Fatalf("expected ErrPlatformFormatIncorrect, got: %v", perr)
+				}
+				return
+			}
+			if tt.want != nil && got == nil {
+				t.Fatal("expected platform got nil")
+			}
+
+			if tt.want != nil {
+				if got.OS != tt.want.OS {
+					t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+				}
+				if got.Architecture != tt.want.Architecture {
+					t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
 				}
 			}
 		})

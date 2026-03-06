@@ -187,7 +187,12 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 }
 
 func (e *ContainerExecutor) createContainer(ctx context.Context, containerConfig *container.Config, hostConfig *container.HostConfig, job *Job) (container.CreateResponse, error) {
-	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	platform, err := e.execContext.Container().Platform()
+	if err != nil {
+		return container.CreateResponse{}, err
+	}
+
+	resp, err := e.cc.ContainerCreate(ctx, containerConfig, hostConfig, nil, platform, "")
 	if err != nil {
 		if errdefs.IsNotFound(err) {
 			if err := e.PullImage(ctx, containerConfig); err != nil {
