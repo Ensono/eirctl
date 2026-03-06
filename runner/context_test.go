@@ -664,10 +664,8 @@ func Test_ContainerContext_Platform_WithPlatform(t *testing.T) {
 		"invalid empty string": {
 			platformStr: "",
 			want:        nil,
-			expectErr:   true,
+			expectErr:   false,
 		},
-		// NOTE: This currently passes your implementation because SplitN(..., 2)
-		// keeps everything after the first slash in the arch field.
 		"allows extra slash in arch portion": {
 			platformStr: "linux/arm64/v8",
 			want: &ocispec.Platform{
@@ -676,8 +674,6 @@ func Test_ContainerContext_Platform_WithPlatform(t *testing.T) {
 			},
 			expectErr: false,
 		},
-		// NOTE: This also currently passes (arch becomes empty string).
-		// If you later add validation for non-empty OS/arch, flip this to expectErr=true.
 		"empty arch currently allowed": {
 			platformStr: "linux/",
 			want: &ocispec.Platform{
@@ -717,15 +713,20 @@ func Test_ContainerContext_Platform_WithPlatform(t *testing.T) {
 				}
 				return
 			}
+			if tt.want != nil && got == nil {
+				t.Fatal("expected platform got nil")
+			}
 
-			if got == nil {
-				t.Fatal("expected platform, got nil")
-			}
-			if got.OS != tt.want.OS {
-				t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
-			}
-			if got.Architecture != tt.want.Architecture {
-				t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
+			if tt.want != nil {
+				if got == nil {
+					t.Fatal("expected platform, got nil")
+				}
+				if got.OS != tt.want.OS {
+					t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+				}
+				if got.Architecture != tt.want.Architecture {
+					t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
+				}
 			}
 		})
 	}
@@ -774,7 +775,7 @@ func Test_ContainerContext_Platform_ParseContainerArgs(t *testing.T) {
 		"invalid --platform empty value": {
 			containerArgs: []string{"--platform="},
 			want:          nil,
-			expectErr:     true,
+			expectErr:     false,
 		},
 	}
 
@@ -805,91 +806,17 @@ func Test_ContainerContext_Platform_ParseContainerArgs(t *testing.T) {
 				}
 				return
 			}
-
-			if got.OS != tt.want.OS {
-				t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
+			if tt.want != nil && got == nil {
+				t.Fatal("expected platform got nil")
 			}
-			if got.Architecture != tt.want.Architecture {
-				t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
-			}
-		})
-	}
-}
 
-func TestContainerContext_Platform(t *testing.T) {
-	tests := []struct {
-		name        string
-		platformStr string
-		expected    *ocispec.Platform
-		expectErr   bool
-	}{
-		{
-			name:        "valid linux arm64",
-			platformStr: "linux/arm64",
-			expected: &ocispec.Platform{
-				OS:           "linux",
-				Architecture: "arm64",
-			},
-		},
-		{
-			name:        "valid darwin amd64",
-			platformStr: "darwin/amd64",
-			expected: &ocispec.Platform{
-				OS:           "darwin",
-				Architecture: "amd64",
-			},
-		},
-		{
-			name:        "missing slash",
-			platformStr: "linux-arm64",
-			expectErr:   true,
-		},
-		{
-			name:        "only os",
-			platformStr: "linux",
-			expectErr:   true,
-		},
-		{
-			name:        "empty string",
-			platformStr: "",
-			expectErr:   true,
-		},
-		{
-			name:        "extra separator allowed in arch portion",
-			platformStr: "linux/arm64/v8",
-			expected: &ocispec.Platform{
-				OS:           "linux",
-				Architecture: "arm64/v8",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cc := &runner.ContainerContext{}
-
-			result, err := cc.WithPlatform(tt.platformStr).Platform()
-
-			if tt.expectErr {
-				if err == nil {
-					t.Fatalf("expected error but got nil")
+			if tt.want != nil {
+				if got.OS != tt.want.OS {
+					t.Fatalf("incorrect OS, got %q, wanted %q", got.OS, tt.want.OS)
 				}
-				if !errors.Is(err, runner.ErrPlatformFormatIncorrect) {
-					t.Fatalf("expected ErrPlatformFormatIncorrect, got %v", err)
+				if got.Architecture != tt.want.Architecture {
+					t.Fatalf("incorrect architecture, got %q, wanted %q", got.Architecture, tt.want.Architecture)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if result.OS != tt.expected.OS {
-				t.Fatalf("expected OS %q, got %q", tt.expected.OS, result.OS)
-			}
-
-			if result.Architecture != tt.expected.Architecture {
-				t.Fatalf("expected arch %q, got %q", tt.expected.Architecture, result.Architecture)
 			}
 		})
 	}

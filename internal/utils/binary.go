@@ -72,7 +72,18 @@ type Container struct {
 	// Args like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock
 	// will be removed.
 	//
-	// Currently the only the -v|--volume and -u|--user -p|--port args get parsed.
+	// Currently the following args get parsed
+	//  -v|--volume
+	//  -u|--user
+	//  -p|--port
+	//  --userns
+	//  --add-host
+	//  --cap-add
+	// 		allows `ALL` as well as most of the CAPs from this [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html) --cap-drop is not supported
+	//		CAP_ must be dropped from the key when supplied as an arg to --cap-add
+	//  --platform
+	// 		must be supplied in the `os/arch` format e.g. linux/arm64 or linux/arm64/v8 or windows/amd64 or darwin/amd64
+	//
 	ContainerArgs []string `mapstructure:"container_args" yaml:"container_args,omitempty" json:"container_args,omitempty"`
 	// Shell will be used to run the command in a specific shell on the container
 	//

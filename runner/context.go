@@ -258,9 +258,11 @@ func (ca *containerArgs) parseAddCapability(cc *ContainerContext) error {
 	if err != nil {
 		return err
 	}
-	for _, v := range caps {
-		cc.capabilities = append(cc.capabilities, v)
-	}
+	// NOTE: some validation could happen here as per the
+	// [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+	// however the underlying engine will bubble up errors associated with
+	// incorrectly named capabilities
+	cc.capabilities = append(cc.capabilities, caps...)
 	return nil
 }
 
@@ -311,16 +313,30 @@ func (c *ContainerContext) ExtraHosts() []string {
 var ErrPlatformFormatIncorrect = errors.New("platform needs to be provided in os/architecture")
 
 func (c *ContainerContext) Platform() (*ocispec.Platform, error) {
+	// no platform supplied or value is empty
+	if len(c.platform) < 1 {
+		return nil, nil
+	}
+	// There could be some cleverness here around the deduction of OS
+	// however, it's better to be explicit as there are now containers
+	// in the following OS flavours
+	// 	- linux
+	// 	- windows
+	// 	- darwin
 	platform := &ocispec.Platform{}
+
 	splitPlatform := strings.SplitN(c.platform, "/", 2)
 	// the platform must be supplied in the form of `os/arch`
-	if len(splitPlatform) != 2 {
-		return nil, fmt.Errorf("%w, got %q", ErrPlatformFormatIncorrect, c.platform)
+	// this is a conscious decision to remove guessing from the program
+	if len(splitPlatform) == 2 {
+		logrus.Tracef("platform: %s", c.platform)
+		platform.OS = splitPlatform[0]
+		platform.Architecture = splitPlatform[1]
+		logrus.Tracef("ocispec.Platform: %+v", platform)
+		return platform, nil
 	}
-	platform.OS = splitPlatform[0]
-	platform.Architecture = splitPlatform[1]
 
-	return platform, nil
+	return nil, fmt.Errorf("%w, got %q", ErrPlatformFormatIncorrect, c.platform)
 }
 
 func (c *ContainerContext) CapabilitiesAdd() []string {
