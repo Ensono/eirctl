@@ -10,6 +10,7 @@ import (
 
 	eirctlcmd "github.com/Ensono/eirctl/cmd/eirctl"
 	"github.com/Ensono/eirctl/internal/cmdutils"
+	"github.com/Ensono/eirctl/runner"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -65,6 +66,12 @@ func main() {
 	setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
 
 	if err := eirctlRootCmd.Execute(); err != nil {
+		logrus.Debugf("main: err type=%T value=%v", err, err)
+		if code, ok := runner.IsExitStatus(err); ok {
+			logrus.Debugf("main: exit code=%d", code)
+			// propagate the container's actual exit code (e.g. 137 for SIGKILL, 143 for SIGTERM)
+			os.Exit(int(code))
+		}
 		fmt.Fprintf(os.Stdout, cmdutils.RED_TERMINAL+"\n", err)
 		os.Exit(1)
 	}

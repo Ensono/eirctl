@@ -455,6 +455,16 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
 
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
 		ce, configContext, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -477,6 +487,9 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 		output := stdout.String()
 		if !strings.Contains(output, "hello") {
 			t.Errorf("got: %q, wanted output to contain 'hello'", output)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called after clean exit (stop=%t, remove=%t)", stopCalled, rmCalled)
 		}
 	})
 
@@ -556,6 +569,210 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 		}
 	})
 
+	t.Run("wait error cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			errCh <- fmt.Errorf("wait failed")
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+		if !errors.Is(err, runner.ErrContainerWait) {
+			t.Errorf("got wrong type of error (%v), wanted %v", err, runner.ErrContainerWait)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called on wait error (stop=%t, remove=%t)", stopCalled, rmCalled)
+		}
+	})
+
+	t.Run("exits with non-zero exit code cleans up container and returns error", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			// simulate docker kill (SIGKILL = 137)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 137}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Error("expected non-zero error when container is killed, got nil")
+		}
+		code, isExit := runner.IsExitStatus(err)
+		if !isExit {
+			t.Errorf("incorrect err type, got %v, wanted an exit status", err)
+		}
+		if code != 137 {
+			t.Errorf("got exit code %d, wanted 137", code)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called (stop=%t, remove=%t)", stopCalled, rmCalled)
+		}
+	})
+
+	t.Run("normal exit returns nil", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			_, _ = conn.Write([]byte("hello\n"))
+			time.Sleep(100 * time.Millisecond)
+			// user typed exit normally
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err != nil {
+			t.Errorf("expected nil error on normal exit, got: %v", err)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called (stop=%t, remove=%t)", stopCalled, rmCalled)
+		}
+	})
+
+	t.Run("cancelled context cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		cancelCtx, cancel := context.WithCancel(context.Background())
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			// the original (parent) context must be cancelled
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			// but the cleanup context must still be active
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			cancel()
+		}()
+
+		_, err := ce.Execute(cancelCtx, &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		// cancelled context should return nil (same behaviour as execute())
+		if err != nil {
+			t.Fatalf("expected nil error on cancel, got: %v", err)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called on context cancel (stop=%t, remove=%t)", stopCalled, rmCalled)
+		}
+	})
 }
 
 type errWriter struct {
@@ -605,6 +822,16 @@ func Test_ContainerExecutor_Execute(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
 		ce, _, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -630,6 +857,10 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called on non-zero exit (stop=%t, remove=%t)", stopCalled, rmCalled)
 		}
 
 		if len(se.String()) > 0 {
@@ -933,6 +1164,17 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{}, fmt.Errorf("unable to inspect")
 		}
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
+		}
+
 		ce, _, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -967,6 +1209,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if code != 125 {
 			t.Errorf("got %d, wanted: 125", code)
 		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called on non-zero exit (stop=%t, remove=%t)", stopCalled, rmCalled)
+		}
 	})
 	t.Run("fails with non 0 exit code", func(t *testing.T) {
 		t.Parallel()
@@ -984,6 +1229,16 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 				Config:            &container.Config{Image: "foo/bar", Cmd: []string{"fail me"}},
 			}
 			return resp, nil
+		}
+
+		stopCalled, rmCalled := false, false
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stopCalled = true
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			rmCalled = true
+			return nil
 		}
 
 		ce, _, cleanup := mockClientHelper(t, mcc)
@@ -1019,6 +1274,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		}
 		if code != 1 {
 			t.Errorf("got %d, wanted: 1", code)
+		}
+		if !stopCalled || !rmCalled {
+			t.Errorf("stop and remove were not both called on non-zero exit (stop=%t, remove=%t)", stopCalled, rmCalled)
 		}
 	})
 }
