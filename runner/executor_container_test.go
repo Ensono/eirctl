@@ -771,6 +771,65 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 	})
+
+	t.Run("context deadline exceeded cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		cancelCtx, cancel := context.WithDeadline(context.Background(), time.UnixMilli(10))
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			// the original (parent) context must be cancelled
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			// but the cleanup context must still be active
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			cancel()
+		}()
+
+		_, err := ce.Execute(cancelCtx, &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		// cancelled context should return nil (same behaviour as execute())
+		if err == nil {
+			t.Fatalf("expected error on deadline exceeded, got: %v", nil)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
 }
 
 type errWriter struct {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"slices"
@@ -53,11 +54,11 @@ func setDefaultCommandIfNonePresent(cmd *cobra.Command) {
 	}
 }
 
-func main() {
+func runMain(stdoutW io.Writer, errW io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), []os.Signal{os.Interrupt, syscall.SIGTERM, os.Kill}...)
 	defer stop()
 
-	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(ctx, os.Stdout, os.Stderr)
+	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(ctx, stdoutW, errW)
 
 	if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
 		logrus.Fatal(err)
@@ -67,12 +68,17 @@ func main() {
 
 	if err := eirctlRootCmd.Execute(); err != nil {
 		logrus.Debugf("main: err type=%T value=%v", err, err)
+		fmt.Fprintf(stdoutW, cmdutils.RED_TERMINAL+"\n", err)
 		if code, ok := runner.IsExitStatus(err); ok {
 			logrus.Debugf("main: exit code=%d", code)
 			// propagate the container's actual exit code (e.g. 137 for SIGKILL, 143 for SIGTERM)
-			os.Exit(int(code))
+			return int(code)
 		}
-		fmt.Fprintf(os.Stdout, cmdutils.RED_TERMINAL+"\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+func main() {
+	os.Exit(runMain(os.Stdout, os.Stderr))
 }
