@@ -277,7 +277,6 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 
 	hostConfig.ConsoleSize = [2]uint{uint(size[0]), uint(size[1])}
 
-	// createdContainer
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {
 		return nil, err
@@ -339,11 +338,26 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 	statusWaitCh, errWaitCh := e.cc.ContainerWait(ctx, createdContainer.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errWaitCh:
+		e.cleanupContainer(ctx, createdContainer.ID)
 		if err != nil {
 			return nil, fmt.Errorf("%v\n%w", err, ErrContainerWait)
 		}
-	case <-statusWaitCh:
+	case <-ctx.Done():
+		// ctx is done (cancelled or deadline exceeded) — any Docker API calls
+		// using it would fail immediately, so we use a fresh context for
+		// cleanup only
+		e.cleanupContainer(context.Background(), createdContainer.ID)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return []byte{}, nil
+		}
+		return nil, ctx.Err()
+	case status := <-statusWaitCh:
 		logrus.Trace("exiting container...")
+		e.cleanupContainer(ctx, createdContainer.ID)
+		if status.StatusCode != 0 {
+			logrus.Debugf("shell container exited with non-zero exit code: %d", status.StatusCode)
+			return []byte{}, interp.ExitStatus(uint8(status.StatusCode))
+		}
 	}
 	return []byte{}, nil
 }
@@ -434,13 +448,15 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 			logrus.Tracef("container %s was auto-removed; skipping exit code check", containerId)
 			return nil
 		}
+		e.cleanupContainer(ctx, containerId)
 		logrus.Debugf("%v: %v", ErrContainerLogs, err)
 		return interp.ExitStatus(125)
 	}
+
+	e.cleanupContainer(ctx, containerId)
 	if resp.State.ExitCode != 0 {
 		logrus.Debugf("container image (%s) command %v failed with non-zero exit code", resp.Config.Image, resp.Config.Cmd)
 		return interp.ExitStatus(uint8(resp.State.ExitCode))
 	}
-	e.cleanupContainer(ctx, containerId)
 	return nil
 }

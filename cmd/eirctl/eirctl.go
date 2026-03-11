@@ -49,6 +49,8 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 			SilenceErrors:              true, // handle errors in the main
 		},
 	}
+	tc.Cmd.SetErr(channelErr)
+	tc.Cmd.SetOut(channelOut)
 
 	tc.rootFlags = &rootCmdFlags{}
 	tc.viperConf = viper.NewWithOptions()

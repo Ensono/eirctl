@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -29,17 +30,18 @@ import (
 )
 
 type mockContainerClient struct {
-	close   func() error
-	pull    func() (io.ReadCloser, error)
-	create  func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
-	start   func(ctx context.Context, containerID string, options container.StartOptions) error
-	attach  func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
-	wait    func(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
-	resize  func(ctx context.Context, containerID string, options container.ResizeOptions) error
-	logs    func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
-	inspect func(ctx context.Context, containerID string) (container.InspectResponse, error)
-	remove  func(ctx context.Context, containerID string, options container.RemoveOptions) error
-	stop    func(ctx context.Context, containerID string, options container.StopOptions) error
+	close         func() error
+	pull          func() (io.ReadCloser, error)
+	create        func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
+	start         func(ctx context.Context, containerID string, options container.StartOptions) error
+	attach        func(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+	wait          func(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
+	resize        func(ctx context.Context, containerID string, options container.ResizeOptions) error
+	logs          func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	inspect       func(ctx context.Context, containerID string) (container.InspectResponse, error)
+	remove        func(ctx context.Context, containerID string, options container.RemoveOptions) error
+	stop          func(ctx context.Context, containerID string, options container.StopOptions) error
+	methodsCalled []string
 }
 
 func (mc mockContainerClient) Close() error {
@@ -323,11 +325,11 @@ func (m *mockTerminal) UpdateSize() (width, height int, err error) {
 }
 
 type MockConn struct {
-	reader *io.PipeReader
-	writer *io.PipeWriter
-	logBuf *bytes.Buffer
-
-	Closed bool
+	reader        *io.PipeReader
+	writer        *io.PipeWriter
+	logBuf        *bytes.Buffer
+	methodsCalled []string
+	Closed        bool
 }
 
 func NewMockConn() *MockConn {
@@ -455,6 +457,15 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
 
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
 		ce, configContext, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -477,6 +488,10 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 		output := stdout.String()
 		if !strings.Contains(output, "hello") {
 			t.Errorf("got: %q, wanted output to contain 'hello'", output)
+		}
+
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 	})
 
@@ -556,6 +571,265 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 		}
 	})
 
+	t.Run("wait error cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			errCh <- fmt.Errorf("wait failed")
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+		if !errors.Is(err, runner.ErrContainerWait) {
+			t.Errorf("got wrong type of error (%v), wanted %v", err, runner.ErrContainerWait)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
+
+	t.Run("exits with non-zero exit code cleans up container and returns error", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			// simulate docker kill (SIGKILL = 137)
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 137}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err == nil {
+			t.Error("expected non-zero error when container is killed, got nil")
+		}
+		code, isExit := runner.IsExitStatus(err)
+		if !isExit {
+			t.Errorf("incorrect err type, got %v, wanted an exit status", err)
+		}
+		if code != 137 {
+			t.Errorf("got exit code %d, wanted 137", code)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
+
+	t.Run("normal exit returns nil", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			_, _ = conn.Write([]byte("hello\n"))
+			time.Sleep(100 * time.Millisecond)
+			// user typed exit normally
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		_, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		if err != nil {
+			t.Errorf("expected nil error on normal exit, got: %v", err)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
+
+	t.Run("cancelled context cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		cancelCtx, cancel := context.WithCancel(context.Background())
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			// the original (parent) context must be cancelled
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			// but the cleanup context must still be active
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			cancel()
+		}()
+
+		_, err := ce.Execute(cancelCtx, &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		// cancelled context should return nil (same behaviour as execute())
+		if err != nil {
+			t.Fatalf("expected nil error on cancel, got: %v", err)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
+
+	t.Run("context deadline exceeded cleans up container", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		cancelCtx, cancel := context.WithDeadline(context.Background(), time.UnixMilli(10))
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			// the original (parent) context must be cancelled
+			if cancelCtx.Err() == nil {
+				t.Error("parent context should be cancelled")
+			}
+			// but the cleanup context must still be active
+			if ctx.Err() != nil {
+				t.Error("cleanup context should still be active")
+			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		go func() {
+			cancel()
+		}()
+
+		_, err := ce.Execute(cancelCtx, &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+		})
+		// cancelled context should return nil (same behaviour as execute())
+		if err == nil {
+			t.Fatalf("expected error on deadline exceeded, got: %v", nil)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
 }
 
 type errWriter struct {
@@ -605,6 +879,15 @@ func Test_ContainerExecutor_Execute(t *testing.T) {
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
 		ce, _, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -630,6 +913,10 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 
 		if len(se.String()) > 0 {
@@ -698,12 +985,15 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc := mockContainerClientHelper(t, respCh, errCh, nil, nil)
 
 		mcc.create = func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "create")
 			return container.CreateResponse{ID: "created0-123"}, errdefs.ErrNotFound
 		}
 		mcc.pull = func() (io.ReadCloser, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "pull")
 			return nil, fmt.Errorf("unable to pull")
 		}
 		mcc.close = func() error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "close")
 			return nil
 		}
 		ce, _, cleanup := mockClientHelper(t, mcc)
@@ -722,6 +1012,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		}
 		if !errors.Is(err, runner.ErrContainerCreate) {
 			t.Errorf("got %v, wanted %T", err, runner.ErrContainerCreate)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"create", "pull", "close"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 	})
 	t.Run("error on image create", func(t *testing.T) {
@@ -732,9 +1025,11 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc := mockContainerClientHelper(t, respCh, errCh, nil, nil)
 
 		mcc.create = func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "create")
 			return container.CreateResponse{}, fmt.Errorf("unable to create")
 		}
 		mcc.close = func() error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "close")
 			return nil
 		}
 
@@ -754,6 +1049,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		}
 		if !errors.Is(err, runner.ErrContainerCreate) {
 			t.Errorf("got %v, wanted %T", err, runner.ErrContainerCreate)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"create", "close"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 	})
 	t.Run("fails to start container", func(t *testing.T) {
@@ -766,6 +1064,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
 		mcc.start = func(ctx context.Context, containerID string, options container.StartOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "start")
 			return fmt.Errorf("failed to start container")
 		}
 
@@ -785,6 +1084,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if !errors.Is(err, runner.ErrContainerStart) {
 			t.Fatal("incorrect type of error ")
 		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"start"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
 	})
 
 	t.Run("fails to stream logs", func(t *testing.T) {
@@ -798,6 +1100,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
 		mcc.logs = func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "logs")
 			return nil, fmt.Errorf("failed")
 		}
 
@@ -830,6 +1133,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		}
 		if !errors.Is(err, runner.ErrContainerLogs) {
 			t.Fatal("incorrect type of error ")
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"logs"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 		}
 	})
 
@@ -878,6 +1184,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "inspect")
 			return container.InspectResponse{}, errdefs.ErrNotFound
 		}
 
@@ -919,6 +1226,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if so.String() != want {
 			t.Errorf("outputs do not match\n\tgot: %s\n\twanted:  %s", so.String(), want)
 		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"inspect"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
 	})
 	t.Run("fails with insepct on exit status", func(t *testing.T) {
 		t.Parallel()
@@ -931,8 +1241,19 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 
 		mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 		mcc.inspect = func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "inspect")
 			return container.InspectResponse{}, fmt.Errorf("unable to inspect")
 		}
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
+		}
+
 		ce, _, cleanup := mockClientHelper(t, mcc)
 		defer cleanup()
 
@@ -967,6 +1288,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if code != 125 {
 			t.Errorf("got %d, wanted: 125", code)
 		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"inspect", "stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
 	})
 	t.Run("fails with non 0 exit code", func(t *testing.T) {
 		t.Parallel()
@@ -983,7 +1307,17 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{ExitCode: 1}},
 				Config:            &container.Config{Image: "foo/bar", Cmd: []string{"fail me"}},
 			}
+			mcc.methodsCalled = append(mcc.methodsCalled, "inspect")
 			return resp, nil
+		}
+
+		mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "stop")
+			return nil
+		}
+		mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "remove")
+			return nil
 		}
 
 		ce, _, cleanup := mockClientHelper(t, mcc)
@@ -1020,6 +1354,9 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		if code != 1 {
 			t.Errorf("got %d, wanted: 1", code)
 		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"inspect", "stop", "remove"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
 	})
 }
 
@@ -1049,26 +1386,25 @@ func Test_ContainerExecutor_Execute_Cancelled_CleanUp(t *testing.T) {
 	}()
 	mcc := mockContainerClientHelper(t, respCh, errCh, outStreamer.LogsReader, nil)
 
-	rmCalled, stopCalled := 0, 0
 	// ensure ctx is not cancelled - but parent context is cancelled and hence performing clean up
 	mcc.remove = func(ctx context.Context, containerID string, options container.RemoveOptions) error {
-		rmCalled++
 		if cancelCtx.Err() == nil {
 			t.Error("parent context should be cancelled")
 		}
 		if ctx.Err() != nil {
 			t.Error("current context should be active")
 		}
+		mcc.methodsCalled = append(mcc.methodsCalled, "remove")
 		return nil
 	}
 	mcc.stop = func(ctx context.Context, containerID string, options container.StopOptions) error {
-		stopCalled++
 		if cancelCtx.Err() == nil {
 			t.Error("parent context should be cancelled")
 		}
 		if ctx.Err() != nil {
 			t.Error("current context should be active")
 		}
+		mcc.methodsCalled = append(mcc.methodsCalled, "stop")
 		return nil
 	}
 
@@ -1090,8 +1426,7 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 	if len(se.String()) > 0 {
 		t.Errorf("got error %v, expected nil\n\n", se.String())
 	}
-	if rmCalled+stopCalled != 2 {
-		t.Errorf("stop and remove functions were not called")
+	if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
+		t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 	}
-
 }

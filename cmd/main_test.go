@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -65,6 +66,48 @@ func Test_main(t *testing.T) {
 		logLevel := logrus.GetLevel()
 		if logLevel != logrus.TraceLevel {
 			t.Errorf("Expected Log Level to be '%s', got: '%s'", logrus.TraceLevel, logLevel)
+		}
+	})
+	t.Run("exit code correctly bubbled up", func(t *testing.T) {
+		os.Args = []string{"eirctl", "run", "task", "fail_125", "-c", "testdata/eirctl.yaml"}
+		moutW := &bytes.Buffer{}
+		merrW := &bytes.Buffer{}
+		ec := runMain(moutW, merrW)
+
+		if ec != 125 {
+			t.Fatalf("process ran wihout error")
+		}
+
+		if len(moutW.String()) < 1 {
+			t.Errorf("got empty error, expected a message")
+		}
+	})
+	t.Run("exited at eirctl command not found", func(t *testing.T) {
+		os.Args = []string{"eirctl", "run", "task", "not-found", "-c", "testdata/eirctl.yaml"}
+		moutW := &bytes.Buffer{}
+		merrW := &bytes.Buffer{}
+		ec := runMain(moutW, merrW)
+
+		if ec != 1 {
+			t.Fatalf("process ran wihout error")
+		}
+
+		if len(moutW.String()) < 1 {
+			t.Errorf("got empty error, expected a message")
+		}
+	})
+	t.Run("exited at eirctl with help", func(t *testing.T) {
+		os.Args = []string{"eirctl", "--help"}
+		moutW := &bytes.Buffer{}
+		merrW := &bytes.Buffer{}
+		ec := runMain(moutW, merrW)
+
+		if ec != 0 {
+			t.Fatalf("process ran wih error")
+		}
+
+		if len(moutW.String()) < 1 {
+			t.Errorf("got empty error, expected a message")
 		}
 	})
 }
