@@ -1,0 +1,495 @@
+= CLI Reference
+:toc:
+:toclevels: 2
+
+Complete reference for all eirctl commands.
+
+== Global Flags
+
+These flags are available for all commands:
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--config`, `-c`
+| `eirctl.yaml`
+| Config file to use. Also accepts `taskctl.yaml` and `tasks.yaml` for backwards compatibility
+
+| `--debug`, `-d`
+| `false`
+| Enable debug level logging
+
+| `--verbose`
+| `false`
+| Enable trace level logging
+
+| `--dry-run`
+| `false`
+| Dry run mode (don't execute commands)
+
+| `--no-summary`
+| `false`
+| Disable execution summary
+
+| `--quiet`, `-q`
+| `false`
+| Quiet mode (minimal output)
+
+|===
+
+Environment variables:
+
+* `EIRCTL_CONFIG_FILE` - Override config file path
+* `EIRCTL_DEBUG` - Enable debug mode
+* `EIRCTL_VERBOSE` - Enable trace level logging
+* `EIRCTL_DRY_RUN` - Enable dry run mode
+* `EIRCTL_NO_SUMMARY` - Suppress execution summary
+* `EIRCTL_QUIET` - Enable quiet mode
+
+== Commands
+
+=== eirctl (root)
+
+When run without arguments, displays an interactive task/pipeline selector.
+
+[source,bash]
+----
+eirctl
+----
+
+When run with a task or pipeline name, equivalent to `eirctl run`:
+
+[source,bash]
+----
+eirctl my-pipeline
+eirctl my-task
+----
+
+=== completion
+
+Generate shell completion scripts.
+
+[source,bash]
+----
+eirctl completion <shell>
+----
+
+Supported shells: `bash`, `zsh`, `fish`, `powershell`
+
+==== Examples
+
+[tabs]
+====
+Bash::
++
+[source,bash]
+----
+# Add to ~/.bashrc
+source <(eirctl completion bash)
+----
+
+Zsh::
++
+[source,bash]
+----
+# Add to ~/.zshrc
+source <(eirctl completion zsh)
+----
+
+Fish::
++
+[source,bash]
+----
+eirctl completion fish | source
+----
+
+PowerShell::
++
+[source,powershell]
+----
+eirctl completion powershell | Out-String | Invoke-Expression
+----
+====
+
+=== generate
+
+Generate CI pipeline definitions from eirctl pipelines.
+
+[source,bash]
+----
+eirctl generate <pipeline> [flags]
+----
+
+Aliases: `ci`, `gen-ci`
+
+==== Flags
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--target`, `-t`
+| (required)
+| Target CI platform (`github`, `gitlab`, `bitbucket`)
+
+| `--output`
+| Target-dependent
+| Output directory for generated files (e.g., `.github/workflows` for GitHub)
+
+|===
+
+==== Examples
+
+[source,bash]
+----
+# Generate GitHub Actions workflow
+eirctl generate my-pipeline --target github
+
+# Generate GitLab CI with custom output directory
+eirctl generate my-pipeline --target gitlab --output .gitlab
+
+# Interactive pipeline selection
+eirctl generate --target github
+----
+
+=== graph
+
+Visualize pipeline execution graph.
+
+[source,bash]
+----
+eirctl graph <pipeline> [flags]
+----
+
+Alias: `g`
+
+Outputs a DOT format graph that can be rendered with Graphviz.
+
+==== Flags
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--lr`
+| `false`
+| Left-to-right layout (default is top-to-bottom)
+
+| `--mermaid`
+| `false`
+| Output Mermaid diagram format instead of DOT
+
+| `--legend`
+| `false`
+| Include legend in the graph
+
+|===
+
+==== Examples
+
+[source,bash]
+----
+# Generate SVG diagram
+eirctl graph my-pipeline | dot -Tsvg -o pipeline.svg
+
+# Generate PNG with left-to-right layout
+eirctl graph my-pipeline --lr | dot -Tpng -o pipeline.png
+
+# Generate Mermaid diagram
+eirctl graph my-pipeline --mermaid
+----
+
+=== init
+
+Initialize a new eirctl configuration file.
+
+[source,bash]
+----
+eirctl init [flags]
+----
+
+==== Flags
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--dir`
+| Current directory
+| Directory to initialize
+
+| `--no-prompt`
+| `false`
+| Skip interactive prompts (requires filename as argument)
+
+|===
+
+Environment variables:
+
+* `EIRCTL_DIR` - Override directory
+* `EIRCTL_NO_PROMPT` - Enable non-interactive mode
+
+==== Example
+
+[source,bash]
+----
+# Interactive initialization (prompts for filename)
+eirctl init
+
+# Non-interactive with filename argument
+eirctl init --no-prompt eirctl.yaml
+
+# Initialize in a specific directory
+eirctl init --dir ./my-project
+----
+
+=== list
+
+List available definitions.
+
+[source,bash]
+----
+eirctl list <type>
+----
+
+==== Subcommands
+
+[cols="1,3",options="header"]
+|===
+| Subcommand | Description
+
+| (none)
+| List all contexts, pipelines, tasks, and watchers
+
+| `pipelines`
+| List all defined pipelines
+
+| `tasks`
+| List all defined tasks
+
+| `watchers`
+| List all defined watchers
+
+|===
+
+==== Examples
+
+[source,bash]
+----
+eirctl list
+eirctl list tasks
+eirctl list pipelines
+eirctl list watchers
+----
+
+=== run
+
+Run a task or pipeline.
+
+[source,bash]
+----
+eirctl run <task|pipeline> [flags] [-- args...]
+----
+
+When run without a name, displays an interactive task/pipeline selector.
+
+==== Subcommands
+
+You can optionally use explicit subcommands to distinguish between tasks and pipelines:
+
+[source,bash]
+----
+eirctl run pipeline <pipeline-name> [flags]
+eirctl run task <task-name> [flags]
+----
+
+==== Flags
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--output`, `-o`
+| `raw`
+| Output format: `raw`, `prefixed`, `cockpit`. Env: `EIRCTL_OUTPUT_FORMAT`
+
+| `--raw`, `-r`
+| 
+| Shortcut for `--output raw`. Env: `EIRCTL_RAW`
+
+| `--cockpit`
+| 
+| Shortcut for `--output cockpit`. Env: `EIRCTL_COCKPIT`
+
+| `--set`
+|
+| Set variable (repeatable): `--set KEY=value`. Env: `EIRCTL_SET`
+
+| `--graph-only`
+| `false`
+| Show denormalized execution graph without running
+
+| `--detailed`
+| `false`
+| Show detailed execution summary
+
+|===
+
+==== Examples
+
+[source,bash]
+----
+# Run a pipeline
+eirctl run my-pipeline
+
+# Run with cockpit UI
+eirctl run my-pipeline --cockpit
+
+# Run with variables
+eirctl run deploy --set ENV=production --set VERSION=1.0.0
+
+# Pass arguments to tasks (after --)
+eirctl run lint -- --fix
+
+# Show execution graph only
+eirctl run my-pipeline --graph-only | dot -Tsvg -o execution.svg
+----
+
+=== shell
+
+Open an interactive shell in a container context.
+
+[source,bash]
+----
+eirctl shell <context> [flags]
+----
+
+NOTE: This is a beta feature. Only works with native container contexts.
+
+==== Example
+
+[source,bash]
+----
+# Shell into a container context
+eirctl shell my-container-context
+----
+
+=== show
+
+Display details about a task, pipeline, or context.
+
+[source,bash]
+----
+eirctl show <task|pipeline|context>
+----
+
+Useful for inspecting imported configurations from remote files/URLs.
+
+==== Examples
+
+[source,bash]
+----
+eirctl show my-task
+eirctl show my-pipeline
+eirctl show my-context
+----
+
+=== update
+
+Update eirctl to the latest or specified version.
+
+[source,bash]
+----
+eirctl update [flags]
+----
+
+Aliases: `self-update`
+
+==== Flags
+
+[cols="2,1,3",options="header"]
+|===
+| Flag | Default | Description
+
+| `--version`
+| `latest`
+| Specific version to update to
+
+| `--baseUrl`
+| GitHub releases URL
+| Base URL for the release repository
+
+|===
+
+==== Examples
+
+[source,bash]
+----
+# Update to latest
+eirctl update
+
+# Update to specific version
+eirctl update --version 0.9.5
+----
+
+=== validate
+
+Validate the configuration file.
+
+[source,bash]
+----
+eirctl validate [flags]
+----
+
+Returns exit code 0 if valid, non-zero otherwise.
+
+==== Example
+
+[source,bash]
+----
+eirctl validate
+eirctl validate -c custom-config.yaml
+----
+
+=== watch
+
+Start file watchers defined in configuration.
+
+[source,bash]
+----
+eirctl watch <watcher> [<watcher2> ...] [flags]
+----
+
+Requires at least one watcher name.
+
+==== Examples
+
+[source,bash]
+----
+# Start a specific watcher
+eirctl watch my-watcher
+
+# Start multiple watchers
+eirctl watch watcher1 watcher2
+
+# With debug output
+eirctl watch my-watcher --debug
+----
+
+== Exit Codes
+
+[cols="1,3",options="header"]
+|===
+| Code | Meaning
+
+| 0
+| Success
+
+| 1
+| General error or task failure
+
+| 2
+| Configuration error
+
+|===

@@ -1,0 +1,240 @@
+= Watchers
+:toc:
+:toclevels: 2
+
+Watchers monitor filesystem changes and trigger tasks when specified events occur.
+
+== Configuration
+
+[source,yaml]
+----
+watchers:
+  watcher1:
+    watch: ["README.*", "pkg/**/*.go"]           # Files to watch
+    exclude: ["pkg/excluded.go", "pkg/excluded-dir/*"]  # Exclude patterns
+    events: [create, write, remove, rename, chmod]      # Events to listen to
+    task: task1                                         # Task to run
+    variables:                                          # Optional template variables
+      MY_VAR: my-value
+----
+
+=== Watcher Properties
+
+[cols="2,1,3",options="header"]
+|===
+| Property | Type | Description
+
+| `watch`
+| array
+| Glob patterns for files to watch
+
+| `exclude`
+| array
+| Glob patterns for files to exclude
+
+| `events`
+| array
+| Filesystem events to listen for (default: all)
+
+| `task`
+| string
+| Task to trigger when an event matches
+
+| `variables`
+| map
+| Template variables passed to the triggered task
+
+|===
+
+== Events
+
+The following filesystem events can be monitored:
+
+[cols="1,3",options="header"]
+|===
+| Event | Description
+
+| `create`
+| A new file or directory was created
+
+| `write`
+| A file was modified
+
+| `remove`
+| A file or directory was deleted
+
+| `rename`
+| A file or directory was renamed
+
+| `chmod`
+| File permissions were changed
+
+|===
+
+You can specify multiple events as an array:
+
+[source,yaml]
+----
+watchers:
+  source-watcher:
+    watch: ["src/**/*.go"]
+    events: [create, write, remove]  # Only these events
+    task: build
+----
+
+If `events` is omitted, all events are monitored by default.
+
+== Patterns
+
+Thanks to https://github.com/bmatcuk/doublestar[doublestar], eirctl supports the following special terms within include and exclude patterns:
+
+[cols="1,4",options="header"]
+|===
+| Pattern | Meaning
+
+| `*`
+| Matches any sequence of non-path-separators
+
+| `**`
+| Matches any sequence of characters, including path separators
+
+| `?`
+| Matches any single non-path-separator character
+
+| `[class]`
+| Matches any single non-path-separator character against a class of characters (see https://github.com/bmatcuk/doublestar#character-classes[character classes])
+
+| `{alt1,...}`
+| Matches a sequence of characters if one of the comma-separated alternatives matches
+
+|===
+
+Any character with a special meaning can be escaped with a backslash (`\`).
+
+=== Pattern Examples
+
+[source,yaml]
+----
+watchers:
+  # Watch all Go files in any directory
+  go-files:
+    watch: ["**/*.go"]
+    task: test
+
+  # Watch specific directories
+  src-and-tests:
+    watch: ["src/**/*", "tests/**/*"]
+    task: build
+
+  # Watch multiple file types
+  web-assets:
+    watch: ["**/*.{js,ts,css,html}"]
+    task: bundle
+
+  # Watch with exclusions
+  go-without-generated:
+    watch: ["**/*.go"]
+    exclude: ["**/*_gen.go", "**/mock_*.go"]
+    task: lint
+----
+
+== Running Watchers
+
+Use the `watch` command to start file watchers. At least one watcher name is required:
+
+[source,bash]
+----
+# Start a specific watcher
+eirctl watch watcher1
+
+# Start multiple watchers
+eirctl watch source tests
+
+# Start with debug output
+eirctl watch watcher1 --debug
+----
+
+The watch command runs continuously until interrupted (Ctrl+C).
+
+== Multiple Watchers
+
+You can define multiple watchers that trigger different tasks:
+
+[source,yaml]
+----
+watchers:
+  # Rebuild on source changes
+  source:
+    watch: ["src/**/*.go", "cmd/**/*.go"]
+    exclude: ["**/*_test.go"]
+    events: [create, write, remove]
+    task: build
+
+  # Run tests on test file changes
+  tests:
+    watch: ["**/*_test.go"]
+    events: [create, write]
+    task: test
+
+  # Regenerate docs on markdown changes
+  docs:
+    watch: ["docs/**/*.md", "README.md"]
+    events: [write]
+    task: generate-docs
+----
+
+== Practical Examples
+
+=== Development Workflow
+
+[source,yaml]
+----
+tasks:
+  build:
+    command: go build -o bin/app ./cmd/main.go
+  
+  test:
+    command: go test ./...
+  
+  lint:
+    command: golangci-lint run
+
+watchers:
+  dev:
+    watch: ["**/*.go"]
+    exclude: ["vendor/**"]
+    events: [create, write]
+    task: build
+----
+
+=== Web Development
+
+[source,yaml]
+----
+tasks:
+  bundle:
+    command: npm run build
+    context: node
+
+watchers:
+  frontend:
+    watch: ["src/**/*.{js,jsx,ts,tsx}", "src/**/*.css"]
+    events: [create, write, remove]
+    task: bundle
+----
+
+=== Documentation
+
+[source,yaml]
+----
+tasks:
+  docs:
+    command: |
+      asciidoctor docs/*.adoc -D dist/docs
+
+watchers:
+  docs:
+    watch: ["docs/**/*.adoc"]
+    events: [write]
+    task: docs
+----

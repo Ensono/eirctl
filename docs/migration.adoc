@@ -1,0 +1,271 @@
+= Migration Guide
+:toc:
+:toclevels: 2
+
+This guide covers migrating to eirctl from taskctl or upgrading between eirctl versions.
+
+== V2 Changes Overview
+
+=== Container Context
+
+* Container is now a first-class citizen with native Docker/OCI API support
+* Default mount point in the container is `/eirctl`
+* If you are referencing an absolute path, update it to reflect the new path
+* Alternatively, use relative paths as `-w /eirctl` is set and you are automatically in the root of your directory
+
+=== Environment Variables
+
+* `env` is now available on Context, Pipelines, and Tasks
+* Merge order: `Context < Pipelines < Tasks` (Tasks overwrite anything set previously)
+* `eirctl.env` is read in at context level automatically
+
+=== Scheduler
+
+* Denormalized graph allowing for a unique path to the same task
+* See xref:graph-implementation.adoc[Graph Internals] for details
+
+== Registry Authentication
+
+`REGISTRY_AUTH_FILE` points to a file with registry authentication in the following format:
+
+[source,json]
+----
+{
+  "auths": {
+    "registry.url": {
+      "auth": "base64AuthString"
+    }
+  }
+}
+----
+
+NOTE: The authentication string is usually in `username:password` format (base64 encoded). All tested container registries (ECR, ACR, Docker Hub, GitLab) use this format.
+
+== Migrating from taskctl to eirctl
+
+=== Step 1: Rename Configuration File
+
+Rename `taskctl.yaml` to `eirctl.yaml` in the root of your project.
+
+NOTE: For backwards compatibility, eirctl will still read `taskctl.yaml` and `tasks.yaml` if `eirctl.yaml` is not found.
+
+=== Step 2: Update Import Paths
+
+In your `eirctl.yaml`, update import paths:
+
+[source,yaml]
+----
+# Before
+import:
+  - ./build/taskctl/context.yaml
+  - ./build/taskctl/tasks.yaml
+
+# After
+import:
+  - ./build/eirctl/contexts.yaml
+  - ./build/eirctl/tasks.yaml
+----
+
+=== Step 3: Rename Directories
+
+Rename the `build/taskctl` directory to `build/eirctl`.
+
+=== Step 4: Update Mount Paths
+
+Find all references to `/app/` in files in the `build/eirctl` directory and replace with `/eirctl/`.
+
+=== Step 5: Update Container Contexts
+
+Modify container contexts from the executable format to the native container format:
+
+[cols="1a,1a",options="header"]
+|===
+| Old Format (taskctl) | New Format (eirctl)
+
+|
+[source,yaml]
+----
+contexts:
+  buildenv:
+    executable:
+      bin: docker
+      args:
+        - run
+        - --rm
+        - -v
+        - ${PWD}:/app
+        - -w
+        - /app
+        - --env-file
+        - envfile
+        - ensono/eir-golang:1.1.224
+        - pwsh
+        - -Command
+    envfile:
+      generate: true
+      exclude:
+        - home
+        - path
+        - tmpdir
+        - gopath
+----
+
+|
+[source,yaml]
+----
+contexts:
+  buildenv:
+    container:
+      name: ensono/eir-golang:1.1.224
+      shell: pwsh
+      shell_args:
+        - -Command
+    envfile:
+      exclude:
+        - gopath
+----
+
+|===
+
+=== Step 6: PowerShell Contexts
+
+If any PowerShell contexts have `-NoProfile`, remove it. There is a reliance on the profile to set up paths and import modules.
+
+Ensure that public versions of the containers are in use:
+
+* `ensono/eir-infrastructure`
+* `ensono/eir-dotnet`
+
+== Migrating CI Pipelines
+
+=== Azure DevOps
+
+==== Update Install Template
+
+Rename `build/templates/install-taskctl.yml` to `build/templates/install-eirctl.yml`.
+
+Replace the contents with:
+
+[source,yaml]
+----
+parameters:
+  - name: EirctlVersion
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: "Install: Eirctl"
+    inputs:
+      targetType: inline
+      script: |
+        sudo wget https://github.com/Ensono/eirctl/releases/download/${{ parameters.EirctlVersion }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
+        sudo chmod +x /usr/local/bin/eirctl
+----
+
+==== Update Pipeline
+
+Update the build pipeline to invoke the new template:
+
+[source,yaml]
+----
+steps:
+  - template: ../templates/install-eirctl.yml
+    parameters:
+      EirctlVersion: ${{ variables.EirctlVersion }}
+----
+
+==== Update Variables
+
+Modify `build/ado/variables.yml`:
+
+[source,yaml]
+----
+- name: EirctlVersion
+  value: 0.9.7
+----
+
+To find the latest version:
+
+[tabs]
+====
+PowerShell::
++
+[source,powershell]
+----
+((Invoke-WebRequest https://api.github.com/repos/ensono/eirctl/releases/latest).content | ConvertFrom-Json).name
+----
+
+Bash::
++
+[source,bash]
+----
+curl -s https://api.github.com/repos/ensono/eirctl/releases/latest | jq -r .name
+----
+====
+
+=== GitHub Actions
+
+Update `.github/workflows/workflow.yml` to use the new install action:
+
+[source,yaml]
+----
+name: 'Install eirctl'
+description: 'Downloads and installs eirctl'
+runs:
+  using: 'composite'
+  steps:
+    - run: |
+        rm -rf /usr/local/bin/eirctl
+        wget https://github.com/Ensono/eirctl/releases/download/${{ inputs.version }}/eirctl-linux-amd64 -O /usr/local/bin/eirctl
+        chmod +x /usr/local/bin/eirctl
+      shell: bash
+----
+
+== Binary Name Change
+
+Replace all references to `taskctl` with `eirctl` in:
+
+* Shell scripts
+* CI/CD pipelines
+* Documentation
+* Environment variables (e.g., `TASKCTL_*` → `EIRCTL_*`)
+
+== Configuration File Priority
+
+eirctl looks for configuration files in this order:
+
+1. `eirctl.yaml` (preferred)
+2. `tasks.yaml` (legacy)
+3. `taskctl.yaml` (legacy, for backwards compatibility)
+
+== Breaking Changes Summary
+
+[cols="2,2,2",options="header"]
+|===
+| Category | Old | New
+
+| Binary name
+| `taskctl`
+| `eirctl`
+
+| Config file
+| `taskctl.yaml`
+| `eirctl.yaml`
+
+| Container working dir
+| `/app` or `/workspace/.taskctl`
+| `/eirctl`
+
+| Container context
+| `executable` with docker CLI
+| Native `container` block
+
+| Env inheritance
+| Flat
+| `Context < Pipeline < Task`
+
+| Auto env file
+| None
+| `eirctl.env` read at context level
+
+|===

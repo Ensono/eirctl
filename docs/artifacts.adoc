@@ -1,0 +1,138 @@
+= Artifacts
+:toc:
+:toclevels: 2
+
+NOTE: The default scraping of stdout as output storage after every task has been removed.
+
+Any task can assign outputs in a form of files or a special dotenv format output which is then added to the eirctl runner and available to all subsequent tasks.
+
+== Artifact Types
+
+eirctl supports three artifact types:
+
+[cols="1,3",options="header"]
+|===
+| Type | Description
+
+| `dotenv`
+| Parses a dotenv-formatted file and injects variables into subsequent tasks
+
+| `env`
+| Captures environment variable outputs from command execution (experimental)
+
+| `file`
+| Stores file outputs for later retrieval or processing
+
+|===
+
+== Dotenv
+
+The artifacts are only useful inside pipelines. Ensure you provide a `depends_on` to make sure the variables are ready before consumption.
+
+The outputs are available across contexts.
+
+The example below uses the default context to generate some stored artifact and then it is used in a container context.
+
+TIP: `after` commands are not stored as artifacts.
+
+[source,yaml]
+----
+summary: true
+debug: true
+output: prefixed
+
+contexts:
+  newdocker:ctx:
+    container:
+      name: alpine:latest 
+    envfile:
+      exclude:
+        # these will be excluded by default
+        - PATH
+        - HOME
+        - TMPDIR
+
+pipelines:
+  tester:
+    - task: task:one
+    - task: task:two
+      depends_on:
+        - task:one
+
+tasks:
+  task:one:
+    env:
+      ORIGINAL_VAR: foo123
+    command:
+      - echo "task one ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo123"
+      - echo ORIGINAL_VAR=foo333 > .artifact.env
+    after:
+      # should run in a new context
+      - echo ORIGINAL_VAR=shouldNOTBEUSED > .artifact.env
+    artifacts:
+      name: test_env_from_task_one
+      path: .artifact.env
+      type: dotenv
+
+  task:two:
+    command:
+      - echo "task:two ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo333"
+    context: newdocker:ctx
+----
+
+== Env (Experimental)
+
+When writing a command with bash-style variable assignment or export, along with an artifacts capture specified as `env`, downstream tasks in a pipeline can pick them up as environment variables.
+
+IMPORTANT: *Experimental* - take care when using in production. Currently there is no prefixing of variables across tasks in pipelines, so the runner environment will just be overwritten with newly set variables.
+
+Use the prefix `EIRCTL_TASK_OUTPUT_` to capture variables:
+
+[source,yaml]
+----
+tasks:
+  run:container:nouveau:
+    context: nouveau:container
+    command:
+      - |
+        echo EIRCTL_TASK_OUTPUT_FOO=$FOO
+    env:
+      FOO: bar
+    artifacts:
+      type: env
+
+  consume:out:
+    command: |
+      echo $FOO
+
+pipelines:
+  set-out:
+    - task: run:container:nouveau
+    - task: consume:out
+      depends_on: run:container:nouveau
+----
+
+NOTE: Current limitation is that it has to be set directly in the task command and _NOT_ in a script called from command.
+
+== File
+
+The `file` artifact type allows you to store file outputs for later retrieval. This is useful for build outputs, reports, or any files that need to be preserved across pipeline stages.
+
+[source,yaml]
+----
+tasks:
+  build:
+    command:
+      - go build -o dist/app ./cmd/main.go
+    artifacts:
+      name: binary
+      path: dist/app
+      type: file
+
+  package:
+    command:
+      - tar -czf release.tar.gz dist/
+    depends_on: build
+----
+
+NOTE: Future iterations should include custom remote backends like S3, GCS, etc.

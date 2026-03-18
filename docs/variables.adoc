@@ -1,0 +1,276 @@
+= Variables
+:toc:
+:toclevels: 2
+
+eirctl provides powerful variable templating using Go's `text/template` syntax.
+
+== Predefined Variables
+
+Each task, stage, and context has access to these predefined variables:
+
+[cols="2,3",options="header"]
+|===
+| Variable | Description
+
+| `.Root`
+| Root config file directory (absolute path)
+
+| `.Dir`
+| Current config file directory (may differ from Root for imported configs)
+
+| `.TempDir`
+| System's temporary directory
+
+| `.Args`
+| CLI arguments after `--` as a single string
+
+| `.ArgsList`
+| CLI arguments after `--` as an array
+
+| `.Task.Name`
+| Current task's name
+
+| `.Context.Name`
+| Current task's execution context name
+
+| `.Stage.Name`
+| Current stage's name (in pipelines)
+
+|===
+
+== Using Variables
+
+Variables are rendered using Go template syntax in `command` and `dir` fields:
+
+[source,yaml]
+----
+tasks:
+  build:
+    command: |
+      echo "Building in {{ .Root }}"
+      go build -o {{ .Root }}/bin/app ./cmd/main.go
+      
+  test:
+    dir: "{{ .Root }}/tests"
+    command: go test ./...
+----
+
+== CLI Arguments
+
+Arguments after `--` are passed to tasks via `.Args` (string) or `.ArgsList` (array):
+
+[source,yaml]
+----
+tasks:
+  lint:
+    command: golangci-lint run {{ .Args }}
+    
+  format:
+    command: gofmt -w {{ index .ArgsList 0 }}
+----
+
+[source,bash]
+----
+# .Args = "package.go main.go"
+# .ArgsList = ["package.go", "main.go"]
+eirctl lint -- package.go main.go
+
+# Using specific argument
+# index .ArgsList 0 = "package.go"
+eirctl format -- package.go
+----
+
+Arguments are also available as the `ARGS` environment variable.
+
+== User-Defined Variables
+
+Use `--set` to define custom variables at runtime:
+
+[source,bash]
+----
+eirctl run deploy --set ENV=production --set VERSION=1.2.3
+----
+
+Access them in templates:
+
+[source,yaml]
+----
+tasks:
+  deploy:
+    command: |
+      echo "Deploying version {{ .VERSION }} to {{ .ENV }}"
+      kubectl set image deployment/app app=myimage:{{ .VERSION }}
+----
+
+=== Task-Level Variables
+
+Define variables within task definitions:
+
+[source,yaml]
+----
+tasks:
+  build:
+    variables:
+      OUTPUT_DIR: dist
+      BINARY_NAME: myapp
+    command: |
+      mkdir -p {{ .OUTPUT_DIR }}
+      go build -o {{ .OUTPUT_DIR }}/{{ .BINARY_NAME }} ./cmd/main.go
+----
+
+== Environment Variables
+
+=== Inheritance Order
+
+Environment variables are inherited in this order (later overrides earlier):
+
+----
+Context < Pipeline < Task
+----
+
+[source,yaml]
+----
+contexts:
+  mycontext:
+    env:
+      LOG_LEVEL: info      # Lowest precedence
+      
+pipelines:
+  deploy:
+    - task: mytask
+      env:
+        LOG_LEVEL: warn    # Overrides context
+        
+tasks:
+  mytask:
+    context: mycontext
+    env:
+      LOG_LEVEL: debug     # Highest precedence
+    command: echo $LOG_LEVEL   # Outputs: debug
+----
+
+=== eirctl.env Auto-Loading
+
+A file named `eirctl.env` in the working directory is automatically loaded into the context environment:
+
+[source,env]
+----
+# eirctl.env
+DATABASE_URL=postgres://localhost/mydb
+API_KEY=secret123
+----
+
+=== In-File Variable References
+
+Environment files support variable references (defined variables must come first):
+
+[source,env]
+----
+BASE_URL=https://api.example.com
+API_ENDPOINT=${BASE_URL}/v1
+FULL_URL=$BASE_URL/v1/users
+----
+
+== Required Variables
+
+Validate that required variables and arguments are set before task execution:
+
+[source,yaml]
+----
+tasks:
+  deploy:
+    command: |
+      echo "Deploying {{ .VERSION }} to {{ .ENV }}"
+    required:
+      vars:
+        - VERSION
+        - ENV
+      env:
+        - AWS_ACCESS_KEY_ID
+        - AWS_SECRET_ACCESS_KEY
+      args:
+        - target
+----
+
+The `required` block supports three types of validation:
+
+* `vars` - required template variables
+* `env` - required environment variables
+* `args` - required CLI arguments (passed after `--`)
+
+The validation happens at runtime to allow dynamically set variables. All errors are collected before reporting.
+
+TIP: When running in a pipeline, required environment variables can be set in previous tasks, global env, envfiles, or parent pipelines.
+
+== Template Functions
+
+Go template functions are available:
+
+[source,yaml]
+----
+tasks:
+  example:
+    command: |
+      # Conditionals
+      {{ if .DEBUG }}echo "Debug mode"{{ end }}
+      
+      # Loops
+      {{ range .ArgsList }}echo "Arg: {{ . }}"{{ end }}
+      
+      # Default values using or
+      echo "{{ or .CUSTOM_VAR "default-value" }}"
+      
+      # Index into arrays
+      echo "First arg: {{ index .ArgsList 0 }}"
+----
+
+== Practical Examples
+
+=== Cross-Platform Builds
+
+[source,yaml]
+----
+tasks:
+  build:
+    command: |
+      GOOS={{ .GOOS }} GOARCH={{ .GOARCH }} \
+      go build -o {{ .Root }}/bin/app-{{ .GOOS }}-{{ .GOARCH }} \
+      ./cmd/main.go
+    variations:
+      - GOOS: linux
+        GOARCH: amd64
+      - GOOS: darwin
+        GOARCH: arm64
+      - GOOS: windows
+        GOARCH: amd64
+----
+
+=== Dynamic Configuration
+
+[source,yaml]
+----
+tasks:
+  deploy:
+    variables:
+      CLUSTER: "{{ or .CLUSTER "default-cluster" }}"
+    command: |
+      kubectl config use-context {{ .CLUSTER }}
+      kubectl apply -f {{ .Root }}/k8s/
+    required:
+      env:
+        - KUBECONFIG
+----
+
+=== Using Task Context
+
+[source,yaml]
+----
+tasks:
+  log-info:
+    command: |
+      echo "Task: {{ .Task.Name }}"
+      echo "Context: {{ .Context.Name }}"
+      echo "Stage: {{ .Stage.Name }}"
+      echo "Root: {{ .Root }}"
+      echo "Dir: {{ .Dir }}"
+----

@@ -1,0 +1,367 @@
+= Contexts
+:toc:
+:toclevels: 2
+
+Contexts define the execution environment for tasks. They allow you to set up executables, containers, environment variables, and lifecycle hooks.
+
+== Overview
+
+Tasks running without a context use a https://github.com/mvdan/sh[cross-platform shell emulator]. You can define contexts to run tasks in specific environments.
+
+[source,yaml]
+----
+tasks:
+  runs-in-default-shell:
+    command: echo "in emulated cross-platform shell"
+    
+  runs-in-container:
+    command: echo "in Alpine container"
+    context: alpine
+    
+contexts:
+  alpine:
+    container:
+      name: alpine:latest
+----
+
+== Context Types
+
+=== Executable Context
+
+Run tasks using a specific binary (shell, interpreter, or custom executable).
+
+[source,yaml]
+----
+contexts:
+  zsh:
+    executable:
+      bin: /bin/zsh
+      args:
+        - -c
+    quote: "'"  # Quote command with provided symbol: /bin/zsh -c 'echo 1'
+    
+  python:
+    executable:
+      bin: python3
+      args:
+        - -c
+        
+  node:
+    executable:
+      bin: node
+      args:
+        - -e
+----
+
+=== Container Context
+
+Run tasks inside containers using the native Docker/OCI API. No Docker CLI required.
+
+[source,yaml]
+----
+contexts:
+  alpine:
+    container:
+      name: alpine:latest
+      shell: sh
+      shell_args:
+        - -c
+        
+  golang:
+    container:
+      name: golang:1.22
+      shell: bash
+      shell_args:
+        - -c
+      enable_dind: false
+      enable_mount: true
+----
+
+==== Container Options
+
+[cols="2,1,3",options="header"]
+|===
+| Option | Default | Description
+
+| `name`
+| (required)
+| Container image name and tag
+
+| `shell`
+| `sh`
+| Shell to use inside the container
+
+| `shell_args`
+| `["-c"]`
+| Arguments passed to the shell
+
+| `enable_dind`
+| `false`
+| Enable Docker-in-Docker (mounts Docker socket)
+
+| `enable_mount`
+| `false`
+| Mount the working directory into the container at `/eirctl`
+
+| `container_args`
+| `[]`
+| Additional container arguments (volumes, ports, user)
+
+| `entrypoint`
+| 
+| Override container entrypoint
+
+| `pull_timeout`
+| `0` (no timeout)
+| Timeout in seconds for pulling the image
+
+|===
+
+==== Container Arguments
+
+Use `container_args` for additional Docker options:
+
+[source,yaml]
+----
+contexts:
+  custom:
+    container:
+      name: myimage:latest
+      container_args:
+        - -u 1000:1000          # Run as specific user
+        - -v $HOME/cache:/cache  # Additional volume mount
+        - -v ~/config:/config    # Tilde expansion supported
+        - -p 8080:80             # Port mapping
+----
+
+WARNING: For security, eirctl strips `--privileged` and `docker.sock:` from container arguments. These are forbidden to prevent privilege escalation.
+
+=== Comparing Container Approaches
+
+eirctl supports three ways to run containers:
+
+[cols="1a,1a,1a",options="header"]
+|===
+| Native Container | Executable with Docker CLI | Raw Docker Command
+
+|
+[source,yaml]
+----
+contexts:
+  new:container:
+    container:
+      name: alpine:latest
+      shell: sh
+      shell_args:
+        - -c
+----
+
+|
+[source,yaml]
+----
+contexts:
+  old:container:
+    executable:
+      bin: docker
+      args:
+        - run
+        - --rm
+        - -v $PWD:/app
+        - -w /app 
+        - alpine:latest
+        - sh
+        - -c
+----
+
+|
+[source,yaml]
+----
+tasks:
+  docker-task: 
+    command: >
+      docker run --rm 
+      -v $PWD:/app -w /app 
+      alpine:latest 
+      sh -c "pwd && ls"
+----
+
+|===
+
+The native container context is preferred because:
+
+* No Docker CLI required
+* Proper environment variable injection
+* Task variations work correctly
+* Better error handling and logging
+
+== Environment Variables
+
+Contexts have the lowest precedence for environment variables:
+
+----
+Context < Pipeline < Task
+----
+
+[source,yaml]
+----
+contexts:
+  mycontext:
+    executable:
+      bin: /bin/bash
+      args: [-c]
+    env:
+      GLOBAL_VAR: context-value
+      DEBUG: "true"
+----
+
+See xref:envfile.adoc[Envfile] for advanced environment configuration.
+
+== Lifecycle Hooks
+
+Contexts support lifecycle hooks that run at specific times.
+
+=== Hook Types
+
+[cols="1,3",options="header"]
+|===
+| Hook | Description
+
+| `up`
+| Runs once when the context is first used
+
+| `down`
+| Runs once after all tasks using this context complete
+
+| `before`
+| Runs before every task that uses this context
+
+| `after`
+| Runs after every task that uses this context (regardless of success/failure)
+
+|===
+
+NOTE: All hooks run in the host's mvdan shell, not inside the context.
+
+=== Example: Docker Compose
+
+[source,yaml]
+----
+contexts:
+  api-container:
+    executable:
+      bin: docker-compose
+      args: ["exec", "api"]
+    up: docker-compose up -d api
+    down: docker-compose down api
+----
+
+=== Example: Setup and Cleanup
+
+[source,yaml]
+----
+contexts:
+  test-env:
+    executable:
+      bin: /bin/bash
+      args: [-c]
+    before:
+      - echo "Setting up test environment"
+      - mkdir -p /tmp/test-workspace
+    after:
+      - echo "Cleaning up"
+      - rm -rf /tmp/test-workspace
+----
+
+== Working Directory
+
+Set a custom working directory for the context:
+
+[source,yaml]
+----
+contexts:
+  subdir:
+    executable:
+      bin: /bin/bash
+      args: [-c]
+    dir: ./src/app
+----
+
+For container contexts, the working directory inside the container defaults to `/eirctl`.
+
+== Private Registries
+
+For private container registries, set the `REGISTRY_AUTH_FILE` environment variable pointing to an auth file:
+
+[source,json]
+----
+{
+  "auths": {
+    "registry.example.com": {
+      "auth": "base64EncodedCredentials"
+    }
+  }
+}
+----
+
+This works with ECR, ACR, Docker Hub, GitLab, and other standard registries.
+
+== Practical Examples
+
+=== Multi-Language Project
+
+[source,yaml]
+----
+contexts:
+  golang:
+    container:
+      name: golang:1.22
+      shell: bash
+      shell_args: [-c]
+      
+  node:
+    container:
+      name: node:20
+      shell: bash
+      shell_args: [-c]
+      
+  python:
+    container:
+      name: python:3.12
+      shell: bash
+      shell_args: [-c]
+
+tasks:
+  build-go:
+    context: golang
+    command: go build ./...
+    
+  build-js:
+    context: node
+    command: npm run build
+    
+  test-python:
+    context: python
+    command: pytest
+----
+
+=== Infrastructure Tooling
+
+[source,yaml]
+----
+contexts:
+  terraform:
+    container:
+      name: hashicorp/terraform:latest
+      shell: sh
+      shell_args: [-c]
+    env:
+      TF_IN_AUTOMATION: "true"
+      
+  kubectl:
+    container:
+      name: bitnami/kubectl:latest
+      shell: bash
+      shell_args: [-c]
+      container_args:
+        - -v ~/.kube:/root/.kube:ro
+----

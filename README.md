@@ -1,6 +1,6 @@
 # eirctl - concurrent task and container runner
 
-![eirctl logo](./docs/eirctl-logo.svg)
+![eirctl logo](./docs/assets/eirctl-logo.svg)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ensono/eirctl)](https://goreportcard.com/report/github.com/Ensono/eirctl)

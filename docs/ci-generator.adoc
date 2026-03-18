@@ -1,0 +1,152 @@
+= CI Generator
+:toc:
+:toclevels: 2
+
+Generate CI YAML files from eirctl pipeline definitions.
+
+See the https://github.com/Ensono/taskctl/issues/16[initial discussion] for background.
+
+== Usage
+
+[source,bash]
+----
+eirctl generate <pipeline> [flags]
+----
+
+=== Flags
+
+[cols="2,1,4",options="header"]
+|===
+| Flag | Default | Description
+
+| `--target`, `-t`
+| (required)
+| Target CI platform (`github`, `gitlab`, `bitbucket`)
+
+| `--output`
+| Target-dependent
+| Output directory for generated files (e.g., `.github/workflows` for GitHub)
+
+| `--config`, `-c`
+| `eirctl.yaml`
+| Configuration file to use
+
+|===
+
+=== Examples
+
+Generate GitHub Actions workflow:
+[source,bash]
+----
+eirctl generate my-pipeline --target github
+----
+
+Generate GitLab CI with custom output:
+[source,bash]
+----
+eirctl generate my-pipeline --target gitlab --output .gitlab
+----
+
+== Internals
+
+The internal execution graph can be thought of as an n-ary tree with nodes (Stages). The root will be an eirctl "pipeline".
+
+A pipeline can be a collection of tasks executed in parallel or in an order set by the `depends_on` keyword.
+
+[source,text]
+----
+                    ┌─────────────────┐
+                    │ Start pipeline  │
+                    └────────┬────────┘
+           ┌─────────────────┼─────────────────┐
+           ▼                 ▼                 ▼
+      ┌─────────┐       ┌─────────┐       ┌─────────┐
+      │ task a  │       │ task b  │       │ task c  │
+      └────┬────┘       └────┬────┘       └────┬────┘
+           │                 │                 │
+           │                 │                 ▼
+           │                 │            ┌─────────┐
+           │                 │            │ task d  │
+           │                 │            └────┬────┘
+           └─────────────────┴─────────────────┘
+                             │
+                             ▼
+                        ┌─────────┐
+                        │ task e  │
+                        └────┬────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Finish pipeline │
+                    └─────────────────┘
+----
+
+The example above shows a pipeline starting by executing tasks a, b, c in parallel. Task d waits for task c to finish. Task e waits for tasks a, b, and d to complete before running.
+
+== Implementation
+
+Eirctl properties are mapped to specific CI implementations:
+
+[source,text]
+----
+┌──────────────────┐
+│ Eirctl Pipeline  │
+└────────┬─────────┘
+         │
+         ▼ (GitHub)
+    ┌─────────┐
+    │   Job   │
+    └────┬────┘
+         │
+         ▼
+    ┌─────────┐
+    │  Steps  │
+    └────┬────┘
+    ┌────┴────┬─────────┐
+    ▼         ▼         ▼
+┌───────┐ ┌───────┐ ┌───────┐
+│ Step1 │ │ Step2 │ │ Step3 │
+└───────┘ └───────┘ └───────┘
+----
+
+== Supported Generators
+
+[cols="1,2,2",options="header"]
+|===
+| Target | Status | Notes
+
+| GitHub Actions
+| ✅ Supported
+| Full support for jobs, steps, and dependencies
+
+| GitLab CI
+| ❌ Not yet available
+| Planned but not currently enabled
+
+| Bitbucket Pipelines
+| 🚧 Stub
+| Basic structure defined but not yet functional
+
+|===
+
+To add an additional generator, follow the existing strategy pattern in the https://github.com/Ensono/eirctl/blob/main/internal/genci/genci.go[genci package]. See https://github.com/Ensono/eirctl/blob/main/internal/genci/githubimpl.go[githubimpl.go] for an example.
+
+== CI Metadata
+
+You can add CI-specific metadata to pipelines and tasks using the `ci_meta` property:
+
+[source,yaml]
+----
+pipelines:
+  deploy:
+    - task: build
+    - task: deploy
+      depends_on: build
+      ci_meta:
+        runs-on: ubuntu-latest
+        environment: production
+----
+
+== Sample Outputs
+
+See link:samples/ci/.generated-github-workflow.yml[generated GitHub Actions sample] for an example of generated output.

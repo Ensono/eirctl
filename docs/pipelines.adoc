@@ -1,0 +1,389 @@
+= Pipelines
+:toc:
+:toclevels: 2
+
+Pipelines are sets of stages (tasks or other pipelines) executed in a defined order with dependency management.
+
+== Basic Pipeline
+
+[source,yaml]
+----
+pipelines:
+  build-and-test:
+    - task: build
+    - task: test
+      depends_on: build
+----
+
+== Pipeline Execution
+
+Stages without dependencies run in parallel. Use `depends_on` to control execution order:
+
+[source,yaml]
+----
+pipelines:
+  ci:
+    - task: lint          # Runs immediately (parallel)
+    - task: test          # Runs immediately (parallel)
+    - task: build         # Runs immediately (parallel)
+    - task: deploy
+      depends_on:         # Waits for all three
+        - lint
+        - test
+        - build
+----
+
+== Stage Properties
+
+[cols="2,1,3",options="header"]
+|===
+| Property | Type | Description
+
+| `name`
+| string
+| Stage name (defaults to task/pipeline name)
+
+| `task`
+| string
+| Task to execute
+
+| `pipeline`
+| string
+| Nested pipeline to execute
+
+| `depends_on`
+| string or array
+| Stage(s) that must complete first
+
+| `allow_failure`
+| boolean
+| Continue pipeline on failure
+
+| `condition`
+| string
+| Condition to check before running
+
+| `env`
+| map
+| Environment variables for this stage
+
+| `envfile`
+| object
+| Environment file configuration
+
+| `variables`
+| map
+| Template variables
+
+| `ci_meta`
+| map
+| CI-specific metadata
+
+|===
+
+== Dependencies
+
+=== Single Dependency
+
+[source,yaml]
+----
+pipelines:
+  example:
+    - task: setup
+    - task: build
+      depends_on: setup
+----
+
+=== Multiple Dependencies
+
+[source,yaml]
+----
+pipelines:
+  example:
+    - task: setup
+    - task: lint
+      depends_on: setup
+    - task: test
+      depends_on: setup
+    - task: deploy
+      depends_on:        # Array syntax
+        - lint
+        - test
+----
+
+== Execution Flow Example
+
+[source,yaml]
+----
+pipelines:
+  deploy:
+    - task: start
+    - task: task-a
+      depends_on: start
+    - task: task-b
+      depends_on: start
+    - task: task-c
+      depends_on: start
+    - task: task-d
+      depends_on: task-c
+    - task: task-e
+      depends_on:
+        - task-a
+        - task-b
+        - task-d
+    - task: finish
+      depends_on: task-e
+----
+
+This creates the following execution graph:
+
+[source,text]
+----
+                     ┌───────┐
+                     │ start │
+                     └───┬───┘
+           ┌─────────────┼─────────────┐
+           ▼             ▼             ▼
+       ┌───────┐     ┌───────┐     ┌───────┐
+       │task-a │     │task-b │     │task-c │
+       └───┬───┘     └───┬───┘     └───┬───┘
+           │             │             │
+           │             │             ▼
+           │             │         ┌───────┐
+           │             │         │task-d │
+           │             │         └───┬───┘
+           └─────────────┴─────────────┘
+                         │
+                         ▼
+                     ┌───────┐
+                     │task-e │
+                     └───┬───┘
+                         │
+                         ▼
+                     ┌───────┐
+                     │finish │
+                     └───────┘
+----
+
+== Nested Pipelines
+
+Pipelines can include other pipelines:
+
+[source,yaml]
+----
+pipelines:
+  build:
+    - task: compile
+    - task: package
+      depends_on: compile
+
+  test:
+    - task: unit-tests
+    - task: integration-tests
+      depends_on: unit-tests
+
+  ci:
+    - pipeline: build
+    - pipeline: test
+      depends_on: build
+    - task: deploy
+      depends_on: test
+----
+
+== Named Stages
+
+Give stages custom names to reference them:
+
+[source,yaml]
+----
+pipelines:
+  deploy:
+    - name: build-step
+      task: build
+    - name: test-step
+      task: test
+      depends_on: build-step
+    - task: deploy
+      depends_on: test-step
+----
+
+== Environment Variables
+
+Set environment variables at the pipeline level:
+
+[source,yaml]
+----
+pipelines:
+  production-deploy:
+    - task: build
+      env:
+        BUILD_ENV: production
+    - task: deploy
+      depends_on: build
+      env:
+        DEPLOY_TARGET: prod-cluster
+----
+
+Environment inheritance order: `Context < Pipeline < Task`
+
+See xref:graph-implementation.adoc[Graph Internals] for detailed precedence rules.
+
+== Conditional Stages
+
+Run stages conditionally:
+
+[source,yaml]
+----
+pipelines:
+  ci:
+    - task: build
+    - task: deploy
+      depends_on: build
+      condition: test "$(git branch --show-current)" = "main"
+----
+
+== Allow Failure
+
+Continue pipeline execution even if a stage fails:
+
+[source,yaml]
+----
+pipelines:
+  ci:
+    - task: lint
+      allow_failure: true  # Pipeline continues if lint fails
+    - task: test
+    - task: build
+      depends_on: test
+----
+
+== Envfile Configuration
+
+Configure environment files for pipeline stages:
+
+[source,yaml]
+----
+pipelines:
+  build:
+    - task: setup
+    - task: build
+      depends_on: setup
+      envfile:
+        path: ./build.env
+        exclude:
+          - PATH
+          - HOME
+----
+
+See xref:envfile.adoc[Envfile] for all options.
+
+== CI Metadata
+
+Add CI-specific metadata for pipeline generation:
+
+[source,yaml]
+----
+pipelines:
+  deploy:
+    - task: build
+      ci_meta:
+        runs-on: ubuntu-latest
+    - task: deploy
+      depends_on: build
+      ci_meta:
+        runs-on: ubuntu-latest
+        environment: production
+        needs: [security-review]
+----
+
+== Visualizing Pipelines
+
+Use the `graph` command to visualize pipeline execution:
+
+[source,bash]
+----
+# DOT format (for Graphviz)
+eirctl graph my-pipeline | dot -Tsvg -o pipeline.svg
+
+# Mermaid format
+eirctl graph my-pipeline --mermaid
+
+# Show execution plan
+eirctl run my-pipeline --graph-only | dot -Tsvg -o execution.svg
+----
+
+== Practical Examples
+
+=== CI/CD Pipeline
+
+[source,yaml]
+----
+pipelines:
+  ci:
+    - task: install-deps
+    - task: lint
+      depends_on: install-deps
+    - task: test
+      depends_on: install-deps
+    - task: build
+      depends_on:
+        - lint
+        - test
+    - task: docker-build
+      depends_on: build
+    - task: deploy
+      depends_on: docker-build
+      condition: test "$(git branch --show-current)" = "main"
+----
+
+=== Multi-Service Build
+
+[source,yaml]
+----
+pipelines:
+  frontend-build:
+    - task: npm-install
+    - task: npm-build
+      depends_on: npm-install
+
+  backend-build:
+    - task: go-mod-download
+    - task: go-build
+      depends_on: go-mod-download
+
+  full-build:
+    - pipeline: frontend-build
+    - pipeline: backend-build
+    - task: integration-tests
+      depends_on:
+        - frontend-build
+        - backend-build
+----
+
+=== Deployment with Approval
+
+[source,yaml]
+----
+pipelines:
+  deploy-prod:
+    - task: build
+    - task: run-tests
+      depends_on: build
+    - task: security-scan
+      depends_on: build
+    - name: staging-deploy
+      task: deploy
+      depends_on:
+        - run-tests
+        - security-scan
+      env:
+        ENVIRONMENT: staging
+    - name: prod-deploy
+      task: deploy
+      depends_on: staging-deploy
+      env:
+        ENVIRONMENT: production
+      ci_meta:
+        environment: production
+        needs-approval: true
+----

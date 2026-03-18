@@ -1,0 +1,175 @@
+= Installation
+:toc:
+:toclevels: 2
+
+== Getting Started
+
+You can install a prebuilt binary for your system from GitHub.
+
+== Install
+
+`eirctl` is compiled for all major platforms (Windows, Mac, Linux) and architectures (`amd64`, `arm64`) and downloadable from https://github.com/Ensono/eirctl/releases[GitHub Releases].
+
+=== Linux Binary
+
+TIP: Windows Subsystem for Linux users can use the Linux instructions from within a WSL terminal.
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-amd64 -o eirctl
+chmod +x eirctl
+sudo mv eirctl /usr/local/bin
+----
+
+=== macOS Binary
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
+chmod +x eirctl
+sudo mv eirctl /usr/local/bin
+----
+
+For user-only installation, copy to `~/.local/bin`:
+
+[source,bash]
+----
+chmod +x eirctl
+mv eirctl $HOME/.local/bin
+----
+
+CAUTION: Some distributions don't automatically add `$HOME/.local/bin` to the `$PATH`. Ensure it exists with restrictive permissions (e.g., `750`) and restart your shell, as this path is only added to `$PATH` if it exists when your `.profile` is executed.
+
+=== Windows Binary
+
+Windows binaries can be downloaded manually or via PowerShell, then moved to a directory in your `$env:PATH`.
+
+IMPORTANT: Ideally use a path under your user's home directory. Create one specifically for portable binaries (e.g., `C:\Users\$USERNAME\bin`) or use an existing one from `$env:PATH`.
+
+[source,powershell]
+----
+$binDir = "${env:HOMEDRIVE}${env:HOMEPATH}\bin"
+New-Item -Path $binDir -ItemType Directory -ErrorAction SilentlyContinue
+Invoke-WebRequest -Uri https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe -OutFile "${binDir}\eirctl.exe"
+$env:PATH = "${env:PATH};${binDir}"
+----
+
+== Verify Installation
+
+[source,bash]
+----
+eirctl --version
+----
+
+Should output something like:
+
+[source,text]
+----
+eirctl version v0.9.7-abc123def
+----
+
+== Different Architectures
+
+Ensure you download the correct version for the target architecture.
+
+=== Available Binaries
+
+[cols="2,2,3",options="header"]
+|===
+| Platform | Architecture | Download
+
+| Linux
+| amd64 (Intel/AMD)
+| `eirctl-linux-amd64`
+
+| Linux
+| arm64 (ARM)
+| `eirctl-linux-arm64`
+
+| macOS
+| arm64 (M1/M2/M3/M4)
+| `eirctl-darwin-arm64`
+
+| macOS
+| amd64 (Intel)
+| `eirctl-darwin-amd64`
+
+| Windows
+| amd64 (Intel/AMD)
+| `eirctl-windows-amd64.exe`
+
+| Windows
+| arm64 (ARM)
+| `eirctl-windows-arm64.exe`
+
+|===
+
+=== ARM (macOS Apple Silicon)
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
+----
+
+=== AMD (Intel Mac)
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-amd64 -o eirctl
+----
+
+== Self-Update
+
+eirctl can update itself to the latest version:
+
+[source,bash]
+----
+eirctl update
+----
+
+Or update to a specific version:
+
+[source,bash]
+----
+eirctl update --version 0.9.5
+----
+
+== Usage
+
+[source,bash]
+----
+# Run interactive task prompt
+eirctl
+
+# See available commands and options
+eirctl --help
+eirctl -h
+
+# Run a specific task or pipeline
+eirctl run <task|pipeline>
+
+# Shorthand (equivalent to eirctl run)
+eirctl <task|pipeline>
+----
+
+== Docker
+
+eirctl is also available as a Docker image:
+
+[source,bash]
+----
+docker pull ghcr.io/ensono/eirctl:latest
+----
+
+Run with your config mounted:
+
+[source,bash]
+----
+docker run -v $(pwd):/workspace -w /workspace ghcr.io/ensono/eirctl:latest run my-pipeline
+----
+
+== Next Steps
+
+* Create an `eirctl.yaml` configuration file (run `eirctl init` for a starter template)
+* See xref:cli-reference.adoc[CLI Reference] for all available commands
+* Read about xref:tasks.adoc[Tasks] and xref:pipelines.adoc[Pipelines] to understand the configuration
