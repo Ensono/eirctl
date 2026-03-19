@@ -2,7 +2,7 @@
 contexts:
   go1x:
     container:
-      name: mirror.gcr.io/golang:1.25-trixie
+      name: mirror.gcr.io/golang:1.26-trixie
       enable_dind: true
       enable_mount: true
     envfile:
@@ -13,7 +13,7 @@ contexts:
 
   golint:
     container:
-      name: mirror.gcr.io/golangci/golangci-lint:v2.4.0-alpine
+      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine
       enable_mount: true
     envfile:
       exclude:
@@ -25,7 +25,7 @@ contexts:
 
   goreleaser:
     container:
-      name: ghcr.io/goreleaser/goreleaser:v2.12.5
+      name: ghcr.io/goreleaser/goreleaser:v2.14.3
       shell: bash
       shell_args:
         - -c
