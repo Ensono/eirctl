@@ -408,7 +408,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 	t.WithStart(time.Now())
 
 	for nextJob := job; nextJob != nil; nextJob = nextJob.Next {
-		cmd, err := utils.RenderString(nextJob.Command, nextJob.Vars.Map())
+		cmd, err := utils.RenderString(nextJob.Command, nextJob.Vars.Map(), nextJob.Env.Map())
 		if err != nil {
 			return err
 		}

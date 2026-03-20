@@ -34,7 +34,7 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 			continue
 		}
 
-		renderedStr, err := utils.RenderString(v.(string), vars.Map())
+		renderedStr, err := utils.RenderString(v.(string), vars.Map(), t.Env.Map())
 		if err != nil {
 			return nil, err
 		}
@@ -129,7 +129,7 @@ func (tc *TaskCompiler) compileCommand(
 		j.Dir = executionCtx.Dir
 	}
 
-	j.Dir, err = utils.RenderString(j.Dir, j.Vars.Map())
+	j.Dir, err = utils.RenderString(j.Dir, j.Vars.Map(), j.Env.Map())
 	if err != nil {
 		return nil, err
 	}
