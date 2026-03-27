@@ -78,6 +78,7 @@ func TestTaskCompiler_CompileTask(t *testing.T) {
 	j, err := tc.CompileTask(&task.Task{
 		Commands:  []string{"echo 1"},
 		Variables: variables.FromMap(map[string]string{"TestInterpolatedVar": "TestVar={{.TestVar}}"}),
+		Env:       variables.NewVariables(),
 	},
 		runner.NewExecutionContext(&shBin, "/tmp", variables.FromMap(map[string]string{"HOME": "/root"}), envFile, nil, nil, nil, nil),
 		&bytes.Buffer{},

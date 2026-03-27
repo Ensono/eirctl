@@ -67,6 +67,8 @@ Each task, stage and context has variables to be used to render task's fields - 
 Along with globally predefined, variables can be set in a task's definition.
 You can use those variables according to `text/template` [documentation](https://pkg.go.dev/text/template).
 
+> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available. See below for some examples.
+
 Predefined variables are:
 
 - `.Root` - root config file directory
@@ -77,8 +79,29 @@ Predefined variables are:
 - `.Task.Name` - current task's name
 - `.Context.Name` - current task's execution context's name
 - `.Stage.Name` - current stage's name
+- `.Env.EnvVarKey` - the current tasks injected variables these are computed throughout the pipeline execution and `EnvVarKey` is the case senstive environment variable name.
 
 User supplied vars i.e. using the `--set Var1=value` will all be merged and are available for templating and Required checking
+
+_example_var_from_json_list_:
+
+```yaml
+json:from:list:
+  command: 
+    - |
+      {{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}
+  env:
+    FOO: bar    
+```
+
+`eirctl json:from:list --set jsonStringList='["foo","bar"]'
+
+output would be:
+
+```sh
+echo foo bar
+echo bar bar
+```
 
 ### Pass CLI arguments to task
 
@@ -281,6 +304,7 @@ It uses the native Go API for OCI compliant runtimes (docker, podman, containerd
 > This means you don't need the docker cli installed
 
 The `container_args` section supports several Docker-compatible flags:
+
 - `-v, --volume`: Mount volumes (supports environment variable expansion like `$HOME`, `$PWD`, `~`)
 - `-p, --port`: Port mappings
 - `-u, --user`: User and group IDs
@@ -369,7 +393,7 @@ The runner package:
 
 The error `tls: failed to verify certificate: x509: certificate signed by unknown authority` can occur when downloading Go packages within a container. This is often due to corporate proxies like Cisco Umbrella intercepting HTTPS traffic.
 
-**Workaround**: Set the `GOPROXY` environment variable to `direct` to bypass the proxy. 
+**Workaround**: Set the `GOPROXY` environment variable to `direct` to bypass the proxy.
 
 Setting `GOPROXY=direct` forces Go to fetch packages directly from their source repositories, bypassing any proxies that may be intercepting certificates.
 

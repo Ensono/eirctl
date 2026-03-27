@@ -111,6 +111,18 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	defer e.cc.Close()
 
 	containerContext := e.execContext.Container()
+
+	// template the container name - this can be useful when you need to re-use the same image with separate SHAs
+	// or if you build an image for downstream use in the same pipeline.
+	//
+	// NOTE: During the graph building phase the template value is stored against the context node
+	// it is always resolved/templated at runtime and throws an error if not provided or a default mechanism is missing
+	templatedImageName, err := utils.RenderString(containerContext.Image, job.Vars.Map(), job.Env.Map())
+	if err != nil {
+		logrus.Debug(err)
+	}
+	containerContext.Image = templatedImageName
+
 	cmd := containerContext.ShellArgs
 	cmd = append(cmd, job.Command)
 	tty, attachStdin := false, false

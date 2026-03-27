@@ -18,6 +18,7 @@ import (
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/Masterminds/sprig/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -192,32 +193,20 @@ func LastLine(r io.Reader) (l string) {
 }
 
 // RenderString parses given string as a template and executes it with provided params
-func RenderString(tmpl string, variables map[string]interface{}) (string, error) {
-	funcMap := template.FuncMap{
-		"default": func(arg interface{}, value interface{}) interface{} {
-			v := reflect.ValueOf(value)
-			switch v.Kind() {
-			case reflect.String, reflect.Slice, reflect.Array, reflect.Map:
-				if v.Len() == 0 {
-					return arg
-				}
-			case reflect.Bool:
-				if !v.Bool() {
-					return arg
-				}
-			default:
-				return value
-			}
-
-			return value
-		},
+func RenderString(tmpl string, variables, env map[string]any) (string, error) {
+	if tmpl == "" {
+		return tmpl, nil
 	}
 
 	var buf bytes.Buffer
-	t, err := template.New("interpolate").Funcs(funcMap).Option("missingkey=error").Parse(tmpl)
+	t, err := template.New("interpolate").Funcs(sprig.FuncMap()).Option("missingkey=error").Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
+
+	// build environment variables for template execution
+	// under a special .Env.Key format => where `Key` is the name of the env variable
+	variables["Env"] = env
 
 	err = t.Execute(&buf, variables)
 

@@ -58,7 +58,7 @@ func (e *DefaultExecutor) WithReset(doReset bool) {
 // Execute executes given job with provided context
 // Returns job output
 func (e *DefaultExecutor) Execute(ctx context.Context, job *Job) ([]byte, error) {
-	command, err := utils.RenderString(job.Command, job.Vars.Map())
+	command, err := utils.RenderString(job.Command, job.Vars.Map(), job.Env.Map())
 	if err != nil {
 		return nil, err
 	}
