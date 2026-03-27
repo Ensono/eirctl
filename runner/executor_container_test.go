@@ -423,7 +423,7 @@ func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerE
 		Env: variables.FromMap(map[string]string{"FOO": "bar"}),
 	}
 
-	containerOpt := runner.NewContainerContext("container:foo-3.21.3")
+	containerOpt := runner.NewContainerContext(`container:foo-{{  if not (empty .Env) }}{{ .Env.IMAGE_TAG | default "3.21.3"}}{{ end }}`)
 	containerOpt.ShellArgs = []string{"sh"}
 	containerOpt.ParseContainerArgs([]string{"-v ${PWD}:/testdir"})
 
@@ -481,6 +481,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -524,6 +526,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		})
 		if err == nil {
 			t.Fatal(err)
@@ -561,6 +565,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stdout:  stdout,
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 			IsShell: true,
 		})
 		if err == nil {
@@ -605,6 +611,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		})
 		if err == nil {
 			t.Fatal("expected an error, got nil")
@@ -651,6 +659,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stdout:  stdout,
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
+			Vars:    variables.NewVariables(),
+			Env:     variables.NewVariables(),
 			IsShell: true,
 		})
 		if err == nil {
@@ -704,6 +714,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		})
 		if err != nil {
 			t.Errorf("expected nil error on normal exit, got: %v", err)
@@ -762,6 +774,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		})
 		// cancelled context should return nil (same behaviour as execute())
 		if err != nil {
@@ -821,6 +835,8 @@ func Test_ContainerExecutor_shell(t *testing.T) {
 			Stderr:  stderr,
 			Dir:     configContext.Dir,
 			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
 		})
 		// cancelled context should return nil (same behaviour as execute())
 		if err == nil {
@@ -1002,6 +1018,46 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
 		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
 			Env:    variables.NewVariables(),
+			Vars:   variables.NewVariables(),
+			Stdout: so,
+			Stderr: se,
+		})
+
+		if err == nil {
+			t.Fatalf("got %v, wanted error", err)
+		}
+		if !errors.Is(err, runner.ErrContainerCreate) {
+			t.Errorf("got %v, wanted %T", err, runner.ErrContainerCreate)
+		}
+		if !reflect.DeepEqual(mcc.methodsCalled, []string{"create", "pull", "close"}) {
+			t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+		}
+	})
+
+	t.Run("succeeds on image templating with default", func(t *testing.T) {
+		t.Parallel()
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		mcc := mockContainerClientHelper(t, respCh, errCh, nil, nil)
+
+		mcc.create = func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "create")
+			return container.CreateResponse{ID: "created0-123"}, errdefs.ErrNotFound
+		}
+		mcc.pull = func() (io.ReadCloser, error) {
+			mcc.methodsCalled = append(mcc.methodsCalled, "pull")
+			return nil, fmt.Errorf("unable to pull")
+		}
+		mcc.close = func() error {
+			mcc.methodsCalled = append(mcc.methodsCalled, "close")
+			return nil
+		}
+		ce, _, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		so, se := output.NewSafeWriter(&bytes.Buffer{}), output.NewSafeWriter(&bytes.Buffer{})
+		_, err := ce.Execute(context.TODO(), &runner.Job{Command: `unknown --version`,
+			Env:    variables.FromMap(map[string]string{"IMAGE_TAG": "123"}),
 			Vars:   variables.NewVariables(),
 			Stdout: so,
 			Stderr: se,
