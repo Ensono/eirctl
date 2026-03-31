@@ -119,7 +119,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/emicklei/dot v1.11.0
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/go-git/go-git/v5 v5.17.0
+	github.com/go-git/go-git/v5 v5.17.1
 	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
