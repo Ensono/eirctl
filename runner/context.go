@@ -455,10 +455,10 @@ func (c *ExecutionContext) StartupError() error {
 }
 
 // Up executes tasks defined to run once before first usage of the context
-func (c *ExecutionContext) Up() error {
+func (c *ExecutionContext) Up(stdout, stderr io.Writer) error {
 	c.onceUp.Do(func() {
 		for _, command := range c.up {
-			err := c.runServiceCommand(command)
+			err := c.runServiceCommand(command, stdout, stderr)
 			if err != nil {
 				c.mu.Lock()
 				c.startupError = err
@@ -472,10 +472,10 @@ func (c *ExecutionContext) Up() error {
 }
 
 // Down executes tasks defined to run once after last usage of the context
-func (c *ExecutionContext) Down() {
+func (c *ExecutionContext) Down(stdout, stderr io.Writer) {
 	c.onceDown.Do(func() {
 		for _, command := range c.down {
-			err := c.runServiceCommand(command)
+			err := c.runServiceCommand(command, stdout, stderr)
 			if err != nil {
 				logrus.Errorf("context cleanup error: %s", err)
 			}
@@ -484,9 +484,9 @@ func (c *ExecutionContext) Down() {
 }
 
 // Before executes tasks defined to run before every usage of the context
-func (c *ExecutionContext) Before() error {
+func (c *ExecutionContext) Before(stdout, stderr io.Writer) error {
 	for _, command := range c.before {
-		err := c.runServiceCommand(command)
+		err := c.runServiceCommand(command, stdout, stderr)
 		if err != nil {
 			return err
 		}
@@ -496,9 +496,9 @@ func (c *ExecutionContext) Before() error {
 }
 
 // After executes tasks defined to run after every usage of the context
-func (c *ExecutionContext) After() error {
+func (c *ExecutionContext) After(stdout, stderr io.Writer) error {
 	for _, command := range c.after {
-		err := c.runServiceCommand(command)
+		err := c.runServiceCommand(command, stdout, stderr)
 		if err != nil {
 			return err
 		}
@@ -613,9 +613,9 @@ func (c *ExecutionContext) modifyName(varName string) string {
 // currently this is run outside of the context and always in the mvdn shell
 //
 // TODO: run serviceCommand in the same context as the command slice
-func (c *ExecutionContext) runServiceCommand(command string) (err error) {
+func (c *ExecutionContext) runServiceCommand(command string, stdout, stderr io.Writer) (err error) {
 	logrus.Tracef("running context service command: %s", command)
-	ex, err := newDefaultExecutor(nil, io.Discard, io.Discard)
+	ex, err := newDefaultExecutor(nil, stdout, stderr)
 	if err != nil {
 		return err
 	}
