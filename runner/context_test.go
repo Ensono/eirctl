@@ -102,20 +102,20 @@ func Test_Generate_Env_file(t *testing.T) {
 
 		for _, excluded := range []string{"excld1=bye bye", "exclude3=sadgfddf", `userSuppliedButExcluded=¯\_(ツ)_/¯`} {
 			if slices.Contains(strings.Split(contents, "\n"), excluded) {
-				t.Fatal("invalid chars not skipped properly and overwritten env vars")
+				t.Error("invalid chars not skipped properly and overwritten env vars")
 			}
 		}
 
 		if slices.Contains(strings.Split(contents, "\n"), "=::=whatever val will never be added") {
-			t.Fatal("invalid chars not skipped properly and overwritten env vars")
+			t.Error("invalid chars not skipped properly and overwritten env vars")
 		}
 
 		if slices.Contains(strings.Split(contents, "\n"), "!::=whatever val will never be added") {
-			t.Fatal("invalid chars not skipped properly and overwritten env vars")
+			t.Error("invalid chars not skipped properly and overwritten env vars")
 		}
 
 		if !slices.Contains(strings.Split(contents, "\n"), "UPPER_VAR_MAKE_ME_BIGGER=this_key_is_large") {
-			t.Fatal("Modify not changed the values properly")
+			t.Error("Modify not changed the values properly")
 		}
 	})
 
