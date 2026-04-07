@@ -69,9 +69,10 @@ tasks:
       Runs a vulnerability scan against the code base
     command:
       - |
+        apt-get update -y && apt-get install -y jq
         unset GOTOOLCHAIN
         go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
+        govulncheck -format=openvex ./... | jq '.statements[] | select(.status == "affected")'
 
   test:
     context: go1x
