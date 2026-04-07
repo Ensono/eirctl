@@ -268,10 +268,10 @@ func TestExecutionGraph_Denormalize(t *testing.T) {
 func Test_Denormalize_with_aliased(t *testing.T) {
 	g := helperGraph(t, "graph:aliased:nodes", ymlInputTester)
 
-	t.Run("correctly assigne aliased nodes", func(t *testing.T) {
+	t.Run("correctly assigns aliased nodes", func(t *testing.T) {
 		got, err := g.Denormalize()
 		if err != nil {
-			t.Error(err.Error())
+			t.Fatal(err.Error())
 		}
 		if got == nil {
 			t.Error("got nil, wanted a denormalized graph")
@@ -293,7 +293,10 @@ func Test_Denormalize_with_aliased(t *testing.T) {
 				t.Error("incorrectly built denormalized graph")
 			}
 			if val != env {
-				t.Errorf("incorrectly inherited env across stages, got %s, wanted prod", val)
+				t.Errorf("incorrectly inherited env across stages, got %s, wanted %s", val, env)
+			}
+			if node.Name != "graph:aliased:nodes->"+env {
+				t.Errorf("got %s, wanted %s", node.Name, "graph:aliased:nodes->"+env)
 			}
 		}
 	})
