@@ -142,7 +142,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 		}
 		taskOutput.Close()
 
-		err = execContext.After()
+		err = execContext.After(r.Stdout, r.Stderr)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -231,7 +231,7 @@ func (r *TaskRunner) Finish() {
 	// future iteration should properly type these
 	// context level Down are run after the task level After
 	r.cleanupList.Range(func(key, value any) bool {
-		value.(*ExecutionContext).Down()
+		value.(*ExecutionContext).Down(r.Stdout, r.Stderr)
 		return true
 	})
 }
@@ -318,12 +318,12 @@ func (r *TaskRunner) contextForTask(t *task.Task) (*ExecutionContext, error) {
 		r.cleanupList.Store(t.Context, context)
 	}
 
-	err := context.Up()
+	err := context.Up(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}
 
-	err = context.Before()
+	err = context.Before(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}

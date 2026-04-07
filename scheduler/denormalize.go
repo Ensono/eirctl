@@ -118,6 +118,9 @@ func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
 		for _, v := range parentStages {
 			stage.env = stage.Env().Merge(v.Env())
 			if stage.Task != nil {
+				if stage.Task.Name != stage.Name {
+					stage.Task.Name = stage.Name
+				}
 				stage.Task.Env = stage.env.Merge(stage.Task.Env)
 				stage.env = stage.env.Merge(stage.Task.Env)
 				// we want to merge and overwrite any values in the pipeline with values specified in the stage

@@ -1,6 +1,7 @@
 package runner_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -101,20 +102,20 @@ func Test_Generate_Env_file(t *testing.T) {
 
 		for _, excluded := range []string{"excld1=bye bye", "exclude3=sadgfddf", `userSuppliedButExcluded=¯\_(ツ)_/¯`} {
 			if slices.Contains(strings.Split(contents, "\n"), excluded) {
-				t.Fatal("invalid chars not skipped properly and overwritten env vars")
+				t.Error("invalid chars not skipped properly and overwritten env vars")
 			}
 		}
 
 		if slices.Contains(strings.Split(contents, "\n"), "=::=whatever val will never be added") {
-			t.Fatal("invalid chars not skipped properly and overwritten env vars")
+			t.Error("invalid chars not skipped properly and overwritten env vars")
 		}
 
 		if slices.Contains(strings.Split(contents, "\n"), "!::=whatever val will never be added") {
-			t.Fatal("invalid chars not skipped properly and overwritten env vars")
+			t.Error("invalid chars not skipped properly and overwritten env vars")
 		}
 
 		if !slices.Contains(strings.Split(contents, "\n"), "UPPER_VAR_MAKE_ME_BIGGER=this_key_is_large") {
-			t.Fatal("Modify not changed the values properly")
+			t.Error("Modify not changed the values properly")
 		}
 	})
 
@@ -869,4 +870,55 @@ func Test_ContainerContext_UnsupportedArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Context_Output(t *testing.T) {
+	loop := "for i in {1..10}; do echo $i; done"
+	c := runner.NewExecutionContext(nil, "", variables.NewVariables(), utils.NewEnvFile(), []string{loop}, []string{loop}, []string{loop}, []string{loop})
+	t.Run("output it captured in before on context", func(t *testing.T) {
+		bo, be := &bytes.Buffer{}, &bytes.Buffer{}
+		if err := c.Before(bo, be); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+		if len(bo.Bytes()) == 0 {
+			t.Error("got 0 bytes, wanted output")
+		}
+		if bo.String() != "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n" {
+			t.Errorf("got %s, wanted 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", bo.String())
+		}
+	})
+	t.Run("output it captured in after on context", func(t *testing.T) {
+		bo, be := &bytes.Buffer{}, &bytes.Buffer{}
+		if err := c.After(bo, be); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+		if len(bo.Bytes()) == 0 {
+			t.Error("got 0 bytes, wanted output")
+		}
+		if bo.String() != "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n" {
+			t.Errorf("got %s, wanted 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", bo.String())
+		}
+	})
+	t.Run("output it captured in up on context", func(t *testing.T) {
+		bo, be := &bytes.Buffer{}, &bytes.Buffer{}
+		if err := c.Up(bo, be); err != nil {
+			t.Fatalf("got %v, want nil", err)
+		}
+		if len(bo.Bytes()) == 0 {
+			t.Error("got 0 bytes, wanted output")
+		}
+		if bo.String() != "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n" {
+			t.Errorf("got %s, wanted 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", bo.String())
+		}
+	})
+	t.Run("output it captured in down on context", func(t *testing.T) {
+		bo, be := &bytes.Buffer{}, &bytes.Buffer{}
+		c.Down(bo, be)
+		if len(bo.Bytes()) == 0 {
+			t.Error("got 0 bytes, wanted output")
+		}
+		if bo.String() != "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n" {
+			t.Errorf("got %s, wanted 1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", bo.String())
+		}
+	})
 }

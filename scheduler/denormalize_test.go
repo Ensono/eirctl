@@ -216,7 +216,7 @@ func TestStageTable_ops(t *testing.T) {
 }
 
 func TestExecutionGraph_Denormalize(t *testing.T) {
-	t.Parallel()
+
 	g := helperGraph(t, "graph:pipeline1", ymlInputTester)
 
 	t.Run("check sample graph", func(t *testing.T) {
@@ -265,13 +265,50 @@ func TestExecutionGraph_Denormalize(t *testing.T) {
 	})
 }
 
+func Test_Denormalize_with_aliased(t *testing.T) {
+	g := helperGraph(t, "graph:aliased:nodes", ymlInputTester)
+
+	t.Run("correctly assigns aliased nodes", func(t *testing.T) {
+		got, err := g.Denormalize()
+		if err != nil {
+			t.Fatal(err.Error())
+		}
+		if got == nil {
+			t.Error("got nil, wanted a denormalized graph")
+		}
+
+		node1, err := got.Node("graph:aliased:nodes->one")
+		if err != nil || node1 == nil {
+			t.Error("incorrectly built denormalized graph")
+		}
+
+		node2, err := got.Node("graph:aliased:nodes->two")
+		if err != nil || node2 == nil {
+			t.Error("incorrectly built denormalized graph")
+		}
+		for env, node := range map[string]*scheduler.Stage{"one": node1, "two": node2} {
+
+			val, ok := node.Env().Map()["ENV_NAME"]
+			if !ok {
+				t.Error("incorrectly built denormalized graph")
+			}
+			if val != env {
+				t.Errorf("incorrectly inherited env across stages, got %s, wanted %s", val, env)
+			}
+			if node.Name != "graph:aliased:nodes->"+env {
+				t.Errorf("got %s, wanted %s", node.Name, "graph:aliased:nodes->"+env)
+			}
+		}
+	})
+}
+
 var ymlInputTester = []byte(`
 output: prefixed
 contexts:
   podman:
     container:
       name: alpine:3.21.3
-    env: 
+    env:
       GLOBAL_VAR: this is it
     envfile:
       exclude:
@@ -280,7 +317,7 @@ contexts:
 ci_meta:
   targetOpts:
     github:
-      "on": 
+      "on":
         push:
           branches:
             - gfooo
@@ -293,7 +330,7 @@ pipelines:
         GLOBAL_VAR: prodPipeline
   graph:pipeline1:
     - task: graph:task2
-      depends_on: 
+      depends_on:
         - graph:task1
     - task: graph:task3
       depends_on: [graph:task1]
@@ -318,6 +355,16 @@ pipelines:
       depends_on:
         - task-p2:2
 
+  graph:aliased:nodes:
+    - task: graph:task1
+      name: one
+      env:
+        ENV_NAME: one
+    - task: graph:task1
+      name: two
+      env:
+        ENV_NAME: two
+
   graph:pipeline3:
     - task: graph:task2
     - task: graph:task3
@@ -340,13 +387,13 @@ tasks:
     context: podman
 
   graph:task3:
-    command: 
+    command:
       - echo "hello, task3 in env ${ENV_NAME}"
     env:
       FOO: bar
 
   graph:task4:
-    command: | 
+    command: |
       echo "hello, task4 in env ${ENV_NAME}"
     context: podman
     env:
@@ -374,22 +421,22 @@ tasks:
 
 var ymlTesterEnvFilePath = []byte(`
 tasks:
-  one: 
-    command: 
+  one:
+    command:
       - |
         echo one
         echo "$SET_IN_PIPELINE"
     envfile:
       path:
         - one.env
-  two: 
-    command: 
-      - | 
+  two:
+    command:
+      - |
         echo two
         echo "$SET_IN_PIPELINE"
-  
+
 pipelines:
-  p1: 
+  p1:
     - task: one
       envfile:
         path:
