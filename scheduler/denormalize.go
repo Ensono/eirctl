@@ -32,7 +32,7 @@ func (st StageTable) NthLevelChildren(prefix string, depth int) []*Stage {
 }
 
 // RecurseParents walks all the parents recursively
-// and appends to the list in revers order
+// and appends to the list in reverse order
 func (st StageTable) RecurseParents(prefix string) []*Stage {
 	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
 	stages := []*Stage{}
@@ -113,20 +113,31 @@ func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
 			}
 			stage.Pipeline = ng
 		}
+
 		// stage is task - merge into the stage all the previous env and vars
+
+		// Add in reverse order - i.e. respecting the order of precedence
 		parentStages := st.RecurseParents(stage.Name)
 		for _, v := range parentStages {
 			stage.env = stage.Env().Merge(v.Env())
-			if stage.Task != nil {
-				if stage.Task.Name != stage.Name {
-					stage.Task.Name = stage.Name
-				}
-				stage.Task.Env = stage.env.Merge(stage.Task.Env)
-				stage.env = stage.env.Merge(stage.Task.Env)
-				// we want to merge and overwrite any values in the pipeline with values specified in the stage
-				envfileMerge(stage.envfile, v.EnvFile())
-			}
+			stage.variables = stage.Variables().Merge(v.Variables())
+			// we want to merge and overwrite any values in the pipeline with values specified in the stage
+			envfileMerge(stage.envfile, v.EnvFile())
 		}
+
+		// set the node name correctly
+		if stage.Task != nil {
+			if stage.Task.Name != stage.Name {
+				stage.Task.Name = stage.Name
+			}
+			// the task level defined envs and envfiles and variables will overwrite the ones defined further up the call stack
+			stage.Task.Env = stage.env.Merge(stage.Task.Env)
+			stage.env = stage.env.Merge(stage.Task.Env)
+			stage.Task.Variables = stage.variables.Merge(stage.Task.Variables)
+			stage.variables = stage.variables.Merge(stage.Task.Variables)
+			envfileMerge(stage.envfile, stage.EnvFile())
+		}
+
 		// Check err just in case the denormalized graph has cyclical dependancies
 		if err := g.AddStage(stage); err != nil {
 			// This should never be hit, but good to keep in place.
