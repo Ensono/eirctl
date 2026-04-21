@@ -236,10 +236,17 @@ func TestRenderString(t *testing.T) {
 		},
 		{args: args{
 			// need to use the $ notation as range changes the scope
-			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }} {{ .jsonStringList }}{{ end }}`,
 			variables: map[string]any{},
 			env:       map[string]any{"FOO": "bar"}},
 			want: "command bar",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }} {{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": "qux"},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar qux",
 		},
 		{args: args{
 			// need to use the $ notation as range changes the scope
