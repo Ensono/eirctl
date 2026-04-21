@@ -198,8 +198,15 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 		return tmpl, nil
 	}
 
+	fm := sprig.FuncMap()
+
+	// additional helper funcs defined below
+	// this will extend the existing sprig template funcs
+	fm["isset"] = func(a any) bool {
+		return a != nil && a != ""
+	}
 	var buf bytes.Buffer
-	t, err := template.New("interpolate").Funcs(sprig.FuncMap()).Option("missingkey=error").Parse(tmpl)
+	t, err := template.New("interpolate").Funcs(fm).Option("missingkey=default").Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
