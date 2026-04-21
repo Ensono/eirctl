@@ -67,7 +67,7 @@ Each task, stage and context has variables to be used to render task's fields - 
 Along with globally predefined, variables can be set in a task's definition.
 You can use those variables according to `text/template` [documentation](https://pkg.go.dev/text/template).
 
-> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available. See below for some examples.
+> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available as well as the `isset` function which checks if a variable is set i.e. not `null` for "arrays" (Golang Slice) and maps or `""` for strings. See below for some examples.
 
 Predefined variables are:
 
@@ -151,6 +151,21 @@ task:requiredVar:
 
 > [!TIP]
 > When running this task in an eirctl pipeline, `REQUIRED_ENV` can be set in a previous task, in global env, in an envfile, via a direct assignment the parent pipeline(s).
+
+:warning: if a variable is not set in the `required.vars` list and the template does not do any checking - as per the below example with `isset` checking for a set value.
+
+```yaml
+task:requiredVar:
+  command: command {{ .Env.FOO }} {{ .SetMe }} {{ if isset .OptionalSet }}{{ .OptionalSet }}{{ end }}
+  required:
+    env: [FOO]
+    vars:
+      - SetMe
+```
+
+The `SetMe` variable will be checked before the command is templated and will fail if unset, the `OptionalSet` will be checked at template runtime. 
+
+> IF however the command would look like this `command {{ .Env.FOO }} {{ .SetMe }} {{ .OptionalSet }}` and the eirctl required variables have been provided by the `OptionalSet` was omitted the result would look like this `command FOO_value SetMeValue <no value>`
 
 ### Storing task's output
 
