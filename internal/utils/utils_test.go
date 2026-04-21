@@ -193,7 +193,7 @@ func TestRenderString(t *testing.T) {
 	}{
 		{args: args{tmpl: "hello, {{ .Name }}!", variables: map[string]any{"Name": "world"}}, want: "hello, world!"},
 		{args: args{tmpl: "hello, {{ .Name | default \"John\" }}!", variables: map[string]any{"Name": ""}}, want: "hello, John!"},
-		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]any)}, wantErr: true},
+		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]any)}, want: "hello, <no value>!"},
 		{args: args{tmpl: "hello, {{ .Name", variables: make(map[string]any)}, wantErr: true},
 		// sprig template funcs
 		{args: args{tmpl: "{{ range (.StringCommaSeparatedList | splitList \",\") }}echo {{ . }}\n{{ end }}", variables: map[string]any{"StringCommaSeparatedList": `foo,bar`}}, want: "echo foo\necho bar\n"},
@@ -212,6 +212,41 @@ func TestRenderString(t *testing.T) {
 			variables: map[string]any{"jsonStringList": `["foo","bar"]`},
 			env:       map[string]any{"FOO": "bar"}},
 			want: "echo foo bar\necho bar bar\n",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      "{{ if .jsonStringList }}{{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}{{ end }}",
+			variables: map[string]any{"jsonStringList": ``},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }} {{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": `--foo --bar`},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar --foo --bar",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }}{{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": ``},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }} {{ .jsonStringList }}`,
+			variables: map[string]any{},
+			env:       map[string]any{}},
+			want: "command <no value> <no value>",
 		},
 	}
 	for _, tt := range tests {
