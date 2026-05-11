@@ -72,7 +72,7 @@ tasks:
         apt-get update -y && apt-get install -y jq
         unset GOTOOLCHAIN
         go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck -format=openvex ./... | jq '.statements[] | select(.status == "affected")'
+        govulncheck -format={{ if .VulnCheckFormat }}{{ .VulnCheckFormat }}{{ else }}openvex{{ end }} ./... {{ if .VulnCheckPost }}{{ .VulnCheckPost }}{{ end }}
 
   test:
     context: go1x
