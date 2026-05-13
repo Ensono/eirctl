@@ -29,7 +29,7 @@
       "required": [
         "type"
       ],
-      "description": "Artifact holds the information about the artifact to produce for the specific task."
+      "description": "Artifact holds the information about the artifact to produce\nfor the specific task.\n\nNB: it is run at the end of the task so any after commands\nthat mutate the output files/dotenv file will essentially\noverwrite anything set/outputted as part of the main command"
     },
     "Binary": {
       "properties": {
@@ -119,7 +119,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "ConfigDefinition holds the top most config definition this can be parsed from a yaml, json, toml files/mediaTypes"
+      "description": "ConfigDefinition holds the top most config definition\nthis can be parsed from a yaml, json, toml files/mediaTypes\n\nNote: works the same way for local/remote config resources\ncorrect content-type or file extension must be specified\nto successfully decode/unmarshal into type"
     },
     "Container": {
       "properties": {
@@ -176,7 +176,7 @@
       "required": [
         "name"
       ],
-      "description": "Container is the specific context for containers only available to docker API compliant implementations"
+      "description": "Container is the specific context for containers\nonly available to docker API compliant implementations\n\ne.g. docker and podman\n\nThe aim is to remove some of the boilerplate away from the existing more\ngeneric context and introduce a specific context for tasks run in containers."
     },
     "ContextDefinition": {
       "properties": {
@@ -303,7 +303,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "Envile is a structure for storing the information required to generate an envfile which can be consumed by the specified binary"
+      "description": "Envile is a structure for storing the information required to generate an envfile which can be consumed\nby the specified binary"
     },
     "Generator": {
       "properties": {

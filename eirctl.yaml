@@ -30,6 +30,12 @@ pipelines:
     - task: sonar:coverage:prep
       depends_on: test:unit
 
+  lints:
+    - task: go:lint
+    - task: go:vuln:check
+      variables:
+        VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
+
 tasks:
   build:
     context: go1x

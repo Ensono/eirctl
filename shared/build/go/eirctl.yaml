@@ -63,16 +63,17 @@ tasks:
         go install github.com/alexfalkowski/gocovmerge@v2.16.0
     allow_failure: true
 
-  vuln:check:
+  go:vuln:check:
     context: go1x
     description: |
       Runs a vulnerability scan against the code base
     command:
       - |
+        set -ex
         apt-get update -y && apt-get install -y jq
         unset GOTOOLCHAIN
         go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck -format=openvex ./... | jq '.statements[] | select(.status == "affected")'
+        govulncheck -format={{ if .VulnCheckFormat }}{{ .VulnCheckFormat }}{{ else }}openvex{{ end }} ./... {{ if .VulnCheckPost }}{{ .VulnCheckPost }}{{ end }}
 
   test:
     context: go1x
@@ -103,13 +104,14 @@ tasks:
       - echo "Opening coverage html page"
       - go tool cover -html=.coverage/out
 
-  golint:
+  go:lint:
     context: golint
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
       - |
         golangci-lint run
+
   releaser:
     context: goreleaser
     command:
@@ -136,6 +138,7 @@ pipelines:
     - task: show_coverage
       depends_on:
         - test:unit
-  lints:
-    - task: golint
-    - task: vuln:check
+
+  go:linters:
+    - task: go:lint
+    - task: go:vuln:check
