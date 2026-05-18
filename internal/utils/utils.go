@@ -207,9 +207,10 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 		return a != nil && a != ""
 	}
 	//  Add Yaml parser
-	fm["fromYaml"] = func(v string) any {
+	fm["fromYaml"] = func(v any) any {
+		input, _ := yaml.Marshal(v)
 		var output any
-		_ = yaml.Unmarshal([]byte(v), &output)
+		_ = yaml.Unmarshal(input, &output)
 		return output
 	}
 

@@ -200,7 +200,7 @@ type TaskDefinition struct {
 	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables merged with others if any already priovided
 	// These will overwrite any previously set keys
-	Variables EnvVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
+	Variables VariablesVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 	// ResetContext ensures each invocation of the variation is run with a Reset on the executor.
 	// Currently only applies to a default executor and when run in variations.
 	ResetContext bool `mapstructure:"reset_context" yaml:"reset_context,omitempty" json:"reset_context,omitempty" jsonschema:"default=false"`
@@ -233,6 +233,24 @@ func (EnvVarMapType) JSONSchema() *jsonschema.Schema {
 				{Type: "string"},
 				{Type: "number"},
 				{Type: "boolean"},
+			},
+		},
+	}
+}
+
+// EnvVarMapType is the custom reflection type for schema generation
+type VariablesVarMapType map[string]any
+
+func (VariablesVarMapType) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type: "object",
+		AdditionalProperties: &jsonschema.Schema{
+			AnyOf: []*jsonschema.Schema{
+				{Type: "string"},
+				{Type: "number"},
+				{Type: "boolean"},
+				{Type: "object"},
+				{Type: "array"},
 			},
 		},
 	}
