@@ -145,7 +145,7 @@ type PipelineDefinition struct {
 	// later elements in the list will overwrite keys specified previously
 	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables is the Key: Value map of vars vars to inject into the tasks
-	Variables EnvVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
+	Variables VariablesVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 	// Generator PipelineLevel
 	Generator map[string]any `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
 }
