@@ -270,6 +270,46 @@ func TestRenderString(t *testing.T) {
 	}
 }
 
+func Test_RenderString_fromYaml(t *testing.T) {
+	testCases := map[string]struct {
+		tmpl      string
+		variables map[string]any
+		env       map[string]any
+		want      string
+		wantErr   bool
+	}{
+		"valid YAML simple list": {
+			tmpl:      "{{ range (fromYaml .YamlList) }}{{ . }}\n{{end }}",
+			variables: map[string]any{"YamlList": []string{"one", "two", "three"}},
+			want: `one
+two
+three
+`,
+		},
+		"valid YAML complex list": {
+			tmpl:      "{{ range $key, $val := (fromYaml .YamlList) }}echo {{ $val.key }}\n{{end }}",
+			variables: map[string]any{"YamlList": []struct{ Key string }{{Key: "one"}, {Key: "two"}, {Key: "three"}}},
+			want: `echo one
+echo two
+echo three
+`,
+		},
+	}
+	for tn, tt := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			got, err := utils.RenderString(tt.tmpl, tt.variables, tt.env)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("RenderString() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMustGetwd(t *testing.T) {
 	wd, _ := os.Getwd()
 	if wd != utils.MustGetwd() {

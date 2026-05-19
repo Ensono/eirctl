@@ -34,7 +34,7 @@ func buildTask(def *TaskDefinition, lc *loaderContext) (*task.Task, error) {
 	}
 	t.EnvFile = ef
 
-	t.Variables = variables.FromMap(def.Variables).Merge(t.Variables)
+	t.Variables = variables.FromVarsMap(def.Variables).Merge(t.Variables)
 
 	t.Dir = def.Dir
 	if def.Dir == "" {

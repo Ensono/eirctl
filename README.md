@@ -67,7 +67,14 @@ Each task, stage and context has variables to be used to render task's fields - 
 Along with globally predefined, variables can be set in a task's definition.
 You can use those variables according to `text/template` [documentation](https://pkg.go.dev/text/template).
 
-> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available as well as the `isset` function which checks if a variable is set i.e. not `null` for "arrays" (Golang Slice) and maps or `""` for strings. See below for some examples.
+> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available as well as the following:
+- `isset` function which checks if a variable is set i.e. not `null` for "arrays" (Golang Slice) and maps or `""` for strings. 
+- `fromYaml` function which takes in arbitrary Yaml like structure and iterates over it - see [Special note on fromYaml](#special-note-on-fromyaml)
+    > This is only available on `Variables` as `Env` must always be a string like value.
+    > NB: it's best to only set this in the YAML config directly as opposed to passing it via the command line using set - *this will result* in double escaping and the result may not be iterable/indexeable.
+- `toYaml` function which takes a yaml like string and converts it to a proper structure that can be iterated or indexed by property
+
+See below for some examples.
 
 Predefined variables are:
 
@@ -91,7 +98,7 @@ json:from:list:
     - |
       {{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}
   env:
-    FOO: bar    
+    FOO: bar
 ```
 
 `eirctl json:from:list --set jsonStringList='["foo","bar"]'
@@ -102,6 +109,35 @@ output would be:
 echo foo bar
 echo bar bar
 ```
+
+#### Special note on fromYaml
+
+```yaml
+tasks:
+  yaml:structure:variable:
+    command: |
+      {{ range $_, $val := (fromYaml .YamlList) }}
+      echo "{{ $.TopLevelString }} -c {{ $val.Cmd }} > {{ $val.Path }}.test"
+      {{end }}
+    variables:
+      TopLevelString: some_command_exec
+      YamlList:
+        - Cmd: php --version
+          Path: php_v
+        - Cmd: php -m
+          Path: php_m
+        - Cmd: configmanager --version
+          Path: cfgmgr
+```
+
+`eirtctl run yaml:structure:variable` => will output
+
+```sh
+some_command_exec -c php --version > php_v.test
+some_command_exec -c php -m > php_m.test
+some_command_exec -c configmanager --version > cfgmgr.test
+```
+
 
 ### Pass CLI arguments to task
 

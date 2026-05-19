@@ -20,6 +20,7 @@ import (
 	"github.com/Ensono/eirctl/variables"
 	"github.com/Masterminds/sprig/v3"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 // IsURL checks if given string is a valid URL
@@ -205,6 +206,20 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 	fm["isset"] = func(a any) bool {
 		return a != nil && a != ""
 	}
+	//  Add Yaml parser
+	fm["fromYaml"] = func(v any) any {
+		// We need to first marshal the arbitrary data structure into a byte slice
+		input, _ := yaml.Marshal(v)
+		var output any
+		_ = yaml.Unmarshal(input, &output)
+		return output
+	}
+
+	fm["toYaml"] = func(v any) string {
+		output, _ := yaml.Marshal(v)
+		return string(output)
+	}
+
 	var buf bytes.Buffer
 	t, err := template.New("interpolate").Funcs(fm).Option("missingkey=default").Parse(tmpl)
 	if err != nil {

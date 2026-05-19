@@ -30,6 +30,16 @@ func FromMap(values map[string]string) *Variables {
 	return vars
 }
 
+// FromMap creates new Variables instance from given map
+func FromVarsMap(values map[string]any) *Variables {
+	vars := &Variables{}
+	for k, v := range values {
+		vars.m.Store(k, v)
+	}
+
+	return vars
+}
+
 // Set stores value with given key
 func (vars *Variables) Set(key string, value any) {
 	vars.m.Store(key, value)
