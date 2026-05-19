@@ -208,6 +208,7 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 	}
 	//  Add Yaml parser
 	fm["fromYaml"] = func(v any) any {
+		// We need to first marshal the arbitrary data structure into a byte slice
 		input, _ := yaml.Marshal(v)
 		var output any
 		_ = yaml.Unmarshal(input, &output)

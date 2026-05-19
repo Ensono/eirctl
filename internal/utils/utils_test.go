@@ -279,27 +279,19 @@ func Test_RenderString_fromYaml(t *testing.T) {
 		wantErr   bool
 	}{
 		"valid YAML simple list": {
-			tmpl: "{{ range (fromYaml .YamlList) }}{{ . }}\n{{end }}",
-			variables: map[string]any{"YamlList": `
-- one
-- two
-- three
-`},
+			tmpl:      "{{ range (fromYaml .YamlList) }}{{ . }}\n{{end }}",
+			variables: map[string]any{"YamlList": []string{"one", "two", "three"}},
 			want: `one
 two
 three
 `,
 		},
 		"valid YAML complex list": {
-			tmpl: "{{ range $key, $val := (fromYaml .YamlList) }}{{ $val.key }}\n{{end }}",
-			variables: map[string]any{"YamlList": `
-- key: one
-- key: two
-- key: three
-`},
-			want: `one
-two
-three
+			tmpl:      "{{ range $key, $val := (fromYaml .YamlList) }}echo {{ $val.key }}\n{{end }}",
+			variables: map[string]any{"YamlList": []struct{ Key string }{{Key: "one"}, {Key: "two"}, {Key: "three"}}},
+			want: `echo one
+echo two
+echo three
 `,
 		},
 	}
