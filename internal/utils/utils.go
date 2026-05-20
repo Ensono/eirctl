@@ -12,9 +12,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"text/template"
+	"text/template/parse"
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
@@ -193,8 +195,8 @@ func LastLine(r io.Reader) (l string) {
 	return l
 }
 
-// RenderString parses given string as a template and executes it with provided params
-func RenderString(tmpl string, variables, env map[string]any) (string, error) {
+// ParseTemplate parses given string as a template and executes it with provided params
+func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 	if tmpl == "" {
 		return tmpl, nil
 	}
@@ -222,17 +224,27 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 
 	var buf bytes.Buffer
 	t, err := template.New("interpolate").Funcs(fm).Option("missingkey=default").Parse(tmpl)
+
 	if err != nil {
 		return "", err
 	}
 
+	for _, node := range t.Tree.Root.Nodes {
+		if !slices.Contains([]parse.NodeType{parse.NodeText}, node.Type()) {
+			logrus.Debugf("template variable: %s", node.String())
+		}
+	}
+
+	// logrus.Debugf("template variables: %s", t.Tree.Root.String())
 	// build environment variables for template execution
 	// under a special .Env.Key format => where `Key` is the name of the env variable
 	variables["Env"] = env
 
-	err = t.Execute(&buf, variables)
+	if err := t.Execute(&buf, variables); err != nil {
+		return "", err
+	}
 
-	return buf.String(), err
+	return buf.String(), nil
 }
 
 // IsExitError checks if given error is an instance of exec.ExitError
