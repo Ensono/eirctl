@@ -229,13 +229,12 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 		return "", err
 	}
 
-	for _, node := range t.Tree.Root.Nodes {
+	for _, node := range t.Root.Nodes {
 		if !slices.Contains([]parse.NodeType{parse.NodeText}, node.Type()) {
 			logrus.Debugf("template variable: %s", node.String())
 		}
 	}
 
-	// logrus.Debugf("template variables: %s", t.Tree.Root.String())
 	// build environment variables for template execution
 	// under a special .Env.Key format => where `Key` is the name of the env variable
 	variables["Env"] = env
