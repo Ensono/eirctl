@@ -231,7 +231,6 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 		// This will will be updated  for a more user friendly message
 		// and potential introduction of a specific optional func
 		logrus.Warn("undefined variable: ", err, "continuing")
-		buf = nil
 		buf = &bytes.Buffer{}
 		if err := executeParser(buf, variables, fm, tmpl, "default"); err != nil {
 			return "", err
