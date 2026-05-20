@@ -12,11 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"text/template"
-	"text/template/parse"
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
@@ -201,6 +199,7 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 		return tmpl, nil
 	}
 
+	// Function map extension for Eirctl Templates
 	fm := sprig.FuncMap()
 
 	// additional helper funcs defined below
@@ -222,28 +221,32 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 		return string(output)
 	}
 
-	var buf bytes.Buffer
-	t, err := template.New("interpolate").Funcs(fm).Option("missingkey=default").Parse(tmpl)
-
-	if err != nil {
-		return "", err
-	}
-
-	for _, node := range t.Root.Nodes {
-		if !slices.Contains([]parse.NodeType{parse.NodeText}, node.Type()) {
-			logrus.Debugf("template variable: %s", node.String())
-		}
-	}
+	buf := &bytes.Buffer{}
 
 	// build environment variables for template execution
 	// under a special .Env.Key format => where `Key` is the name of the env variable
 	variables["Env"] = env
 
-	if err := t.Execute(&buf, variables); err != nil {
-		return "", err
+	if err := executeParser(buf, variables, fm, tmpl, "error"); err != nil {
+		// This will will be updated  for a more user friendly message
+		// and potential introduction of a specific optional func
+		logrus.Warn("undefined variable: ", err, "continuing")
+		buf = nil
+		buf = &bytes.Buffer{}
+		if err := executeParser(buf, variables, fm, tmpl, "default"); err != nil {
+			return "", err
+		}
 	}
 
 	return buf.String(), nil
+}
+
+func executeParser(buf *bytes.Buffer, variables map[string]any, fm template.FuncMap, tmpl, missingKey string) error {
+	tp, err := template.New("eirctl_parser").Funcs(fm).Option("missingkey=" + missingKey).Parse(tmpl)
+	if err != nil {
+		return err
+	}
+	return tp.Execute(buf, variables)
 }
 
 // IsExitError checks if given error is an instance of exec.ExitError

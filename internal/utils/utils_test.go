@@ -265,11 +265,11 @@ func TestParseTemplate(t *testing.T) {
 
 			got, err := utils.ParseTemplate(tt.args.tmpl, tt.args.variables, tt.args.env)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("RenderString() got = %v, want %v", got, tt.want)
+				t.Errorf("ParseTemplate() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
