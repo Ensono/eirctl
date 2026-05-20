@@ -486,8 +486,7 @@
           "type": "string"
         },
         "description": {
-          "type": "string",
-          "default": ""
+          "type": "string"
         },
         "condition": {
           "type": "string"
