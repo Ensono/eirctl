@@ -14,10 +14,10 @@ import (
 func TestBuildPipeline_Cyclical(t *testing.T) {
 
 	var cyclicalYaml = `pipelines:
-  pipeline1:    
+  pipeline1:
     - task: task1
       name: task1
-      depends_on: 
+      depends_on:
         - last-stage
       dir: "/root"
     - task: task2
@@ -27,7 +27,7 @@ func TestBuildPipeline_Cyclical(t *testing.T) {
       env: {}
     - task: task3
       name: last-stage
-      depends_on: 
+      depends_on:
         - task2
 
 tasks:
@@ -51,7 +51,7 @@ tasks:
 func TestBuildPipeline_Error(t *testing.T) {
 	t.Run("no such task", func(t *testing.T) {
 		var errorYaml = `pipelines:
-  pipeline1:    
+  pipeline1:
     - task: task4
       name: task4
       depends_on:
@@ -76,7 +76,7 @@ tasks:
 	})
 	t.Run("no such pipeline", func(t *testing.T) {
 		var errorYaml = `pipelines:
-  pipeline1:    
+  pipeline1:
     - pipeline: task4
       name: task4
       depends_on:
@@ -101,7 +101,7 @@ tasks:
 	})
 	t.Run("stage with same name", func(t *testing.T) {
 		var errorYaml = `pipelines:
-  pipeline1:    
+  pipeline1:
     - task: task1
       name: task1
       depends_on:
@@ -131,6 +131,84 @@ tasks:
 }
 
 func TestConfig_TaskLoader(t *testing.T) {
+	t.Run("task variables with string values", func(t *testing.T) {
+		yaml := `
+tasks:
+  task1:
+    command:
+      - echo hello
+    variables:
+      DockerEntrypoint: /bin/bash
+      Version: "1.2.3"
+`
+		file, cleanUp := configLoaderTestHelper(t, yaml)
+		defer cleanUp()
+		cl := config.NewConfigLoader(config.NewConfig())
+		cfg, err := cl.Load(file)
+		if err != nil {
+			t.Fatalf("unexpected load error: %v", err)
+		}
+		task, ok := cfg.Tasks["task1"]
+		if !ok {
+			t.Fatal("task1 not found in config")
+		}
+		if got := task.Variables.Get("DockerEntrypoint"); got != "/bin/bash" {
+			t.Errorf("DockerEntrypoint = %v, want /bin/bash", got)
+		}
+		if got := task.Variables.Get("Version"); got != "1.2.3" {
+			t.Errorf("Version = %v, want 1.2.3", got)
+		}
+	})
+
+	t.Run("task variables with sequence (list) value", func(t *testing.T) {
+		yaml := `
+tasks:
+  task1:
+    command:
+      - echo hello
+    variables:
+      DockerEntrypoint: /bin/bash
+      TestCmdList:
+        - Cmd: php --version
+          Path: php_v
+        - Cmd: php -m
+          Path: php_m
+        - Cmd: configmanager --version
+          Path: cfgmgr
+`
+		file, cleanUp := configLoaderTestHelper(t, yaml)
+		defer cleanUp()
+		cl := config.NewConfigLoader(config.NewConfig())
+		cfg, err := cl.Load(file)
+		if err != nil {
+			t.Fatalf("unexpected load error (sequence variable should be supported): %v", err)
+		}
+		task, ok := cfg.Tasks["task1"]
+		if !ok {
+			t.Fatal("task1 not found in config")
+		}
+		if got := task.Variables.Get("DockerEntrypoint"); got != "/bin/bash" {
+			t.Errorf("DockerEntrypoint = %v, want /bin/bash", got)
+		}
+		list, ok := task.Variables.Get("TestCmdList").([]any)
+		if !ok {
+			t.Fatalf("TestCmdList is %T, want []any", task.Variables.Get("TestCmdList"))
+		}
+		if len(list) != 3 {
+			t.Fatalf("TestCmdList length = %d, want 3", len(list))
+		}
+		first, ok := list[0].(config.VariablesVarMapType)
+		if !ok {
+			t.Fatalf("TestCmdList[0] is %T, want config.VariablesVarMapType", list[0])
+		}
+		if first["Cmd"] != "php --version" {
+			t.Errorf("TestCmdList[0].Cmd = %v, want 'php --version'", first["Cmd"])
+		}
+		if first["Path"] != "php_v" {
+			t.Errorf("TestCmdList[0].Path = %v, want 'php_v'", first["Path"])
+		}
+	})
+
 	t.Run("task correctly built from config using envfile as well as env keys", func(t *testing.T) {
 		tmpEnv, _ := os.CreateTemp("", "*.env")
 		defer os.Remove(tmpEnv.Name())
@@ -179,6 +257,94 @@ tasks:
 		}
 		if val.EnvFile.PathValue[0] != tmpEnv.Name() {
 			t.Error("incorrect env file name")
+		}
+	})
+}
+
+func TestBuildPipeline_Variables(t *testing.T) {
+	t.Run("pipeline stage variables with string values", func(t *testing.T) {
+		yaml := `
+pipelines:
+  pipeline1:
+    - task: task1
+      name: task1
+      variables:
+        DockerEntrypoint: /bin/bash
+        Version: "1.2.3"
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+		file, cleanUp := configLoaderTestHelper(t, yaml)
+		defer cleanUp()
+		cl := config.NewConfigLoader(config.NewConfig())
+		cfg, err := cl.Load(file)
+		if err != nil {
+			t.Fatalf("unexpected load error: %v", err)
+		}
+		stage, err := cfg.Pipelines["pipeline1"].Node("task1")
+		if err != nil {
+			t.Fatalf("stage not found: %v", err)
+		}
+		if got := stage.Variables().Get("DockerEntrypoint"); got != "/bin/bash" {
+			t.Errorf("DockerEntrypoint = %v, want /bin/bash", got)
+		}
+		if got := stage.Variables().Get("Version"); got != "1.2.3" {
+			t.Errorf("Version = %v, want 1.2.3", got)
+		}
+	})
+
+	t.Run("pipeline stage variables with sequence (list) value", func(t *testing.T) {
+		yaml := `
+pipelines:
+  pipeline1:
+    - task: task1
+      name: task1
+      variables:
+        DockerEntrypoint: /bin/bash
+        TestCmdList:
+          - Cmd: php --version
+            Path: php_v
+          - Cmd: php -m
+            Path: php_m
+          - Cmd: configmanager --version
+            Path: cfgmgr
+tasks:
+  task1:
+    command:
+      - echo hello
+`
+		file, cleanUp := configLoaderTestHelper(t, yaml)
+		defer cleanUp()
+		cl := config.NewConfigLoader(config.NewConfig())
+		cfg, err := cl.Load(file)
+		if err != nil {
+			t.Fatalf("unexpected load error (sequence variable should be supported): %v", err)
+		}
+		stage, err := cfg.Pipelines["pipeline1"].Node("task1")
+		if err != nil {
+			t.Fatalf("stage not found: %v", err)
+		}
+		if got := stage.Variables().Get("DockerEntrypoint"); got != "/bin/bash" {
+			t.Errorf("DockerEntrypoint = %v, want /bin/bash", got)
+		}
+		list, ok := stage.Variables().Get("TestCmdList").([]any)
+		if !ok {
+			t.Fatalf("TestCmdList is %T, want []any", stage.Variables().Get("TestCmdList"))
+		}
+		if len(list) != 3 {
+			t.Fatalf("TestCmdList length = %d, want 3", len(list))
+		}
+		first, ok := list[0].(config.VariablesVarMapType)
+		if !ok {
+			t.Fatalf("TestCmdList[0] is %T, want config.VariablesVarMapType", list[0])
+		}
+		if first["Cmd"] != "php --version" {
+			t.Errorf("TestCmdList[0].Cmd = %v, want 'php --version'", first["Cmd"])
+		}
+		if first["Path"] != "php_v" {
+			t.Errorf("TestCmdList[0].Path = %v, want 'php_v'", first["Path"])
 		}
 	})
 }
