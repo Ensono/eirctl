@@ -47,13 +47,17 @@ type Loader struct {
 
 // NewConfigLoader is Loader constructor
 func NewConfigLoader(dst *Config) Loader {
-	return Loader{
+	cl := Loader{
 		dst:           dst,
 		imports:       make(map[string]bool),
 		homeDir:       utils.MustGetUserHomeDir(),
 		dir:           utils.MustGetwd(),
 		strictDecoder: false,
 	}
+
+	cache := NewCache().WithWriteImport(cl.writeImportedFile)
+	cl.cache = cache
+	return cl
 }
 
 func (c *Loader) WithDir(dir string) *Loader {
@@ -184,16 +188,12 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 			logrus.Debugf("import (%s) is a URL", file)
 
 			logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
-			if cfg, err := cl.cache.Get(file.Src); cfg != nil && err == nil {
+			if cfg, err := cl.cache.Get(file); cfg != nil && err == nil {
 				logrus.Debugf("retrieved from cache (%s)", file)
 				return true, cfg, nil
 			}
 
 			cfg, err := cl.readURL(file)
-			// store in cache
-			if err := cl.cache.StoreFromConfig(file.Src, cfg); err != nil {
-				logrus.Debugf("failed to store (%s) in cache", file.Src)
-			}
 
 			return cfg != nil && err == nil, cfg, err
 
@@ -204,12 +204,10 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 		if IsGit(file.Src) {
 			logrus.Debugf("import (%s) is a git path", file)
 
-			if !file.IsFileImport() {
-				logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
-				if cfg, err := cl.cache.Get(file.Src); cfg != nil && err == nil {
-					logrus.Debugf("retrieved from cache (%s)", file)
-					return true, cfg, nil
-				}
+			logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
+			if cfg, err := cl.cache.Get(file); cfg != nil && err == nil {
+				logrus.Debugf("retrieved from cache (%s)", file)
+				return true, cfg, nil
 			}
 
 			gs, err := NewGitSource(file)
@@ -221,20 +219,8 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 				return false, nil, err
 			}
 
-			if file.IsFileImport() {
-				contents, err := gs.File()
-				if err != nil {
-					return false, nil, err
-				}
+			cfg, err := gs.Config(cl.writeImportedFile, cl.cache.Store)
 
-				defer contents.Close()
-
-				if err := cl.writeImportedFile(file, contents); err != nil {
-					return false, nil, err
-				}
-				return true, &ConfigDefinition{}, nil
-			}
-			cfg, err := gs.Config()
 			return cfg != nil && err == nil, cfg, err
 		}
 		return false, nil, nil
@@ -453,14 +439,22 @@ func (cl *Loader) readURL(urlStr schema.ImportEntry) (*ConfigDefinition, error) 
 
 	cm := &ConfigDefinition{}
 
+	// store in cache irrespective of entry type
+	// create an entry for both import and config files
+	contentBuffer := &bytes.Buffer{}
+	cacheBuffer := io.TeeReader(resp.Body, contentBuffer)
+	if err := cl.cache.Store(urlStr.Src, cacheBuffer); err != nil {
+		logrus.Debugf("failed to store (%s) in cache", urlStr.Src)
+	}
+
 	if urlStr.IsFileImport() {
-		if err := cl.writeImportedFile(urlStr, resp.Body); err != nil {
+		if err := cl.writeImportedFile(urlStr, io.NopCloser(contentBuffer)); err != nil {
 			return nil, err
 		}
 		return cm, nil
 	}
 
-	if err := yaml.NewDecoder(resp.Body).Decode(&cm); err != nil {
+	if err := yaml.NewDecoder(contentBuffer).Decode(&cm); err != nil {
 		return nil, err
 	}
 	return cm, nil

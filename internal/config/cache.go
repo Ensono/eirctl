@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -8,8 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	// "github.com/Ensono/eirctl/internal/config"
-
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -48,12 +48,13 @@ func (f filesystemOps) MkdirAll(path string, perm os.FileMode) error {
 // Cache struct manages the storage and retrieval of configuration items/import files
 // in a globally accessible cache directory
 type Cache struct {
-	fo fsOps
+	fo          fsOps
+	writeImport func(entry schema.ImportEntry, content io.ReadCloser) error
 }
 
 type CacheOpt func(*Cache)
 
-func New() *Cache {
+func NewCache() *Cache {
 	return &Cache{
 		fo: filesystemOps{},
 	}
@@ -64,14 +65,20 @@ func (c *Cache) WithFsOps(fo fsOps) *Cache {
 	return c
 }
 
-// StoreFromReader creates a cache entry in the provided path in base62 encoded string for the path
+func (c *Cache) WithWriteImport(wi func(entry schema.ImportEntry, content io.ReadCloser) error) *Cache {
+	c.writeImport = wi
+	return c
+}
+
+// Store creates a cache entry in the provided path in base62 encoded string for the path
 // writes the contents from io.Reader by copying and thus leaving the existining
 // buffer stream unchanged
-func (c *Cache) StoreFromReader(fullPath string, content io.Reader) error {
+func (c *Cache) Store(fullPath string, content io.Reader) error {
 	w, err := c.createCacheWriter(fullPath)
 	if err != nil {
 		return err
 	}
+
 	// store in CACHE_DIR
 	if _, err := io.Copy(w, content); err != nil {
 		return fmt.Errorf("%w, %s", ErrCacheStreamCopyFailed, err)
@@ -83,29 +90,11 @@ func (c *Cache) StoreFromReader(fullPath string, content io.Reader) error {
 // StoreFromReader creates a cache entry in the provided path in base62 encoded string for the path
 // writes the contents from io.Reader by copying and thus leaving the existining
 // buffer stream unchanged
-func (c *Cache) StoreFromConfig(fullPath string, content *ConfigDefinition) error {
-	w, err := c.createCacheWriter(fullPath)
-	if err != nil {
-		return err
-	}
-
-	b, err := yaml.Marshal(content)
-	if err != nil {
-		return err
-	}
-
-	// store in CACHE_DIR
-	if _, err := w.Write(b); err != nil {
-		return fmt.Errorf("%w, %s", ErrCacheStreamCopyFailed, err)
-	}
-
-	return nil
-}
 
 // Get returns a successful io.Reader if content exists else an error
-func (c *Cache) Get(fullPath string) (*ConfigDefinition, error) {
+func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 
-	contents, err := c.fo.Open(getCachePath(fullPath))
+	contents, err := c.fo.Open(getCachePath(file.Src))
 	if err != nil {
 		// custom error file not found
 		// caller needs to handle creation and
@@ -115,7 +104,18 @@ func (c *Cache) Get(fullPath string) (*ConfigDefinition, error) {
 		}
 		return nil, fmt.Errorf("%w, error: %v", ErrFailedToGetFromCache, err)
 	}
-	// return contents, nil
+	// when import is a writeable file and exists in cache we copy it from there
+	if file.IsFileImport() {
+		importBuffer := &bytes.Buffer{}
+		if _, err := io.Copy(importBuffer, contents); err != nil {
+			return nil, fmt.Errorf("%w, %s", ErrCacheStreamCopyFailed, err)
+		}
+		if err := c.writeImport(file, io.NopCloser(importBuffer)); err != nil {
+			return nil, err
+		}
+		return &ConfigDefinition{}, nil
+	}
+
 	cfgBytes, err := io.ReadAll(contents)
 	if err != nil {
 		return nil, fmt.Errorf("%w, err: %v", ErrFailedToReadFromCache, err)

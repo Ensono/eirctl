@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	cache "github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 )
 
@@ -96,19 +97,15 @@ func Test_StoreInCache(t *testing.T) {
 
 	for name, tt := range testCases {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			os.Setenv("HOME", "/foo")
-			os.Setenv("USERPROFILE", "/foo")
-
-			defer os.Clearenv()
+			t.Setenv("HOME", "/foo")
+			t.Setenv("USERPROFILE", "/foo")
 
 			mw := &bytes.Buffer{}
 
-			c := cache.New().WithFsOps(tt.mockFsOp(t, mw))
+			c := cache.NewCache().WithFsOps(tt.mockFsOp(t, mw))
 
 			w := bytes.NewBuffer([]byte(`context: {}`))
-			if err := c.StoreFromReader("some-path", w); err != nil {
+			if err := c.Store("some-path", w); err != nil {
 				if tt.wantErr == nil {
 					t.Fatal(err)
 				}
@@ -170,18 +167,15 @@ func Test_Get_fromCache(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 
-			os.Setenv("HOME", "/foo")
-			os.Setenv("USERPROFILE", "/foo")
-
-			defer os.Clearenv()
+			t.Setenv("HOME", "/foo")
+			t.Setenv("USERPROFILE", "/foo")
 
 			mw := &bytes.Buffer{}
 
-			c := cache.New().WithFsOps(tt.mockFsOp(t, mw))
+			c := cache.NewCache().WithFsOps(tt.mockFsOp(t, mw))
 
-			got, err := c.Get("/foo/.eirctl/cache/3245gertg")
+			got, err := c.Get(schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg"})
 
 			if tt.wantErr != nil && err == nil {
 				t.Fatalf("got nil err but wanted %v", tt.wantErr)
@@ -192,16 +186,9 @@ func Test_Get_fromCache(t *testing.T) {
 				}
 				return
 			}
-			// content, _ := io.ReadAll(got)
-			// 			if string(content) != `context:
-			//   foo:
-			//     container: image:123
-			// ` {
-			// 				t.Error("does not match")
-			// 			}
+
 			if v, ok := got.Contexts["foo"]; !ok {
 				t.Errorf("got %v, want %v", v, &utils.Container{Name: "image:123"})
-				// t.Errorf("got %v, want Name: image:123", v)
 			}
 		})
 	}
