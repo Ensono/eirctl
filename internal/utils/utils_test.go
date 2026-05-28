@@ -16,6 +16,7 @@ import (
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/sirupsen/logrus"
 )
 
 func getHomeFromEnv() (string, error) {
@@ -179,7 +180,7 @@ func TestMapKeys(t *testing.T) {
 	}
 }
 
-func TestRenderString(t *testing.T) {
+func TestParseTemplate(t *testing.T) {
 	type args struct {
 		tmpl      string
 		variables map[string]any
@@ -258,13 +259,17 @@ func TestRenderString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := utils.RenderString(tt.args.tmpl, tt.args.variables, tt.args.env)
+			logrus.SetLevel(logrus.DebugLevel)
+			b := &bytes.Buffer{}
+			logrus.SetOutput(b)
+
+			got, err := utils.ParseTemplate(tt.args.tmpl, tt.args.variables, tt.args.env)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("RenderString() got = %v, want %v", got, tt.want)
+				t.Errorf("ParseTemplate() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -297,7 +302,7 @@ echo three
 	}
 	for tn, tt := range testCases {
 		t.Run(tn, func(t *testing.T) {
-			got, err := utils.RenderString(tt.tmpl, tt.variables, tt.env)
+			got, err := utils.ParseTemplate(tt.tmpl, tt.variables, tt.env)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
 				return
