@@ -38,6 +38,7 @@ const MaxImportFileSize = 10 * 1024 * 1024
 // It recursively imports file/urls/git-paths via the import statement
 type Loader struct {
 	dst           *Config
+	cache         *Cache
 	imports       map[string]bool
 	dir           string
 	homeDir       string
@@ -181,26 +182,53 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
 		if utils.IsURL(file.Src) {
 			logrus.Debugf("import (%s) is a URL", file)
+
+			logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
+			if cfg, err := cl.cache.Get(file.Src); cfg != nil && err == nil {
+				logrus.Debugf("retrieved from cache (%s)", file)
+				return true, cfg, nil
+			}
+
 			cfg, err := cl.readURL(file)
+			// store in cache
+			if err := cl.cache.StoreFromConfig(file.Src, cfg); err != nil {
+				logrus.Debugf("failed to store (%s) in cache", file.Src)
+			}
+
 			return cfg != nil && err == nil, cfg, err
+
 		}
 		return false, nil, nil
 	},
 	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
 		if IsGit(file.Src) {
 			logrus.Debugf("import (%s) is a git path", file)
+
+			if !file.IsFileImport() {
+				logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
+				if cfg, err := cl.cache.Get(file.Src); cfg != nil && err == nil {
+					logrus.Debugf("retrieved from cache (%s)", file)
+					return true, cfg, nil
+				}
+			}
+
 			gs, err := NewGitSource(file)
 			if err != nil {
 				return false, nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
 			}
+
 			if err := gs.Clone(); err != nil {
 				return false, nil, err
 			}
+
 			if file.IsFileImport() {
 				contents, err := gs.File()
 				if err != nil {
 					return false, nil, err
 				}
+
+				defer contents.Close()
+
 				if err := cl.writeImportedFile(file, contents); err != nil {
 					return false, nil, err
 				}
