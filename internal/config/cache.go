@@ -23,6 +23,7 @@ var (
 	ErrFailedToReadFromCache  = errors.New("failed to read from cache location")
 	ErrFailedToParse          = errors.New("failed to unmarshal from stream")
 	ErrFileNotInCache         = errors.New("file does not exist in cache")
+	ErrFailedToWriteImport    = errors.New("failed to write import")
 )
 
 type fsOps interface {
@@ -81,7 +82,7 @@ func (c *Cache) Store(fullPath string, content io.Reader) error {
 
 	// store in CACHE_DIR
 	if _, err := io.Copy(w, content); err != nil {
-		return fmt.Errorf("%w, %s", ErrCacheStreamCopyFailed, err)
+		return fmt.Errorf("%w, %v", ErrCacheStreamCopyFailed, err)
 	}
 
 	return nil
@@ -111,7 +112,7 @@ func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 			return nil, fmt.Errorf("%w, %s", ErrCacheStreamCopyFailed, err)
 		}
 		if err := c.writeImport(file, io.NopCloser(importBuffer)); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, import writer err: %v", ErrFailedToWriteImport, err)
 		}
 		return &ConfigDefinition{}, nil
 	}
@@ -126,23 +127,6 @@ func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 		return nil, fmt.Errorf("%w, err: %v", ErrFailedToParse, err)
 	}
 	return cfg, nil
-}
-
-// Get returns a successful io.Reader if content exists else an error
-func (c *Cache) GetReader(fullPath string) (io.ReadCloser, error) {
-
-	contents, err := c.fo.Open(getCachePath(fullPath))
-	if err != nil {
-		// custom error file not found
-		// caller needs to handle creation and
-		if perr, ok := errors.AsType[*fs.PathError](err); ok {
-			logrus.Debugf("Cache File (%s) Not Found, should store in cache...", perr.Path)
-			return nil, fmt.Errorf("%w, file: %s", ErrFileNotInCache, perr.Path)
-		}
-		return nil, fmt.Errorf("%w, error: %v", ErrFailedToGetFromCache, err)
-	}
-
-	return io.NopCloser(contents), nil
 }
 
 func (c *Cache) createCacheWriter(fullPath string) (io.Writer, error) {

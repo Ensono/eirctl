@@ -3,12 +3,14 @@ package config_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"reflect"
 	"testing"
 
-	cache "github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 )
@@ -74,7 +76,7 @@ func Test_StoreInCache(t *testing.T) {
 				}
 				return m
 			},
-			wantErr: cache.ErrCacheStreamCopyFailed,
+			wantErr: config.ErrCacheStreamCopyFailed,
 		},
 		"fails to create cache dir structure": {
 			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
@@ -91,7 +93,7 @@ func Test_StoreInCache(t *testing.T) {
 				}
 				return m
 			},
-			wantErr: cache.ErrCacheDirCreationFailed,
+			wantErr: config.ErrCacheDirCreationFailed,
 		},
 	}
 
@@ -102,7 +104,7 @@ func Test_StoreInCache(t *testing.T) {
 
 			mw := &bytes.Buffer{}
 
-			c := cache.NewCache().WithFsOps(tt.mockFsOp(t, mw))
+			c := config.NewCache().WithFsOps(tt.mockFsOp(t, mw))
 
 			w := bytes.NewBuffer([]byte(`context: {}`))
 			if err := c.Store("some-path", w); err != nil {
@@ -123,12 +125,13 @@ func Test_StoreInCache(t *testing.T) {
 
 func Test_Get_fromCache(t *testing.T) {
 	ttests := map[string]struct {
-		mockFsOp    func(t *testing.T, mw io.Writer) mockfo
-		wantErr     error
-		wantContent string
+		wantErr error
+		want    *config.ContextDefinition
+		cache   func() *config.Cache
+		entry   schema.ImportEntry
 	}{
 		"successfully gets from cache": {
-			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
+			cache: func() *config.Cache {
 				m := mockfo{o: func(n string) (io.Reader, error) {
 					r := new(bytes.Buffer)
 					_, _ = r.WriteString(`contexts:
@@ -138,31 +141,73 @@ func Test_Get_fromCache(t *testing.T) {
 `)
 					return r, nil
 				}}
-				return m
+				return config.NewCache().WithFsOps(m)
+
 			},
-			wantErr:     nil,
-			wantContent: `context: {}`,
+			entry:   schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg"},
+			wantErr: nil,
+			want:    &config.ContextDefinition{Container: &utils.Container{Name: "image:123"}},
 		},
 		"encounters path error": {
-			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
+			cache: func() *config.Cache {
 				m := mockfo{o: func(n string) (io.Reader, error) {
 					perr := &fs.PathError{Op: "get", Path: "/foo/.eirctl/cache/3245gertg", Err: errors.New("file not found")}
 					return nil, perr
 				}}
-				return m
+				return config.NewCache().WithFsOps(m)
 			},
-			wantErr:     cache.ErrFileNotInCache,
-			wantContent: ``,
+			entry:   schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg"},
+			wantErr: config.ErrFileNotInCache,
+			want:    nil,
 		},
 		"encounters unknonw error": {
-			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
+			cache: func() *config.Cache {
 				m := mockfo{o: func(n string) (io.Reader, error) {
 					return nil, errors.New("unknonw error")
 				}}
-				return m
+				return config.NewCache().WithFsOps(m)
 			},
-			wantErr:     cache.ErrFailedToGetFromCache,
-			wantContent: ``,
+			wantErr: config.ErrFailedToGetFromCache,
+			entry:   schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg"},
+			want:    nil,
+		},
+		"import file succeeds": {
+			cache: func() *config.Cache {
+				m := mockfo{o: func(n string) (io.Reader, error) {
+					r := new(bytes.Buffer)
+					_, _ = r.WriteString(`contexts:
+  foo:
+    container:
+      name: "image:123"
+`)
+					return r, nil
+				}}
+				return config.NewCache().WithFsOps(m).WithWriteImport(func(entry schema.ImportEntry, content io.ReadCloser) error {
+					return nil
+				})
+			},
+			entry:   schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg", Dest: "/foo/bar"},
+			wantErr: nil,
+			want:    nil,
+		},
+		"import file fails on writeImport": {
+			cache: func() *config.Cache {
+				m := mockfo{o: func(n string) (io.Reader, error) {
+					r := new(bytes.Buffer)
+					_, _ = r.WriteString(`contexts:
+  foo:
+    container:
+      name: "image:123"
+`)
+					return r, nil
+				}}
+				return config.NewCache().WithFsOps(m).WithWriteImport(func(entry schema.ImportEntry, content io.ReadCloser) error {
+					return fmt.Errorf("failed to write")
+				})
+			},
+			entry:   schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg", Dest: "/foo/bar"},
+			wantErr: config.ErrFailedToWriteImport,
+			want:    nil,
 		},
 	}
 	for name, tt := range ttests {
@@ -171,11 +216,7 @@ func Test_Get_fromCache(t *testing.T) {
 			t.Setenv("HOME", "/foo")
 			t.Setenv("USERPROFILE", "/foo")
 
-			mw := &bytes.Buffer{}
-
-			c := cache.NewCache().WithFsOps(tt.mockFsOp(t, mw))
-
-			got, err := c.Get(schema.ImportEntry{Src: "/foo/.eirctl/cache/3245gertg"})
+			got, err := tt.cache().Get(tt.entry)
 
 			if tt.wantErr != nil && err == nil {
 				t.Fatalf("got nil err but wanted %v", tt.wantErr)
@@ -187,8 +228,12 @@ func Test_Get_fromCache(t *testing.T) {
 				return
 			}
 
-			if v, ok := got.Contexts["foo"]; !ok {
+			if v, ok := got.Contexts["foo"]; !ok && v != nil {
 				t.Errorf("got %v, want %v", v, &utils.Container{Name: "image:123"})
+			} else {
+				if tt.want != nil && !reflect.DeepEqual(*v, *tt.want) {
+					t.Errorf("objects don't match, got %v, want %v", v, tt.want)
+				}
 			}
 		})
 	}
