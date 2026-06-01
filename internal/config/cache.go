@@ -72,7 +72,7 @@ func (c *Cache) WithWriteImport(wi func(entry schema.ImportEntry, content io.Rea
 }
 
 // Store creates a cache entry in the provided path in base62 encoded string for the path
-// writes the contents from io.Reader by copying and thus leaving the existining
+// writes the contents from io.Reader by copying and thus leaving the existing
 // buffer stream unchanged
 func (c *Cache) Store(fullPath string, content io.Reader) error {
 	w, err := c.createCacheWriter(fullPath)
