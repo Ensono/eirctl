@@ -72,8 +72,8 @@ func (c *Cache) WithWriteImport(wi func(entry schema.ImportEntry, content io.Rea
 }
 
 // Store creates a cache entry in the provided path in base62 encoded string for the path
-// writes the contents from io.Reader by copying and thus leaving the existining
-// buffer stream unchanged
+// writes the contents from io.Reader by copying the reader
+// NB: the caller needs to pass in a multiplexed or teed reader in first as the stream will be emptied once read
 func (c *Cache) Store(fullPath string, content io.Reader) error {
 	w, err := c.createCacheWriter(fullPath)
 	if err != nil {
@@ -87,10 +87,6 @@ func (c *Cache) Store(fullPath string, content io.Reader) error {
 
 	return nil
 }
-
-// StoreFromReader creates a cache entry in the provided path in base62 encoded string for the path
-// writes the contents from io.Reader by copying and thus leaving the existining
-// buffer stream unchanged
 
 // Get returns a successful io.Reader if content exists else an error
 func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
