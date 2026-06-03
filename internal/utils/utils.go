@@ -226,15 +226,23 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 	// build environment variables for template execution
 	// under a special .Env.Key format => where `Key` is the name of the env variable
 	variables["Env"] = env
-
+	firstPassFailed := false
 	if err := executeParser(buf, variables, fm, tmpl, "error"); err != nil {
 		// This will will be updated  for a more user friendly message
 		// and potential introduction of a specific optional func
 		logrus.Warn("undefined variable: ", err, "continuing")
+		firstPassFailed = true
 		buf = &bytes.Buffer{}
-		if err := executeParser(buf, variables, fm, tmpl, "zero"); err != nil {
+		if err := executeParser(buf, variables, fm, tmpl, "default"); err != nil {
 			return "", err
 		}
+	}
+
+	if firstPassFailed {
+		logrus.Info("original template: ", tmpl)
+		repl := strings.NewReplacer("<no value>", "##__EIRCTL_NO_VALUE__##").Replace(buf.String())
+		logrus.Info("replaced template: ", repl)
+		return repl, nil
 	}
 
 	return buf.String(), nil
