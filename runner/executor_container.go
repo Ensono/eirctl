@@ -117,7 +117,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 	//
 	// NOTE: During the graph building phase the template value is stored against the context node
 	// it is always resolved/templated at runtime and throws an error if not provided or a default mechanism is missing
-	templatedImageName, err := utils.RenderString(containerContext.Image, job.Vars.Map(), job.Env.Map())
+	templatedImageName, err := utils.ParseTemplate(containerContext.Image, job.Vars.Map(), job.Env.Map())
 	if err != nil {
 		logrus.Debug(err)
 	}

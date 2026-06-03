@@ -554,8 +554,7 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----`)
 	t.Run("correctly uses passphrase", func(t *testing.T) {
-		os.Setenv(config.GitSshPassphrase, "password")
-		defer os.Unsetenv(config.GitSshPassphrase)
+		t.Setenv(config.GitSshPassphrase, "password")
 		signer, err := config.SSHKeySigner(keyWithPassphrase)
 		if err != nil {
 			t.Error(err)
@@ -566,8 +565,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 	})
 
 	t.Run("fails with wrong passphrase", func(t *testing.T) {
-		os.Setenv(config.GitSshPassphrase, "wrong")
-		defer os.Unsetenv(config.GitSshPassphrase)
+		t.Setenv(config.GitSshPassphrase, "wrong")
 		_, err := config.SSHKeySigner(keyWithPassphrase)
 		if err == nil {
 			t.Error(err)

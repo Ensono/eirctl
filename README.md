@@ -79,7 +79,7 @@ See below for some examples.
 Predefined variables are:
 
 - `.Root` - root config file directory
-- `.Dir` - config file directory
+- `.Dir` - config file directory or set by the value set in the `dir` property of the task
 - `.TempDir` - system's temporary directory
 - `.Args` - provided arguments as a string - useful in assigning additional caller defined args to binaries inside a task
 - `.ArgsList` - array of provided arguments - useful for templating
@@ -87,10 +87,12 @@ Predefined variables are:
 - `.Context.Name` - current task's execution context's name
 - `.Stage.Name` - current stage's name
 - `.Env.EnvVarKey` - the current tasks injected variables these are computed throughout the pipeline execution and `EnvVarKey` is the case senstive environment variable name.
+- `.Current.OS` - is the current OS as defined by runtime.GOOS
+- `.Current.Arch` - is the current Architecture as defined by runtime.GOARCH
 
 User supplied vars i.e. using the `--set Var1=value` will all be merged and are available for templating and Required checking
 
-_example_var_from_json_list_:
+*example_var_from_json_list*:
 
 ```yaml
 json:from:list:
@@ -138,6 +140,7 @@ some_command_exec -c php -m > php_m.test
 some_command_exec -c configmanager --version > cfgmgr.test
 ```
 
+> :info: when an optional variable is not provided and it has no default,isset,if/else wrapping the template will return in its place the text: `##__EIRCTL_NO_VALUE__##`.
 
 ### Pass CLI arguments to task
 

@@ -246,6 +246,7 @@ func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runne
 	// These are stdin args passed over `-- arg1 arg2`
 	vars.Set("ArgsList", argsStringer.argsList)
 	vars.Set("Args", strings.Join(argsStringer.argsList, " "))
+
 	tr, err := tc.initTaskRunner(conf, vars)
 	if err != nil {
 		return nil, nil, err
