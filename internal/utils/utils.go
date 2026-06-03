@@ -241,7 +241,10 @@ func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 }
 
 func executeParser(buf *bytes.Buffer, variables map[string]any, fm template.FuncMap, tmpl, missingKey string) error {
-	tp, err := template.New("eirctl_parser").Funcs(fm).Option("missingkey=" + missingKey).Parse(tmpl)
+	tp, err := template.New(fmt.Sprintf("eirctl_parser_%s", missingKey)).
+		Funcs(fm).
+		Option("missingkey=" + missingKey).
+		Parse(tmpl)
 	if err != nil {
 		return err
 	}
