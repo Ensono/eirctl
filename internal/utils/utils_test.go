@@ -16,6 +16,7 @@ import (
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/sirupsen/logrus"
 )
 
 func getHomeFromEnv() (string, error) {
@@ -179,7 +180,7 @@ func TestMapKeys(t *testing.T) {
 	}
 }
 
-func TestRenderString(t *testing.T) {
+func TestParseTemplate(t *testing.T) {
 	type args struct {
 		tmpl      string
 		variables map[string]any
@@ -193,10 +194,13 @@ func TestRenderString(t *testing.T) {
 	}{
 		{args: args{tmpl: "hello, {{ .Name }}!", variables: map[string]any{"Name": "world"}}, want: "hello, world!"},
 		{args: args{tmpl: "hello, {{ .Name | default \"John\" }}!", variables: map[string]any{"Name": ""}}, want: "hello, John!"},
-		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]any)}, want: "hello, <no value>!"},
+		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]any)}, want: "hello, ##__EIRCTL_NO_VALUE__##!"},
 		{args: args{tmpl: "hello, {{ .Name", variables: make(map[string]any)}, wantErr: true},
 		// sprig template funcs
-		{args: args{tmpl: "{{ range (.StringCommaSeparatedList | splitList \",\") }}echo {{ . }}\n{{ end }}", variables: map[string]any{"StringCommaSeparatedList": `foo,bar`}}, want: "echo foo\necho bar\n"},
+		{args: args{
+			tmpl:      "{{ range (.StringCommaSeparatedList | splitList \",\") }}echo {{ . }}\n{{ end }}",
+			variables: map[string]any{"StringCommaSeparatedList": `foo,bar`}},
+			want: "echo foo\necho bar\n"},
 		// more advanced tests and scenarios can be found on the sprig repo, since we are using their template funcs: https://masterminds.github.io/sprig/
 		// Env. tests
 		{args: args{
@@ -221,21 +225,18 @@ func TestRenderString(t *testing.T) {
 			want: "",
 		},
 		{args: args{
-			// need to use the $ notation as range changes the scope
 			tmpl:      `command {{ $.Env.FOO }} {{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
 			variables: map[string]any{"jsonStringList": `--foo --bar`},
 			env:       map[string]any{"FOO": "bar"}},
 			want: "command bar --foo --bar",
 		},
 		{args: args{
-			// need to use the $ notation as range changes the scope
 			tmpl:      `command {{ $.Env.FOO }}{{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
 			variables: map[string]any{"jsonStringList": ``},
 			env:       map[string]any{"FOO": "bar"}},
 			want: "command bar",
 		},
 		{args: args{
-			// need to use the $ notation as range changes the scope
 			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }} {{ .jsonStringList }}{{ end }}`,
 			variables: map[string]any{},
 			env:       map[string]any{"FOO": "bar"}},
@@ -253,18 +254,22 @@ func TestRenderString(t *testing.T) {
 			tmpl:      `command {{ $.Env.FOO }} {{ .jsonStringList }}`,
 			variables: map[string]any{},
 			env:       map[string]any{}},
-			want: "command <no value> <no value>",
+			want: "command ##__EIRCTL_NO_VALUE__## ##__EIRCTL_NO_VALUE__##",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := utils.RenderString(tt.args.tmpl, tt.args.variables, tt.args.env)
+			logrus.SetLevel(logrus.DebugLevel)
+			b := &bytes.Buffer{}
+			logrus.SetOutput(b)
+
+			got, err := utils.ParseTemplate(tt.args.tmpl, tt.args.variables, tt.args.env)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("RenderString() got = %v, want %v", got, tt.want)
+				t.Errorf("ParseTemplate() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -297,7 +302,7 @@ echo three
 	}
 	for tn, tt := range testCases {
 		t.Run(tn, func(t *testing.T) {
-			got, err := utils.RenderString(tt.tmpl, tt.variables, tt.env)
+			got, err := utils.ParseTemplate(tt.tmpl, tt.variables, tt.env)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
 				return

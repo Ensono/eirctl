@@ -193,12 +193,13 @@ func LastLine(r io.Reader) (l string) {
 	return l
 }
 
-// RenderString parses given string as a template and executes it with provided params
-func RenderString(tmpl string, variables, env map[string]any) (string, error) {
+// ParseTemplate parses given string as a template and executes it with provided params
+func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
 	if tmpl == "" {
 		return tmpl, nil
 	}
 
+	// Function map extension for Eirctl Templates
 	fm := sprig.FuncMap()
 
 	// additional helper funcs defined below
@@ -220,19 +221,42 @@ func RenderString(tmpl string, variables, env map[string]any) (string, error) {
 		return string(output)
 	}
 
-	var buf bytes.Buffer
-	t, err := template.New("interpolate").Funcs(fm).Option("missingkey=default").Parse(tmpl)
-	if err != nil {
-		return "", err
-	}
+	buf := &bytes.Buffer{}
 
 	// build environment variables for template execution
 	// under a special .Env.Key format => where `Key` is the name of the env variable
 	variables["Env"] = env
+	firstPassFailed := false
+	if err := executeParser(buf, variables, fm, tmpl, "error"); err != nil {
+		// This will will be updated  for a more user friendly message
+		// and potential introduction of a specific optional func
+		logrus.Warn("undefined variable: ", err, "continuing")
+		firstPassFailed = true
+		buf = &bytes.Buffer{}
+		if err := executeParser(buf, variables, fm, tmpl, "default"); err != nil {
+			return "", err
+		}
+	}
 
-	err = t.Execute(&buf, variables)
+	if firstPassFailed {
+		logrus.Info("original template: ", tmpl)
+		repl := strings.NewReplacer("<no value>", "##__EIRCTL_NO_VALUE__##").Replace(buf.String())
+		logrus.Info("replaced template: ", repl)
+		return repl, nil
+	}
 
-	return buf.String(), err
+	return buf.String(), nil
+}
+
+func executeParser(buf *bytes.Buffer, variables map[string]any, fm template.FuncMap, tmpl, missingKey string) error {
+	tp, err := template.New(fmt.Sprintf("eirctl_parser_%s", missingKey)).
+		Funcs(fm).
+		Option("missingkey=" + missingKey).
+		Parse(tmpl)
+	if err != nil {
+		return err
+	}
+	return tp.Execute(buf, variables)
 }
 
 // IsExitError checks if given error is an instance of exec.ExitError
