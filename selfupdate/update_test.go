@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Ensono/eirctl/output"
@@ -195,6 +196,38 @@ func TestUpdateCmd_RunFromRoot(t *testing.T) {
 
 		if err == nil {
 			t.Fatal(err)
+		}
+	})
+	t.Run("backup is placed in executable's directory not CWD", func(t *testing.T) {
+		execPath := "/some/install/dir/eirctl"
+		var gotNewPath string
+		getFunc := func(ctx context.Context, flags selfupdate.UpdateCmdFlags, w io.WriteCloser) error {
+			return nil
+		}
+		errOut := output.NewSafeWriter(&bytes.Buffer{})
+		stdOut := output.NewSafeWriter(&bytes.Buffer{})
+		rootCmd := cmdHelper(t, stdOut, errOut)
+
+		uc := selfupdate.New("eirctl", "http://ignored.com",
+			selfupdate.WithGetVersionFunc(getFunc),
+			selfupdate.WithOsFsOps(mockOsFsOps{
+				exec: func() (string, error) { return execPath, nil },
+				rename: func(oldpath, newpath string) error {
+					gotNewPath = newpath
+					return nil
+				},
+			}))
+
+		uc.AddToRootCommand(rootCmd)
+
+		if err := rootCmd.ExecuteContext(context.TODO()); err != nil {
+			t.Fatal(err)
+		}
+
+		wantDir := filepath.Dir(execPath)
+		gotDir := filepath.Dir(gotNewPath)
+		if gotDir != wantDir {
+			t.Errorf("backup written to directory %q, want %q (got full path %q)", gotDir, wantDir, gotNewPath)
 		}
 	})
 	t.Run("fails to prep source binary", func(t *testing.T) {

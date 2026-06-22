@@ -1,6 +1,8 @@
 package config
 
 import (
+	"runtime"
+
 	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
@@ -41,12 +43,28 @@ func buildTask(def *TaskDefinition, lc *loaderContext) (*task.Task, error) {
 		t.Dir = lc.Dir
 	}
 
-	t.Variables.Set("Context.Name", t.Context)
-	t.Variables.Set("Task.Name", t.Name)
-	//
 	t.SourceFile = def.SourceFile
 
 	// Generator CI YAML
 	t.Generator = def.Generator
+
+	setDefaultVariables(t)
+
 	return t, nil
+}
+
+func setDefaultVariables(t *task.Task) {
+	defaultVarsMap := map[string]any{
+		"Context": map[string]any{
+			"Name": t.Context,
+		},
+		"Task": map[string]any{
+			"Name": t.Name,
+		},
+		"Current": map[string]any{
+			"OS":   runtime.GOOS,
+			"Arch": runtime.GOARCH,
+		},
+	}
+	t.Variables = t.Variables.Merge(variables.FromVarsMap(defaultVarsMap))
 }

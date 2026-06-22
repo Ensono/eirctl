@@ -205,5 +205,5 @@ func (uc *UpdateCmd) prepSourceBinary(currentExecPath string) error {
 	oldName := filepath.Base(currentExecPath) + ".old"
 
 	// move current file to old
-	return uc.OsFsOps.Rename(currentExecPath, path.Join(path.Dir(currentExecPath), oldName))
+	return uc.OsFsOps.Rename(currentExecPath, filepath.Join(filepath.Dir(currentExecPath), oldName))
 }
