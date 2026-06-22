@@ -15,30 +15,30 @@ permissions:
 
 jobs:
   set-version-tag:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.0
+        uses: gittools/actions/gitversion/setup@bc6623af8fc07d5a8903052dd46da33403eec8e8
         with:
           versionSpec: "5.x"
       - name: Set SemVer Version
-        uses: gittools/actions/gitversion/execute@v3.0
+        uses: gittools/actions/gitversion/execute@@bc6623af8fc07d5a8903052dd46da33403eec8e8
         id: gitversion
 
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-version: 1.25.x
       - name: Linters
@@ -68,17 +68,17 @@ jobs:
       DOCKER_HOST: ${{ matrix.docker_host }}
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
 
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -98,7 +98,7 @@ jobs:
           go run cmd/main.go run pipeline gha:unit:test --verbose
 
       - name: Publish Junit style Test Report
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@d9f48fc87bc235f7e214acf696ca5abc0a986f16
         if: always()
         with:
           report_paths: ".coverage/report-junit.xml"
@@ -107,7 +107,7 @@ jobs:
           check_name: Eirctl Unit Tests (${{ matrix.name }})
 
       - name: Analyze with SonarCloud
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e
         env:
           # Needed to get PR information
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

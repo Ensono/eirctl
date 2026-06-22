@@ -11,7 +11,7 @@ jobs:
   set-version-tag:
     if: ${{ github.event.issue.pull_request != null &&
       startsWith(github.event.comment.body, '/build-debug') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
       pr_ref: ${{ steps.get-pr-ref.outputs.ref }}
@@ -28,33 +28,33 @@ jobs:
               pull_number: context.issue.number
             });
             return pr.data.head.ref;
-      
-      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: ${{ steps.get-pr-ref.outputs.result }}
           fetch-depth: 0
-      
+
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3.0
+        uses: gittools/actions/gitversion/setup@bc6623af8fc07d5a8903052dd46da33403eec8e8
         with:
-          versionSpec: '5.x'
+          versionSpec: "5.x"
       - name: Set SemVer Version
-        uses: gittools/actions/gitversion/execute@v3.0
+        uses: gittools/actions/gitversion/execute@@bc6623af8fc07d5a8903052dd46da33403eec8e8
         id: gitversion
 
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: set-version-tag
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           ref: ${{ needs.set-version-tag.outputs.pr_ref }}
           fetch-depth: 1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-version: 1.25.x
 
