@@ -316,7 +316,6 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				`))
 				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {
-					// os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},
@@ -334,7 +333,6 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				`))
 				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {
-					// os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},

@@ -94,7 +94,7 @@ func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 	contents, err := c.fo.Open(getCachePath(file.Src))
 	if err != nil {
 		// custom error file not found
-		// caller needs to handle creation and
+		// caller needs to handle creation and subsequent content update
 		if perr, ok := errors.AsType[*fs.PathError](err); ok {
 			logrus.Debugf("Cache File (%s) Not Found, should store in cache...", perr.Path)
 			return nil, fmt.Errorf("%w, file: %s", ErrFileNotInCache, perr.Path)
@@ -128,7 +128,7 @@ func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 func (c *Cache) createCacheWriter(fullPath string) (io.Writer, error) {
 	cp := getCachePath(fullPath)
 	// Ensure the cache directory exists
-	if err := c.fo.MkdirAll(filepath.Dir(cp), 0777); err != nil {
+	if err := c.fo.MkdirAll(filepath.Dir(cp), 0744); err != nil {
 		return nil, fmt.Errorf("%w, %s", ErrCacheDirCreationFailed, err)
 	}
 	f, err := c.fo.Create(cp)
