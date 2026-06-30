@@ -106,18 +106,3 @@ func Test_errors_on_run(t *testing.T) {
 	})
 
 }
-
-// func Test_run_check(t *testing.T) {
-// 	ttests := map[string]struct {
-// 		objType any
-// 	}{
-// 		"test1": {
-// 			objType: nil,
-// 		},
-// 	}
-// 	for name, tt := range ttests {
-// 		t.Run(name, func(t *testing.T) {
-
-// 		})
-// 	}
-// }
