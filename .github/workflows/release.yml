@@ -28,7 +28,7 @@ jobs:
         with:
           versionSpec: "5.x"
       - name: Set SemVer Version
-        uses: gittools/actions/gitversion/execute@@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8
         id: gitversion
 
   release:

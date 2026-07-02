@@ -39,7 +39,7 @@ jobs:
         with:
           versionSpec: "5.x"
       - name: Set SemVer Version
-        uses: gittools/actions/gitversion/execute@@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8
         id: gitversion
 
   release:
@@ -56,7 +56,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: 1.25.x
+          go-version: 1.26.x
 
       - name: set up git for tag pushing
         run: |
