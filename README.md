@@ -467,3 +467,5 @@ The [original inspiration](https://github.com/taskctl/taskctl) for this project.
 
 > [!IMPORTANT]
 > As it is still using parts of the original code, this project is also under the GPLv3
+
+<!--  -->
