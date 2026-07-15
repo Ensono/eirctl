@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
@@ -136,13 +137,33 @@ func (s *Scheduler) runStage(stage *Stage) error {
 		return s.Schedule(stage.Pipeline)
 	}
 
+	// A stage can be scheduled concurrently with nested pipeline stages. Clone
+	// its mutable envfile before applying stage-specific precedence so runners do
+	// not observe another goroutine mutating the same configuration.
 	t := stage.Task
-	// Precedence setter of env and vars
-	// Context > Pipeline > Task
+	if t.EnvFile != nil {
+		t.EnvFile = cloneEnvFile(t.EnvFile)
+	}
+	// Precedence setter of env and vars: Context > Pipeline > Task.
 	t.Env = t.Env.Merge(stage.Env())
 	t.Variables = t.Variables.Merge(stage.Variables())
 	envfileMerge(t.EnvFile, stage.EnvFile())
 	return s.taskRunner.Run(t)
+}
+
+func cloneEnvFile(source *utils.Envfile) *utils.Envfile {
+	if source == nil {
+		return nil
+	}
+	return utils.NewEnvFile(func(envfile *utils.Envfile) {
+		envfile.Exclude = append([]string(nil), source.Exclude...)
+		envfile.Include = append([]string(nil), source.Include...)
+		envfile.PathValue = append(source.PathValue[:0:0], source.PathValue...)
+		envfile.ReplaceChar = source.ReplaceChar
+		envfile.Quote = source.Quote
+		envfile.Modify = append([]utils.ModifyEnv(nil), source.Modify...)
+		envfile.GeneratedDir = source.GeneratedDir
+	})
 }
 
 // checkStatus checks the parents of the stage

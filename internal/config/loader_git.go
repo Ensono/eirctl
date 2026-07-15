@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,11 +54,14 @@ type GitSource struct {
 }
 
 type SSHConfigAuth struct {
-	IdentityFile string
-	ConfigFile   string
-	User         string
-	Port         string
-	Hostname     string
+	IdentityFile          string
+	ConfigFile            string
+	User                  string
+	Port                  string
+	Hostname              string
+	UserKnownHostsFile    string
+	SystemKnownHostsFile  string
+	StrictHostKeyChecking string
 }
 
 func IsGit(raw string) bool {
@@ -290,13 +295,93 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 		return nil, err
 	}
 
+	hostKeyCallback, err := hostKeyCallback(sshConf)
+	if err != nil {
+		return nil, err
+	}
+
 	return &gitssh.PublicKeys{
 		User:   sshConf.User,
 		Signer: signer,
 		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			HostKeyCallback: hostKeyCallback,
 		},
 	}, nil
+}
+
+// hostKeyCallback verifies SSH server identity using configured OpenSSH known-host files.
+// StrictHostKeyChecking=no is the sole compatibility opt-out and is deliberately noisy.
+func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
+	if strings.EqualFold(sshConf.StrictHostKeyChecking, "no") {
+		logrus.Warn("SSH host-key verification is disabled by StrictHostKeyChecking=no")
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+
+	if err := validateConfiguredKnownHostsFiles(sshConf); err != nil {
+		return nil, err
+	}
+	paths := knownHostsFiles(sshConf)
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%w\nno readable known-hosts file is available for %s; configure UserKnownHostsFile or add the host key", ErrGitOperation, sshConf.Hostname)
+	}
+	callback, err := knownhosts.New(paths...)
+	if err != nil {
+		return nil, fmt.Errorf("%w\nfailed to load known-hosts files for %s: %v", ErrGitOperation, sshConf.Hostname, err)
+	}
+	effectivePort := sshConf.Port
+	if effectivePort == "" {
+		effectivePort = "22"
+	}
+	effectiveAddress := net.JoinHostPort(sshConf.Hostname, effectivePort)
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		if err := callback(hostname, remote, key); err != nil {
+			return fmt.Errorf("%w: SSH host-key verification failed for %s; verify the effective host and port in the configured known-hosts file", err, effectiveAddress)
+		}
+		return nil
+	}, nil
+}
+
+func validateConfiguredKnownHostsFiles(sshConf *SSHConfigAuth) error {
+	for label, configured := range map[string]string{
+		"UserKnownHostsFile":   sshConf.UserKnownHostsFile,
+		"GlobalKnownHostsFile": sshConf.SystemKnownHostsFile,
+	} {
+		for _, candidate := range strings.Fields(configured) {
+			path := filepath.Clean(utils.NormalizeHome(candidate))
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() {
+				return fmt.Errorf("%w\nconfigured %s is not a readable known-hosts file: %s", ErrGitOperation, label, path)
+			}
+		}
+	}
+	return nil
+}
+
+func knownHostsFiles(sshConf *SSHConfigAuth) []string {
+	var candidates []string
+	if sshConf.UserKnownHostsFile != "" {
+		candidates = append(candidates, strings.Fields(sshConf.UserKnownHostsFile)...)
+	} else {
+		homeDir := utils.MustGetUserHomeDir()
+		candidates = append(candidates,
+			filepath.Join(homeDir, ".ssh", "known_hosts"),
+			filepath.Join(homeDir, ".ssh", "known_hosts2"),
+		)
+	}
+	if sshConf.SystemKnownHostsFile != "" {
+		candidates = append(candidates, strings.Fields(sshConf.SystemKnownHostsFile)...)
+	} else {
+		candidates = append(candidates, "/etc/ssh/ssh_known_hosts", "/etc/ssh/ssh_known_hosts2")
+	}
+
+	files := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(utils.NormalizeHome(candidate))
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			files = append(files, candidate)
+		}
+	}
+	return files
 }
 
 // parseGitSshCommandEnv looks for the conventional GIT_SSH_COMMAND variable
@@ -320,12 +405,18 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	sshConf.ConfigFile = *confFile
 
 	for key, v := range *optionParam {
-		// Keep this as switch in case we want to introduce additional parameters from the `-oParam=Val` option set in SSH
-		switch key {
-		case "Hostname":
+		// Keep this as switch in case we want to introduce additional parameters from the `-oParam=Val` option set in SSH.
+		switch strings.ToLower(key) {
+		case "hostname":
 			sshConf.Hostname = v
-		case "Port":
+		case "port":
 			sshConf.Port = v
+		case "userknownhostsfile":
+			sshConf.UserKnownHostsFile = v
+		case "systemknownhostsfile":
+			sshConf.SystemKnownHostsFile = v
+		case "stricthostkeychecking":
+			sshConf.StrictHostKeyChecking = v
 		default:
 			logrus.Debugf("option: %s, currently not supported with GIT_SSH_COMMAND", key)
 		}
@@ -399,6 +490,15 @@ func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, h
 	if sshConfig.IdentityFile == "" {
 		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
 		sshConfig.IdentityFile = fileIdentityFile
+	}
+	if sshConfig.UserKnownHostsFile == "" {
+		sshConfig.UserKnownHostsFile, _ = fileSSHCfg.Get(hostname, "UserKnownHostsFile")
+	}
+	if sshConfig.SystemKnownHostsFile == "" {
+		sshConfig.SystemKnownHostsFile, _ = fileSSHCfg.Get(hostname, "GlobalKnownHostsFile")
+	}
+	if sshConfig.StrictHostKeyChecking == "" {
+		sshConfig.StrictHostKeyChecking, _ = fileSSHCfg.Get(hostname, "StrictHostKeyChecking")
 	}
 	return nil
 }
