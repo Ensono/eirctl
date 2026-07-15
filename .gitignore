@@ -24,3 +24,9 @@ local/
 .pprof
 
 __debug_bin*
+
+# Agents
+.pi/
+.github/skills/openspec-*
+.github/prompts/opsx-*
+
