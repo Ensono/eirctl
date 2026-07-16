@@ -31,5 +31,5 @@
 
 These findings are tracked separately; this change must not worsen them.
 - [x] 4.2 Confirm the branch still selects `golang.org/x/crypto v0.52.0` and `golang.org/x/net v0.55.0` and introduces no dependency regression.
-- [ ] 4.3 Push the change and use `gh` to verify PR CodeQL alert 10 closes without dismissal, the CodeQL check passes, and no replacement PR code-scanning alert appears.
+- [x] 4.3 Push the change and use `gh` to verify PR CodeQL alert 10 closes without dismissal, the CodeQL check passes, and no replacement PR code-scanning alert appears.
 - [ ] 4.4 After merge, use `gh` to confirm the 13 `x/crypto` and one `x/net` Dependabot alerts close on the default branch and document any residual repository-wide findings separately.
