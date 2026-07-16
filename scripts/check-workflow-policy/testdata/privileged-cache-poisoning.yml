@@ -1,0 +1,10 @@
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@0123456789012345678901234567890123456789
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: go run cmd/main.go
+      - uses: actions/cache@0123456789012345678901234567890123456789

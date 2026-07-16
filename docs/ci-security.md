@@ -18,9 +18,15 @@ The pull-request execution job is intentionally limited to `contents: read` and 
 
 ## Debug prerelease process
 
-A `/build-debug` issue comment starts the **Debug build** workflow. It resolves the pull request to its immutable head SHA, checks out only that SHA with read-only repository access, and uploads binaries together with `debug-build-provenance.json`. The build workflow has no release permission, protected environment, or protected secret.
+The debug prerelease process has three separate trust domains:
 
-A maintainer publishes a successful build through **Publish debug prerelease** (`workflow_dispatch`), supplying the build run ID, pull-request number, and full commit SHA. Its validation job rejects failed runs and repository, PR, or SHA mismatches before the separate `debug-release` environment-gated publish job receives `contents: write`. The publisher downloads artifacts as opaque data: it never checks out or executes pull-request code or artifact contents. Published releases are prereleases and identify the PR and immutable source SHA; consumers must treat them as untrusted debug output.
+1. **Request broker:** an exact `/build-debug` comment on a pull request starts the **Request debug build** `issue_comment` workflow. It accepts only commenters with repository `write`, `maintain`, or `admin` permission. The broker never checks out or executes pull-request code; it has only `issues: write` so it can signal the request.
+2. **Untrusted builder:** the broker removes and re-adds the `build-debug` label. This emits a `pull_request` `labeled` event for **Debug build**, which checks out the event's immutable `pull_request.head.sha` with `contents: read`. It has no protected environment, secrets, release authority, or automatic Go dependency cache. The artifact includes `debug-build-provenance.json` with the repository, PR, head SHA, workflow run ID, run attempt, and version.
+3. **Trusted publisher:** a maintainer starts **Publish debug prerelease** (`workflow_dispatch`) with the build run ID, pull-request number, and full commit SHA. Validation accepts only a successful `pull_request` run of the exact debug-build workflow associated with that PR, and rejects repository, current-PR-SHA, run-attempt, artifact, or provenance mismatches before the separate `debug-release` environment-gated job receives `contents: write`.
+
+Repeated authorized requests are serialized per PR. Each new request intentionally supersedes the prior label state by removing and re-adding `build-debug`, so the resulting build records the latest immutable SHA from its pull-request event. Operators may remove a stale `build-debug` label to avoid a pending request; the label is a request signal, not evidence that a binary is trusted.
+
+Before enabling publication, administrators must configure `debug-release` with required release-maintainer reviewers and prohibit self-approval and administrator bypass unless repository policy explicitly approves an exception. The publisher downloads artifacts as opaque data: it never checks out or executes pull-request code or artifact contents. Published releases are prereleases that identify the PR and immutable source SHA; consumers must treat them as untrusted debug output.
 
 ## SSH server trust
 

@@ -1,0 +1,7 @@
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  request:
+    steps:
+      - uses: actions/github-script@0123456789012345678901234567890123456789

@@ -54,8 +54,9 @@ jobs:
               repo: context.repo.repo,
               run_id: runId,
             });
-            if (run.name !== 'Debug build' || run.event !== 'issue_comment' || run.conclusion !== 'success' || run.repository?.full_name !== repository) {
-              core.setFailed('The selected run is not a successful issue-comment Debug build for this repository.');
+            const isRequestedPullRequest = run.pull_requests?.some(candidate => candidate.number === pullRequest);
+            if (run.name !== 'Debug build' || run.path !== '.github/workflows/debug-build.yml' || run.event !== 'pull_request' || run.conclusion !== 'success' || run.repository?.full_name !== repository || !isRequestedPullRequest) {
+              core.setFailed('The selected run is not a successful Debug build for the requested pull request in this repository.');
               return;
             }
 

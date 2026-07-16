@@ -1,0 +1,53 @@
+name: Request debug build
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  request:
+    if: >-
+      github.event.issue.pull_request != null &&
+      github.event.comment.body == '/build-debug'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: debug-build-request-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      issues: write
+    steps:
+      - name: Authorize and retrigger debug build request
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pullNumber = context.issue.number;
+            const permission = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            if (!['write', 'maintain', 'admin'].includes(permission.data.permission)) {
+              core.setFailed('Only repository maintainers may request a debug build.');
+              return;
+            }
+
+            const label = 'build-debug';
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullNumber,
+                name: label,
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pullNumber,
+              labels: [label],
+            });

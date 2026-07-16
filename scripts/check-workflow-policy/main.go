@@ -87,6 +87,9 @@ func samePermissions(actual, expected map[string]any) bool {
 
 func expectedJobPermissions(file, job string) map[string]any {
 	allowed := map[string]map[string]map[string]any{
+		".github/workflows/debug-build-request.yml": {
+			"request": {"issues": "write"},
+		},
 		".github/workflows/pr.yml": {
 			"report": {"contents": "read", "checks": "write"},
 		},
@@ -110,6 +113,17 @@ func expectedJobPermissions(file, job string) map[string]any {
 		}
 	}
 	return map[string]any{"contents": "read"}
+}
+
+var privilegedTrigger = regexp.MustCompile(`(?m)^ {2}(issue_comment|pull_request_target|workflow_run|repository_dispatch|workflow_dispatch):`)
+var prControlledCheckout = regexp.MustCompile(`(?m)^\s*ref:\s*\$\{\{\s*(github\.event\.(pull_request|issue)|steps\.[^.]+\.outputs\.(sha|ref))`)
+var executableStep = regexp.MustCompile(`(?m)^\s*(-\s+)?(run:|uses:\s*\./)`)
+
+func hasPrivilegedPRExecution(workflow string) bool {
+	return privilegedTrigger.MatchString(workflow) &&
+		strings.Contains(workflow, "actions/checkout@") &&
+		prControlledCheckout.MatchString(workflow) &&
+		executableStep.MatchString(workflow)
 }
 
 func main() {
@@ -172,22 +186,36 @@ func main() {
 			fmt.Fprintln(os.Stderr, "workflow security check failed:", policyErr)
 			os.Exit(1)
 		}
+		if hasPrivilegedPRExecution(string(content)) {
+			fmt.Fprintf(os.Stderr, "workflow security check failed: %s checks out and executes pull-request-controlled content from a privileged trigger\n", file)
+			os.Exit(1)
+		}
 		documents[file] = doc
 	}
 
+	brokerText := readFile(".github/workflows/debug-build-request.yml")
 	buildText := readFile(".github/workflows/debug-build.yml")
 	publishText := readFile(".github/workflows/publish-debug-release.yml")
+	broker := documents[".github/workflows/debug-build-request.yml"]
 	build := documents[".github/workflows/debug-build.yml"]
 	publish := documents[".github/workflows/publish-debug-release.yml"]
+	brokerJob := asMap(asMap(broker["jobs"])["request"])
+	if strings.Contains(brokerText, "actions/checkout") || !strings.Contains(brokerText, "github.event.comment.body == '/build-debug'") || !strings.Contains(brokerText, "['write', 'maintain', 'admin']") || !strings.Contains(brokerText, "debug-build-request-${{ github.event.issue.number }}") {
+		stop("debug build broker must authorize exact requests, serialize them per PR, and never check out code")
+	}
+	if !samePermissions(permissions(brokerJob["permissions"]), map[string]any{"issues": "write"}) || !strings.Contains(brokerText, "removeLabel") || !strings.Contains(brokerText, "addLabels") {
+		stop("debug build broker must have only issue-label write access and retrigger the request label")
+	}
+
 	buildJob := asMap(asMap(build["jobs"])["build"])
 	buildPermissions := permissions(buildJob["permissions"])
 	if buildPermissions == nil {
 		buildPermissions = permissions(build["permissions"])
 	}
-	if !allRead(buildPermissions) || buildJob["environment"] != nil {
-		stop("debug build must be read-only and must not receive an environment")
+	if !allRead(buildPermissions) || buildJob["environment"] != nil || strings.Contains(buildText, "secrets.") {
+		stop("debug build must be read-only and must not receive an environment or secrets")
 	}
-	for _, check := range []string{"pr.data.head.sha", "ref: ${{ steps.pull-request.outputs.sha }}", "debug-build-provenance.json"} {
+	for _, check := range []string{"pull_request:", "types: [labeled]", "github.event.label.name == 'build-debug'", "ref: ${{ github.event.pull_request.head.sha }}", "cache: false", "debug-build-provenance.json"} {
 		if !strings.Contains(buildText, check) {
 			stop("debug build is missing %s", check)
 		}
@@ -209,7 +237,7 @@ func main() {
 	if publishJob["environment"] != "debug-release" {
 		stop("debug publication must require the protected debug-release environment")
 	}
-	for _, check := range []string{"run.event", "run.conclusion", "run.repository?.full_name", "pr.base.repo.full_name", "pr.head.sha", "debug-build-provenance.json", "workflow_run_attempt"} {
+	for _, check := range []string{"run.path", "run.event", "run.conclusion", "run.repository?.full_name", "run.pull_requests", "pr.base.repo.full_name", "pr.head.sha", "debug-build-provenance.json", "workflow_run_attempt"} {
 		if !strings.Contains(publishText, check) {
 			stop("debug publication is missing %s validation", check)
 		}
