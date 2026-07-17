@@ -24,7 +24,7 @@ YAML
 cat >"$fixture/.github/workflows/test.yml" <<'YAML'
 steps:
   - with:
-      versionSpec: '6.8.2'
+      versionSpec: '6.0.5'
 YAML
 
 run_check() {
@@ -38,7 +38,7 @@ for mutation in image gitversion govulncheck; do
   cp "$fixture/.github/workflows/test.yml" "$fixture/.github/workflows/test.yml.bak"
   case "$mutation" in
     image) sed -i 's/@sha256:[a-f0-9]*/ /' "$fixture/eirctl.yaml" ;;
-    gitversion) sed -i "s/6.8.2/5.x/" "$fixture/.github/workflows/test.yml" ;;
+    gitversion) sed -i "s/6.0.5/5.x/" "$fixture/.github/workflows/test.yml" ;;
     govulncheck) sed -i 's/@v1.6.0/@latest/' "$fixture/shared/build/go/eirctl.yaml" ;;
   esac
   if run_check >/dev/null 2>&1; then

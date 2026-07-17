@@ -54,9 +54,9 @@
 ## 8. Current-Branch Delivery and Pull Request
 
 - [x] 8.1 Verify the current branch is named, is not `main`, matches the intended PR head, and has the expected remote; inspect status, ignored files, the full `main...HEAD` diff, and candidate staged paths for unrelated files or credentials.
-- [ ] 8.2 Stage only intended implementation and OpenSpec files, review the staged diff, rerun required validation where practical, create a descriptive conventional commit, and record its SHA.
-- [ ] 8.3 Push the current branch with upstream tracking when needed, never force-push, and verify that the remote branch and associated PR head resolve to the recorded commit SHA.
-- [ ] 8.4 Update only the delimited `fix-security-review-findings` section of the existing PR description with the implementation summary, security decisions, validation evidence, residual risks, and post-merge manual test plan; add the same content as a comment if a non-destructive body update is unavailable.
+- [x] 8.2 Stage only intended implementation and OpenSpec files, review the staged diff, rerun required validation where practical, create a descriptive conventional commit, and record its SHA (`d22ee98`).
+- [x] 8.3 Push the current branch with upstream tracking when needed, never force-push, and verify that the remote branch and associated PR head resolve to the recorded commit SHA (`d22ee989cecd9d08c6ae8fd3d16329d4152deb43`).
+- [x] 8.4 Update only the delimited `fix-security-review-findings` section of the existing PR description with the implementation summary, security decisions, validation evidence, residual risks, and post-merge manual test plan; add the same content as a comment if a non-destructive body update is unavailable.
 - [ ] 8.5 Monitor all checks for the exact pushed head SHA until every required check succeeds and no check is failed, cancelled, timed out, stale, or awaiting action; accept skipped or neutral checks only when intentionally non-applicable.
 - [ ] 8.6 If a check fails, collect and summarize its logs, make a new reviewed commit only when a code or configuration fix is required, push without rewriting history, refresh the PR summary, and repeat monitoring for the new head SHA.
 

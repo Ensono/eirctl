@@ -19,7 +19,7 @@ go_toolchain=$(awk '$1 == "toolchain" { print $2; exit }' go.mod)
 # The optional digest makes the image immutable without changing the required Go release.
 grep -Eq "^FROM docker\.io/golang:${version}-trixie(@sha256:[0-9a-f]{64})? AS builder$" Dockerfile || fail "Dockerfile builder image is not golang:${version}-trixie"
 grep -Eq "^FROM docker\.io/golang:${version}-trixie(@sha256:[0-9a-f]{64})? AS builder$" Dockerfile.pwsh || fail "Dockerfile.pwsh builder image is not golang:${version}-trixie"
-grep -Eq "^[[:space:]]+name: mirror\.gcr\.io/golang:${version}-trixie$" shared/build/go/eirctl.yaml || fail "shared Go build context is not golang:${version}-trixie"
+grep -Eq "^[[:space:]]+name: mirror\.gcr\.io/golang:${version}-trixie(@sha256:[0-9a-f]{64})?$" shared/build/go/eirctl.yaml || fail "shared Go build context is not golang:${version}-trixie"
 grep -Fq "Maintained local builds and validation require **Go ${version}**." README.md || fail "README prerequisite does not name Go ${version}"
 
 workflow_count=0

@@ -22,7 +22,7 @@ jobs:
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         with:
-          versionSpec: "6.8.2"
+          versionSpec: "6.0.5"
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         id: gitversion

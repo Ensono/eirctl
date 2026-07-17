@@ -15,7 +15,7 @@ The following registry manifest-list digests were resolved and reviewed on 2026-
 | `golint` | `mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine` | `sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e` |
 | `goreleaser` | `ghcr.io/goreleaser/goreleaser:v2.14.3` | `sha256:848430a900a83ca0e18f2f149fb4ddcdaea74a667aa07224268b97d448833591` |
 
-GitVersion is selected as exact release `6.8.2`; CI installs `golang.org/x/vuln/cmd/govulncheck@v1.6.0`. Go module checksums provide integrity for the latter module install.
+GitVersion is selected as exact release `6.0.5`; CI installs `golang.org/x/vuln/cmd/govulncheck@v1.6.0`. Go module checksums provide integrity for the latter module install.
 
 ## Required repository setup
 
