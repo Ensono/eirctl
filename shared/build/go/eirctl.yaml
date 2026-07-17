@@ -2,7 +2,7 @@
 contexts:
   go1x:
     container:
-      name: mirror.gcr.io/golang:1.26.5-trixie
+      name: mirror.gcr.io/golang:1.26.5-trixie@sha256:117e07f49461abb984fc8aef661432461ff43d06faa22c3b73af6a49ce325cb9
       enable_dind: true
       enable_mount: true
     envfile:
@@ -13,7 +13,7 @@ contexts:
 
   golint:
     container:
-      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine
+      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine@sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e
       enable_mount: true
     envfile:
       exclude:
@@ -25,7 +25,7 @@ contexts:
 
   goreleaser:
     container:
-      name: ghcr.io/goreleaser/goreleaser:v2.14.3
+      name: ghcr.io/goreleaser/goreleaser:v2.14.3@sha256:848430a900a83ca0e18f2f149fb4ddcdaea74a667aa07224268b97d448833591
       shell: bash
       shell_args:
         - -c
@@ -72,7 +72,7 @@ tasks:
         set -ex
         apt-get update -y && apt-get install -y jq
         unset GOTOOLCHAIN
-        go install golang.org/x/vuln/cmd/govulncheck@latest
+        go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
         govulncheck -format={{ if .VulnCheckFormat }}{{ .VulnCheckFormat }}{{ else }}openvex{{ end }} ./... {{ if .VulnCheckPost }}{{ .VulnCheckPost }}{{ end }}
 
   test:

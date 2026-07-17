@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/schema"
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 	"gopkg.in/yaml.v3"
+	"mvdan.cc/sh/v3/shell"
 )
 
 const (
@@ -54,13 +56,18 @@ type GitSource struct {
 }
 
 type SSHConfigAuth struct {
-	IdentityFile          string
-	ConfigFile            string
-	User                  string
-	Port                  string
-	Hostname              string
+	IdentityFile string
+	ConfigFile   string
+	User         string
+	Port         string
+	Hostname     string
+	// The legacy string fields preserve API compatibility. Effective selections
+	// are stored as ordered slices so quoted paths and repeated directives retain
+	// their original boundaries and precedence.
 	UserKnownHostsFile    string
 	SystemKnownHostsFile  string
+	UserKnownHostsFiles   []string
+	SystemKnownHostsFiles []string
 	StrictHostKeyChecking string
 }
 
@@ -342,25 +349,55 @@ func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
 }
 
 func validateConfiguredKnownHostsFiles(sshConf *SSHConfigAuth) error {
-	for label, configured := range map[string]string{
-		"UserKnownHostsFile":   sshConf.UserKnownHostsFile,
-		"GlobalKnownHostsFile": sshConf.SystemKnownHostsFile,
+	for _, configured := range []struct {
+		label string
+		paths []string
+	}{
+		{"UserKnownHostsFile", configuredKnownHosts(sshConf.UserKnownHostsFiles, sshConf.UserKnownHostsFile)},
+		{"GlobalKnownHostsFile", configuredKnownHosts(sshConf.SystemKnownHostsFiles, sshConf.SystemKnownHostsFile)},
 	} {
-		for _, candidate := range strings.Fields(configured) {
+		for _, candidate := range configured.paths {
 			path := filepath.Clean(utils.NormalizeHome(candidate))
 			info, err := os.Stat(path)
 			if err != nil || info.IsDir() {
-				return fmt.Errorf("%w\nconfigured %s is not a readable known-hosts file: %s", ErrGitOperation, label, path)
+				return fmt.Errorf("%w\nconfigured %s is not a readable known-hosts file: %s", ErrGitOperation, configured.label, path)
 			}
 		}
 	}
 	return nil
 }
 
+func configuredKnownHosts(paths []string, legacy string) []string {
+	if len(paths) > 0 {
+		return paths
+	}
+	if legacy == "" {
+		return nil
+	}
+	fields, err := shell.Fields(legacy, nil)
+	if err != nil {
+		return []string{legacy}
+	}
+	return fields
+}
+
+var platformDefaultKnownHostsFiles = defaultPlatformKnownHostsFiles
+
+func defaultPlatformKnownHostsFiles() []string {
+	if runtime.GOOS == "windows" {
+		programData := os.Getenv("ProgramData")
+		if programData == "" {
+			programData = `C:\\ProgramData`
+		}
+		return []string{filepath.Join(programData, "ssh", "ssh_known_hosts")}
+	}
+	return []string{"/etc/ssh/ssh_known_hosts", "/etc/ssh/ssh_known_hosts2"}
+}
+
 func knownHostsFiles(sshConf *SSHConfigAuth) []string {
 	var candidates []string
-	if sshConf.UserKnownHostsFile != "" {
-		candidates = append(candidates, strings.Fields(sshConf.UserKnownHostsFile)...)
+	if configured := configuredKnownHosts(sshConf.UserKnownHostsFiles, sshConf.UserKnownHostsFile); len(configured) > 0 {
+		candidates = append(candidates, configured...)
 	} else {
 		homeDir := utils.MustGetUserHomeDir()
 		candidates = append(candidates,
@@ -368,10 +405,10 @@ func knownHostsFiles(sshConf *SSHConfigAuth) []string {
 			filepath.Join(homeDir, ".ssh", "known_hosts2"),
 		)
 	}
-	if sshConf.SystemKnownHostsFile != "" {
-		candidates = append(candidates, strings.Fields(sshConf.SystemKnownHostsFile)...)
+	if configured := configuredKnownHosts(sshConf.SystemKnownHostsFiles, sshConf.SystemKnownHostsFile); len(configured) > 0 {
+		candidates = append(candidates, configured...)
 	} else {
-		candidates = append(candidates, "/etc/ssh/ssh_known_hosts", "/etc/ssh/ssh_known_hosts2")
+		candidates = append(candidates, platformDefaultKnownHostsFiles()...)
 	}
 
 	files := make([]string, 0, len(candidates))
@@ -389,7 +426,11 @@ func knownHostsFiles(sshConf *SSHConfigAuth) []string {
 func parseGitSshCommandEnv() *SSHConfigAuth {
 	sshConf := &SSHConfigAuth{}
 	gsc := os.Getenv(GitSshCommandVar)
-	args := strings.Fields(gsc)
+	args, err := shell.Fields(gsc, nil)
+	if err != nil {
+		logrus.Debugf("unable to parse %s: %v", GitSshCommandVar, err)
+		return sshConf
+	}
 	if len(args) < 1 {
 		return sshConf
 	}
@@ -413,16 +454,52 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 			sshConf.Port = v
 		case "userknownhostsfile":
 			sshConf.UserKnownHostsFile = v
+			sshConf.UserKnownHostsFiles = append(sshConf.UserKnownHostsFiles, v)
 		case "systemknownhostsfile":
 			sshConf.SystemKnownHostsFile = v
+			sshConf.SystemKnownHostsFiles = append(sshConf.SystemKnownHostsFiles, v)
 		case "stricthostkeychecking":
 			sshConf.StrictHostKeyChecking = v
 		default:
 			logrus.Debugf("option: %s, currently not supported with GIT_SSH_COMMAND", key)
 		}
 	}
+	// pflag's StringToString map retains only the last repeated -o option. Keep
+	// all known-host directives in command order for OpenSSH-compatible trust
+	// file precedence.
+	sshConf.UserKnownHostsFiles = sshOptionValues(args, "userknownhostsfile")
+	if len(sshConf.UserKnownHostsFiles) > 0 {
+		sshConf.UserKnownHostsFile = sshConf.UserKnownHostsFiles[0]
+	}
+	sshConf.SystemKnownHostsFiles = sshOptionValues(args, "systemknownhostsfile")
+	if len(sshConf.SystemKnownHostsFiles) > 0 {
+		sshConf.SystemKnownHostsFile = sshConf.SystemKnownHostsFiles[0]
+	}
 
 	return sshConf
+}
+
+func sshOptionValues(args []string, option string) []string {
+	var values []string
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		if argument == "-o" {
+			index++
+			if index >= len(args) {
+				break
+			}
+			argument = args[index]
+		} else if strings.HasPrefix(argument, "-o") {
+			argument = strings.TrimPrefix(argument, "-o")
+		} else {
+			continue
+		}
+		key, value, found := strings.Cut(argument, "=")
+		if found && strings.EqualFold(key, option) {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // parseDefaultSshConfigFilePaths parses GIT_SSH_COMMAND and sets the default paths for:
@@ -491,11 +568,17 @@ func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, h
 		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
 		sshConfig.IdentityFile = fileIdentityFile
 	}
-	if sshConfig.UserKnownHostsFile == "" {
-		sshConfig.UserKnownHostsFile, _ = fileSSHCfg.Get(hostname, "UserKnownHostsFile")
+	if len(sshConfig.UserKnownHostsFiles) == 0 && sshConfig.UserKnownHostsFile == "" {
+		sshConfig.UserKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "UserKnownHostsFile")
+		if len(sshConfig.UserKnownHostsFiles) > 0 {
+			sshConfig.UserKnownHostsFile = sshConfig.UserKnownHostsFiles[0]
+		}
 	}
-	if sshConfig.SystemKnownHostsFile == "" {
-		sshConfig.SystemKnownHostsFile, _ = fileSSHCfg.Get(hostname, "GlobalKnownHostsFile")
+	if len(sshConfig.SystemKnownHostsFiles) == 0 && sshConfig.SystemKnownHostsFile == "" {
+		sshConfig.SystemKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "GlobalKnownHostsFile")
+		if len(sshConfig.SystemKnownHostsFiles) > 0 {
+			sshConfig.SystemKnownHostsFile = sshConfig.SystemKnownHostsFiles[0]
+		}
 	}
 	if sshConfig.StrictHostKeyChecking == "" {
 		sshConfig.StrictHostKeyChecking, _ = fileSSHCfg.Get(hostname, "StrictHostKeyChecking")

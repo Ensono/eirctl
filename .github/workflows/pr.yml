@@ -22,7 +22,7 @@ jobs:
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         with:
-          versionSpec: "5.x"
+          versionSpec: "6.8.2"
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         id: gitversion
@@ -40,7 +40,9 @@ jobs:
           go-version: 1.26.5
       - name: Check maintained Go versions
         run: scripts/check-go-version.sh
-      - name: Check workflow security policy
+      - name: Check immutable CI dependencies
+        run: scripts/check-immutable-ci-dependencies.sh
+      - name: Advisory workflow policy feedback (not required)
         run: scripts/check-workflow-security.sh
       - name: Linters
         run: |

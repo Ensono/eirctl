@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -161,6 +162,44 @@ func TestSSHTrustOptionsPropagateFromConfigAndCommand(t *testing.T) {
 	}
 	if command.Hostname != "effective.example.test" || command.Port != "2222" || command.UserKnownHostsFile != configured || command.StrictHostKeyChecking != "no" {
 		t.Fatalf("unexpected effective SSH config: %+v", command)
+	}
+}
+
+func TestGitSSHCommandPreservesRepeatedQuotedKnownHostsOptions(t *testing.T) {
+	t.Setenv(GitSshCommandVar, `ssh -o UserKnownHostsFile="/tmp/first known_hosts" -o UserKnownHostsFile="/tmp/second known_hosts"`)
+	config := parseGitSshCommandEnv()
+	want := []string{"/tmp/first known_hosts", "/tmp/second known_hosts"}
+	if !reflect.DeepEqual(config.UserKnownHostsFiles, want) {
+		t.Fatalf("UserKnownHostsFiles = %q, want %q", config.UserKnownHostsFiles, want)
+	}
+}
+
+func TestKnownHostsFilesPreservesQuotedAndMultiplePaths(t *testing.T) {
+	directory := t.TempDir()
+	first := filepath.Join(directory, "first known hosts")
+	second := filepath.Join(directory, "second known hosts")
+	for _, path := range []string{first, second} {
+		if err := os.WriteFile(path, []byte("# test\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths := knownHostsFiles(&SSHConfigAuth{UserKnownHostsFile: fmt.Sprintf("%q %q", first, second)})
+	if len(paths) < 2 || paths[0] != first || paths[1] != second {
+		t.Fatalf("quoted known-host paths were not preserved: %v", paths)
+	}
+}
+
+func TestKnownHostsFilesUsesInjectablePlatformDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ssh_known_hosts")
+	if err := os.WriteFile(path, []byte("# test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	previous := platformDefaultKnownHostsFiles
+	platformDefaultKnownHostsFiles = func() []string { return []string{path} }
+	t.Cleanup(func() { platformDefaultKnownHostsFiles = previous })
+	paths := knownHostsFiles(&SSHConfigAuth{})
+	if len(paths) == 0 || paths[len(paths)-1] != path {
+		t.Fatalf("injected platform known-host default was not selected: %v", paths)
 	}
 }
 

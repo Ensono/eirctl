@@ -13,7 +13,7 @@ import:
 contexts:
   bash:
     container:
-      name: mirror.gcr.io/bash:5.0.18-alpine3.22
+      name: mirror.gcr.io/bash:5.0.18-alpine3.22@sha256:943f4381e5c98f3be2f505464cd4b84ec84715251abf30f37476d3865ddcc2ce
 
 pipelines:
   build:binary:

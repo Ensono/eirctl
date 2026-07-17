@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   validate-build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -54,9 +55,8 @@ jobs:
               repo: context.repo.repo,
               run_id: runId,
             });
-            const isRequestedPullRequest = run.pull_requests?.some(candidate => candidate.number === pullRequest);
-            if (run.name !== 'Debug build' || run.path !== '.github/workflows/debug-build.yml' || run.event !== 'pull_request' || run.conclusion !== 'success' || run.repository?.full_name !== repository || !isRequestedPullRequest) {
-              core.setFailed('The selected run is not a successful Debug build for the requested pull request in this repository.');
+            if (run.name !== 'Debug build' || run.path !== '.github/workflows/debug-build.yml' || run.event !== 'workflow_dispatch' || run.conclusion !== 'success' || run.repository?.full_name !== repository) {
+              core.setFailed('The selected run is not a successful dispatched Debug build in this repository.');
               return;
             }
 
@@ -102,6 +102,7 @@ jobs:
           COMMIT_SHA: ${{ inputs.commit_sha }}
           BUILD_RUN_ID: ${{ inputs.build_run_id }}
           WORKFLOW_RUN_ATTEMPT: ${{ steps.validate.outputs.workflow_run_attempt }}
+          WORKFLOW_EVENT: workflow_dispatch
         run: |
           test -f validated-artifact/debug-build-provenance.json
           jq --exit-status \
@@ -110,10 +111,12 @@ jobs:
             --arg commit_sha "$COMMIT_SHA" \
             --arg workflow_run_id "$BUILD_RUN_ID" \
             --arg workflow_run_attempt "$WORKFLOW_RUN_ATTEMPT" \
-            '.repository == $repository and .pull_request == $pull_request and (.commit_sha | ascii_downcase) == ($commit_sha | ascii_downcase) and .workflow_run_id == $workflow_run_id and .workflow_run_attempt == $workflow_run_attempt' \
+            --arg event "$WORKFLOW_EVENT" \
+            '.repository == $repository and .event == $event and .pull_request == $pull_request and (.commit_sha | ascii_downcase) == ($commit_sha | ascii_downcase) and .workflow_run_id == $workflow_run_id and .workflow_run_attempt == $workflow_run_attempt' \
             validated-artifact/debug-build-provenance.json >/dev/null
 
   publish:
+    if: github.ref == 'refs/heads/main'
     needs: validate-build
     runs-on: ubuntu-24.04
     environment: debug-release
@@ -137,6 +140,7 @@ jobs:
           COMMIT_SHA: ${{ inputs.commit_sha }}
           BUILD_RUN_ID: ${{ inputs.build_run_id }}
           WORKFLOW_RUN_ATTEMPT: ${{ needs.validate-build.outputs.workflow_run_attempt }}
+          WORKFLOW_EVENT: workflow_dispatch
         run: |
           test -f release-assets/debug-build-provenance.json
           jq --exit-status \
@@ -145,8 +149,9 @@ jobs:
             --arg commit_sha "$COMMIT_SHA" \
             --arg workflow_run_id "$BUILD_RUN_ID" \
             --arg workflow_run_attempt "$WORKFLOW_RUN_ATTEMPT" \
-            '.repository == $repository and .pull_request == $pull_request and (.commit_sha | ascii_downcase) == ($commit_sha | ascii_downcase) and .workflow_run_id == $workflow_run_id and .workflow_run_attempt == $workflow_run_attempt' \
-            release-assets/debug-build-provenance.json >/dev/null
+            --arg event "$WORKFLOW_EVENT" \
+            '.repository == $repository and .event == $event and .pull_request == $pull_request and (.commit_sha | ascii_downcase) == ($commit_sha | ascii_downcase) and .workflow_run_id == $workflow_run_id and .workflow_run_attempt == $workflow_run_attempt' \
+            release-assets/debug-build-provenance.json >/dev
 
       - name: Publish prerelease assets without executing them
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

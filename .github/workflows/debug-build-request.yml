@@ -17,9 +17,10 @@ jobs:
       group: debug-build-request-${{ github.event.issue.number }}
       cancel-in-progress: false
     permissions:
-      issues: write
+      actions: write
+      pull-requests: read
     steps:
-      - name: Authorize and retrigger debug build request
+      - name: Authorize and dispatch debug build
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
@@ -34,20 +35,18 @@ jobs:
               return;
             }
 
-            const label = 'build-debug';
-            try {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pullNumber,
-                name: label,
-              });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
-            await github.rest.issues.addLabels({
+            const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: pullNumber,
-              labels: [label],
+              pull_number: pullNumber,
+            });
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'debug-build.yml',
+              ref: 'main',
+              inputs: {
+                pull_request: String(pullNumber),
+                commit_sha: pullRequest.head.sha,
+              },
             });
