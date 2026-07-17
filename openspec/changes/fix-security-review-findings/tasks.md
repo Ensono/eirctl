@@ -57,12 +57,12 @@
 - [x] 8.2 Stage only intended implementation and OpenSpec files, review the staged diff, rerun required validation where practical, create a descriptive conventional commit, and record its SHA (`d22ee98`).
 - [x] 8.3 Push the current branch with upstream tracking when needed, never force-push, and verify that the remote branch and associated PR head resolve to the recorded commit SHA (`d22ee989cecd9d08c6ae8fd3d16329d4152deb43`).
 - [x] 8.4 Update only the delimited `fix-security-review-findings` section of the existing PR description with the implementation summary, security decisions, validation evidence, residual risks, and post-merge manual test plan; add the same content as a comment if a non-destructive body update is unavailable.
-- [ ] 8.5 Monitor all checks for the exact pushed head SHA until every required check succeeds and no check is failed, cancelled, timed out, stale, or awaiting action; accept skipped or neutral checks only when intentionally non-applicable.
-- [ ] 8.6 If a check fails, collect and summarize its logs, make a new reviewed commit only when a code or configuration fix is required, push without rewriting history, refresh the PR summary, and repeat monitoring for the new head SHA.
+- [x] 8.5 Monitor all checks for the exact pushed head SHA until every required check succeeds and no check is failed, cancelled, timed out, stale, or awaiting action; accept skipped or neutral checks only when intentionally non-applicable.
+- [x] 8.6 If a check fails, collect and summarize its logs, make a new reviewed commit only when a code or configuration fix is required, push without rewriting history, refresh the PR summary, and repeat monitoring for the new head SHA.
 
 ## 9. Post-Merge Manual Test Plan Handoff
 
-- [ ] 9.1 Reconcile the design's MT-01 through MT-19 cases with the final implementation so workflow names, inputs, permissions, provenance fields, image/tool pins, SSH paths, and expected evidence are exact.
-- [ ] 9.2 Confirm the plan identifies entry criteria, required test accounts and platforms, release-blocking observations, sanitized evidence to retain, cleanup actions, and rollback steps without requiring creation of the existing `debug-release` environment.
-- [ ] 9.3 Include the complete manual test plan or a stable repository link to it in the PR managed section or fallback comment, and identify the post-merge execution owner and evidence location.
-- [ ] 9.4 Verify the plan uses a harmless dedicated test PR and prerelease, does not auto-approve production environments or merge the PR, and requires temporary branches, artifacts, releases, and tags to be cleaned up after evidence is captured.
+- [x] 9.1 Reconcile the design's MT-01 through MT-19 cases with the final implementation so workflow names, inputs, permissions, provenance fields, image/tool pins, SSH paths, and expected evidence are exact.
+- [x] 9.2 Confirm the plan identifies entry criteria, required test accounts and platforms, release-blocking observations, sanitized evidence to retain, cleanup actions, and rollback steps without requiring creation of the existing `debug-release` environment.
+- [x] 9.3 Include the complete manual test plan or a stable repository link to it in the PR managed section or fallback comment, and identify the post-merge execution owner and evidence location.
+- [x] 9.4 Verify the plan uses a harmless dedicated test PR and prerelease, does not auto-approve production environments or merge the PR, and requires temporary branches, artifacts, releases, and tags to be cleaned up after evidence is captured.

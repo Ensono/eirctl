@@ -218,7 +218,8 @@ For every case, record the repository, PR number, source and merge SHAs, workflo
 
 The manual pass is complete only when all applicable cases pass, evidence is linked from the PR or follow-up issue, the dedicated test PR is closed, temporary branches and fixtures are removed, and the debug prerelease/tag is deleted if it was created solely for validation. If a trust-boundary case fails, disable the affected broker/builder/publisher path before further use and open a blocking defect with run IDs and sanitized evidence. Functional SSH regressions may be rolled back independently, but host-key verification and immutable pins must not be disabled as a shortcut.
 
-## Open Questions
+## Implementation verification
 
-- Which exact reviewed GitVersion and `govulncheck` releases, and which registry manifest digests, are current at implementation time? Resolve them from official sources and record the evidence in the implementation summary.
-- Does the existing `debug-release` environment already restrict deployments to protected `main`? If not, add that restriction as repository configuration before enabling publication; the environment itself does not need to be created.
+The implementation resolved the maintained execution selections as follows: GitVersion `6.0.5` (the newest exact `6.0.x` release supported by the pinned GitVersion action), `golang.org/x/vuln/cmd/govulncheck@v1.6.0`, and the reviewed manifest-list digests recorded in `docs/ci-security.md` for `bash`, `go1x`, `golint`, and `goreleaser`. The immutable-dependency validator and negative fixtures enforce these selections.
+
+The existing `debug-release` environment was verified on 2026-07-17 to have required reviewers and a custom deployment branch policy that permits `main`. The implementation did not create or replace the environment. Manual-plan owner: the release-maintainer team; retain sanitized run IDs, artifacts, approvals, and logs in the PR managed section or a linked follow-up issue.
