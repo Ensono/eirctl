@@ -252,8 +252,14 @@ func main() {
 	pr := documents[".github/workflows/pr.yml"]
 	prJobs := asMap(pr["jobs"])
 	testPermissions := permissions(asMap(prJobs["test"])["permissions"])
-	if len(testPermissions) != 1 || !permissionIs(testPermissions, "contents", "read") || strings.Contains(readFile(".github/workflows/pr.yml"), "SONAR_TOKEN") {
-		stop("PR execution must have contents read only and no Sonar secret")
+	if len(testPermissions) != 1 || !permissionIs(testPermissions, "contents", "read") {
+		stop("PR execution must have contents read only")
+	}
+	scan := asMap(prJobs["sonarcloud"])
+	scanPermissions := permissions(scan["permissions"])
+	prText := readFile(".github/workflows/pr.yml")
+	if scan["needs"] != "test" || scan["if"] != "github.event_name == 'push' && github.ref == 'refs/heads/main'" || len(scanPermissions) != 1 || !permissionIs(scanPermissions, "contents", "read") || strings.Count(prText, "secrets.SONAR_TOKEN") != 1 {
+		stop("SonarCloud analysis must be a trusted push-to-main job with read-only contents and the sole Sonar secret reference")
 	}
 	report := asMap(prJobs["report"])
 	reportPermissions := permissions(report["permissions"])

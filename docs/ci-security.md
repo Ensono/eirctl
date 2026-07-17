@@ -14,7 +14,7 @@ Production deployment jobs must continue to use protected environments. Pull-req
 
 ## Pull-request reporting
 
-The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN` or any other protected secret. It uploads the inert JUnit report as an artifact; a separate read-only-code reporting job downloads that artifact and receives only `checks: write` to publish the check. SonarCloud PR analysis is therefore disabled by this workflow until it can be run without exposing a protected token to pull-request-controlled code.
+The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN` or any other protected secret. It uploads the inert JUnit report as an artifact; a separate read-only-code reporting job downloads that artifact and receives only `checks: write` to publish the check. SonarCloud PR analysis remains disabled because it would expose a protected token to pull-request-controlled code. A separate `sonarcloud` job runs only after tests succeed for a trusted push to `main`; it checks out that trusted source, generates the reports, and receives `SONAR_TOKEN` only for the scan.
 
 ## Debug prerelease process
 
