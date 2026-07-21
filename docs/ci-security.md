@@ -23,6 +23,12 @@ The existing `debug-release` GitHub Environment has required-release-maintainer 
 
 Production deployment jobs must continue to use protected environments. Pull-request validation and untrusted debug-build jobs must not reference a protected environment or receive its secrets.
 
+## Trusted workflow checkout provenance
+
+Privileged `pull_request_target` and `workflow_run` jobs must not pass a `github.event.pull_request.*` or `github.event.workflow_run.*` expression to `actions/checkout`. OpenSSF Scorecard reports every such form as `Dangerous-Workflow`, even when a separate condition proves that the revision came from protected `main`.
+
+The authoritative pull-request policy workflow therefore relies on `pull_request_target`'s implicit protected base revision and omits the checkout `ref` entirely. Trusted release workflows use the literal `main` ref, then immediately compare the checked-out commit to `github.event.workflow_run.head_sha` supplied through an environment variable. The release job fails closed before GitVersion, builds, registry login, tagging, or publication if protected `main` has advanced or the completed upstream run does not match. Release checkouts never persist credentials; the binary release job receives its `contents: write` token only in the Git Data API tag-creation step after the build. The structural checker rejects the Scorecard dynamic checkout forms and requires this static-checkout-plus-verification and non-persistent-credential topology for every release job.
+
 ## Authoritative workflow policy
 
 **Trusted workflow policy** is the stable required check name for branch protection. It runs from the protected base revision through `pull_request_target`, checks out only that base SHA, and materializes pull-request workflow/configuration files as data before passing them to the base-branch checker with `--candidate-root`. It never executes candidate scripts or local actions.

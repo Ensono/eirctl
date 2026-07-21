@@ -12,11 +12,11 @@ jobs:
     name: Trusted workflow policy
     runs-on: ubuntu-24.04
     steps:
-      # pull_request_target must execute only protected base-branch code.
+      # pull_request_target defaults GITHUB_SHA to the protected base-branch
+      # revision. Do not pass any pull-request expression to checkout.
       - name: Check out protected base revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
           persist-credentials: false
 

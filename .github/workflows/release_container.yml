@@ -18,11 +18,16 @@ jobs:
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - name: Check out the validated workflow-run commit
+      - name: Check out protected main with history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the validated workflow-run revision
+        env:
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         with:
@@ -42,11 +47,17 @@ jobs:
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
-      - name: Check out the validated workflow-run commit
+      - name: Check out protected main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify the validated workflow-run revision
+        env:
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3

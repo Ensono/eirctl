@@ -204,14 +204,80 @@ func TestCandidateCannotReplaceTrustedPolicyBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 		if entry.Name() == "trusted-workflow-policy.yml" {
-			contents = []byte(strings.Replace(string(contents), "ref: ${{ github.event.pull_request.base.sha }}", "ref: ${{ github.event.pull_request.head.sha }}", 1))
+			contents = []byte(strings.Replace(string(contents), "        with:\n          fetch-depth: 1", "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          fetch-depth: 1", 1))
 		}
 		if err := os.WriteFile(filepath.Join(workflowDir, entry.Name()), contents, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := Validate(root); err == nil || !strings.Contains(err.Error(), "privileged trigger") {
-		t.Fatalf("Validate() error = %v, want trusted-boundary rejection", err)
+	if err := Validate(root); err == nil || !strings.Contains(err.Error(), "Scorecard Dangerous-Workflow") {
+		t.Fatalf("Validate() error = %v, want Scorecard dangerous-checkout rejection", err)
+	}
+}
+
+func TestReleaseWorkflowsRequireVerifiedStaticMainCheckout(t *testing.T) {
+	cases := []struct {
+		name     string
+		file     string
+		oldValue string
+		newValue string
+	}{
+		{
+			name:     "dynamic workflow-run checkout",
+			file:     "release.yml",
+			oldValue: "ref: main",
+			newValue: "ref: ${{ github.event.workflow_run.head_sha }}",
+		},
+		{
+			name:     "dynamic container workflow-run checkout",
+			file:     "release_container.yml",
+			oldValue: "ref: main",
+			newValue: "ref: ${{ github.event.workflow_run.head_sha }}",
+		},
+		{
+			name:     "missing immutable revision verification",
+			file:     "release_container.yml",
+			oldValue: "run: test \"$(git rev-parse HEAD)\" = \"$VALIDATED_HEAD_SHA\"",
+			newValue: "run: echo unverified",
+		},
+		{
+			name:     "persisted release checkout credential",
+			file:     "release.yml",
+			oldValue: "          persist-credentials: false\n\n      - name: Verify the validated workflow-run revision",
+			newValue: "\n      - name: Verify the validated workflow-run revision",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			workflowDir := filepath.Join(root, ".github", "workflows")
+			if err := os.MkdirAll(workflowDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			baseWorkflowDir := filepath.Join("..", "..", ".github", "workflows")
+			entries, err := os.ReadDir(baseWorkflowDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if entry.IsDir() || filepath.Ext(entry.Name()) != ".yml" {
+					continue
+				}
+				contents, err := os.ReadFile(filepath.Join(baseWorkflowDir, entry.Name()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if entry.Name() == tc.file {
+					contents = []byte(strings.Replace(string(contents), tc.oldValue, tc.newValue, 1))
+				}
+				if err := os.WriteFile(filepath.Join(workflowDir, entry.Name()), contents, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := Validate(root); err == nil {
+				t.Fatal("Validate() unexpectedly accepted a dangerous release checkout")
+			}
+		})
 	}
 }
 

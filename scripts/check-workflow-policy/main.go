@@ -308,6 +308,9 @@ func validateWorkflow(workflow Workflow) error {
 			return err
 		}
 	}
+	if err := rejectScorecardDangerousCheckouts(workflow); err != nil {
+		return err
+	}
 	return validatePrivilegedFlow(workflow)
 }
 
@@ -324,6 +327,24 @@ func validateActions(path string, job Job) error {
 		}
 		if !pinnedAction.MatchString(step.Uses) {
 			return fmt.Errorf("%s has an unpinned action: %s", path, step.Uses)
+		}
+	}
+	return nil
+}
+
+func rejectScorecardDangerousCheckouts(workflow Workflow) error {
+	if !workflow.Triggers["pull_request_target"] && !workflow.Triggers["workflow_run"] {
+		return nil
+	}
+	for _, job := range workflow.Jobs {
+		for _, step := range job.Steps {
+			if !actionUses(step.Uses, "actions/checkout") {
+				continue
+			}
+			ref := step.With["ref"]
+			if strings.Contains(ref, "github.event.pull_request") || strings.Contains(ref, "github.event.workflow_run") {
+				return fmt.Errorf("%s job %s uses a Scorecard Dangerous-Workflow dynamic checkout ref", workflow.Path, job.Name)
+			}
 		}
 	}
 	return nil
@@ -491,6 +512,18 @@ func expectedJobPermissions(path, job string) Permissions {
 }
 
 func validateRepositoryTopology(workflows map[string]Workflow) error {
+	policy, err := requiredWorkflow(workflows, ".github/workflows/trusted-workflow-policy.yml")
+	if err != nil {
+		return err
+	}
+	policyJob, ok := policy.Jobs["policy"]
+	if !ok || !policy.Triggers["pull_request_target"] || len(policyJob.Steps) < 3 ||
+		!isProtectedBaseCheckout(policyJob.Steps[0]) ||
+		!strings.Contains(policyJob.Steps[2].Run, "scripts/materialize-policy-candidate") ||
+		!strings.Contains(policyJob.Steps[2].Run, "go run ./scripts/check-workflow-policy --candidate-root") {
+		return errors.New("trusted workflow policy must check out only the implicit protected base revision and inspect candidate configuration as data")
+	}
+
 	broker, err := requiredWorkflow(workflows, ".github/workflows/debug-build-request.yml")
 	if err != nil {
 		return err
@@ -541,8 +574,8 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 			return err
 		}
 		for _, job := range workflow.Jobs {
-			if !trustedWorkflowRun(job.If) {
-				return fmt.Errorf("%s job %s must require a successful trusted push from this repository on main", file, job.Name)
+			if !trustedWorkflowRun(job.If) || !hasVerifiedStaticMainCheckout(job) {
+				return fmt.Errorf("%s job %s must require a successful trusted push and verify a static protected-main checkout against its workflow-run SHA", file, job.Name)
 			}
 		}
 	}
@@ -690,6 +723,24 @@ func checkoutCount(job Job) int {
 		}
 	}
 	return count
+}
+
+func isProtectedBaseCheckout(step Step) bool {
+	return actionUses(step.Uses, "actions/checkout") && step.With["ref"] == "" &&
+		step.With["fetch-depth"] == "1" && step.With["persist-credentials"] == "false"
+}
+
+func hasVerifiedStaticMainCheckout(job Job) bool {
+	if len(job.Steps) < 2 {
+		return false
+	}
+	checkout := job.Steps[0]
+	verify := job.Steps[1]
+	return actionUses(checkout.Uses, "actions/checkout") && checkout.With["ref"] == "main" &&
+		checkout.With["persist-credentials"] == "false" &&
+		verify.Name == "Verify the validated workflow-run revision" && len(verify.Env) == 1 &&
+		verify.Env["VALIDATED_HEAD_SHA"] == "${{ github.event.workflow_run.head_sha }}" &&
+		strings.TrimSpace(verify.Run) == `test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"`
 }
 
 func requiredWorkflow(workflows map[string]Workflow, path string) (Workflow, error) {
