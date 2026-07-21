@@ -16,14 +16,13 @@ type ExecutorIface interface {
 
 // GetExecutorFactory returns a factory instance of the executor
 func GetExecutorFactory(execContext *ExecutionContext, job *Job) (ExecutorIface, error) {
-
 	switch execContext.GetExecutorType() {
 	case DefaultExecutorTyp:
 		return newDefaultExecutor(job.Stdin, job.Stdout, job.Stderr)
 	case ContainerExecutorTyp:
 		return NewContainerExecutor(execContext)
 	default:
-		return nil, fmt.Errorf("wrong executor type")
+		return nil, fmt.Errorf("unknown executor type")
 	}
 }
 

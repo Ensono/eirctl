@@ -15,10 +15,11 @@ var ErrNotV2Context = errors.New("not a native container context")
 func newShellCmd(rootCmd *EirCtlCmd) {
 
 	showCmd := &cobra.Command{
-		Use:     "shell",
-		Aliases: []string{},
-		Short:   `shell into the supplied container context`,
-		Args:    cobra.RangeArgs(1, 1),
+		Use:          "shell",
+		Aliases:      []string{},
+		Short:        `shell into the supplied container context`,
+		Args:         cobra.RangeArgs(1, 1),
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			conf, err := rootCmd.initConfig()
 			if err != nil {

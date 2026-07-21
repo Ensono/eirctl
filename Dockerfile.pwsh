@@ -1,7 +1,7 @@
 ARG Version
 ARG Revision
 
-FROM docker.io/golang:1-trixie AS builder
+FROM docker.io/golang:1.26.5-trixie@sha256:117e07f49461abb984fc8aef661432461ff43d06faa22c3b73af6a49ce325cb9 AS builder
 
 ARG Version=0.0.1
 ARG Revision=beta01
@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 go build -mod=readonly -buildvcs=false \
     -ldflags="-s -w -X github.com/Ensono/eirctl/cmd/eirctl.Version=${Version} -X github.com/Ensono/eirctl/cmd/eirctl.Revision=${Revision} -extldflags -static" \
     -o bin/eirctl cmd/main.go
 
-FROM mcr.microsoft.com/dotnet/sdk:9.0
+FROM mcr.microsoft.com/dotnet/sdk:9.0@sha256:ee0d20fbc3dfc60ae2d9d9115a9b750c18576a47f24073119dd09d93e072cb89
 
 COPY --from=builder /app/bin/eirctl /usr/bin/eirctl
 

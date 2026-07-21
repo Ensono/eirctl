@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/scheduler"
@@ -80,15 +81,15 @@ func TestExecutionGraph_Scheduler(t *testing.T) {
 
 func TestExecutionGraph_Scheduler_AllowFailure(t *testing.T) {
 	stage1 := scheduler.NewStage("stage1", func(s *scheduler.Stage) {
-		s.Task = task.FromCommands("t1", "true")
-
+		s.Task = task.FromCommands("t1", "/usr/bin/true")
 	})
 	stage2 := scheduler.NewStage("stage2", func(s *scheduler.Stage) {
-		s.Task = task.FromCommands("t2", "false")
+		s.Task = task.FromCommands("t2", "/usr/bin/false")
 		s.AllowFailure = true
 		s.DependsOn = []string{"stage1"}
-
 	})
+	// TODO: It doesn't matter really but the command is never replaced with
+	// the variable value here..?
 	stage3 := scheduler.NewStage("stage3", func(s *scheduler.Stage) {
 		s.Task = task.FromCommands("t3", "{{.command}}")
 		s.DependsOn = []string{"stage2"}
@@ -102,6 +103,9 @@ func TestExecutionGraph_Scheduler_AllowFailure(t *testing.T) {
 
 	taskRunner := mockTaskRunner{
 		run: func(t *task.Task) error {
+			// The test can return with a time of zero if the processor is powerful
+			// add a small delay to ensure a duration is always recorded
+			time.Sleep(50 * time.Nanosecond)
 			if t.Commands[0] == "/usr/bin/false" {
 				t.WithExitCode(1)
 				t.WithError(fmt.Errorf("error"))
@@ -112,9 +116,19 @@ func TestExecutionGraph_Scheduler_AllowFailure(t *testing.T) {
 	}
 
 	schdlr := scheduler.NewScheduler(taskRunner)
+	defer schdlr.Finish()
+
 	err = schdlr.Schedule(graph)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if stage2.Task.ExitCode() != 1 {
+		t.Fatal("stage 2 should exit with an error code")
+	}
+
+	if stage2.ReadStatus() != scheduler.StatusDone {
+		t.Fatal("stage 2 wasn't marked as done. It should allow its failure")
 	}
 
 	if stage3.ReadStatus() == scheduler.StatusCanceled {
@@ -124,8 +138,6 @@ func TestExecutionGraph_Scheduler_AllowFailure(t *testing.T) {
 	if stage3.Duration() <= 0 {
 		t.Error()
 	}
-
-	schdlr.Finish()
 }
 
 func TestSkippedStage(t *testing.T) {

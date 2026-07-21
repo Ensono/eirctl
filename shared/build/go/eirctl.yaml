@@ -1,7 +1,8 @@
+# yaml-language-server: $schema=../../../schemas/schema_v1.json
 contexts:
   go1x:
     container:
-      name: mirror.gcr.io/golang:1.25-trixie
+      name: mirror.gcr.io/golang:1.26.5-trixie@sha256:117e07f49461abb984fc8aef661432461ff43d06faa22c3b73af6a49ce325cb9
       enable_dind: true
       enable_mount: true
     envfile:
@@ -12,7 +13,7 @@ contexts:
 
   golint:
     container:
-      name: mirror.gcr.io/golangci/golangci-lint:v2.4.0-alpine
+      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine@sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e
       enable_mount: true
     envfile:
       exclude:
@@ -24,7 +25,7 @@ contexts:
 
   goreleaser:
     container:
-      name: ghcr.io/goreleaser/goreleaser:v2.12.5
+      name: ghcr.io/goreleaser/goreleaser:v2.14.3@sha256:848430a900a83ca0e18f2f149fb4ddcdaea74a667aa07224268b97d448833591
       shell: bash
       shell_args:
         - -c
@@ -52,15 +53,27 @@ tasks:
         go install github.com/AlekSi/gocov-xml@v1.0.0
     allow_failure: true
 
-  vuln:check:
+  coverage_merge_prereqs:
+    context: go1x
+    description: Installs coverage merge
+    command:
+      - |
+        mkdir -p .coverage .deps
+        export GOPATH="${PWD}/.deps" GOBIN="${PWD}/.deps/bin"
+        go install github.com/alexfalkowski/gocovmerge@v2.16.0
+    allow_failure: true
+
+  go:vuln:check:
     context: go1x
     description: |
       Runs a vulnerability scan against the code base
     command:
       - |
+        set -ex
+        apt-get update -y && apt-get install -y jq
         unset GOTOOLCHAIN
-        go install golang.org/x/vuln/cmd/govulncheck@latest
-        govulncheck ./...
+        go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        govulncheck -format={{ if .VulnCheckFormat }}{{ .VulnCheckFormat }}{{ else }}openvex{{ end }} ./... {{ if .VulnCheckPost }}{{ .VulnCheckPost }}{{ end }}
 
   test:
     context: go1x
@@ -76,23 +89,34 @@ tasks:
       GOFLAGS: -buildvcs=false
     allow_failure: true
 
+  coverage_merge:
+    description: For the pipeline to merge Linux and Windows test run coverages together
+    context: go1x
+    command:
+      - |
+        unset GOTOOLCHAIN
+        mkdir -p .coverage .deps
+        export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
+        gocovmerge .coverage-artifacts/**/out > .coverage/out
+
   show_coverage:
     command:
       - echo "Opening coverage html page"
       - go tool cover -html=.coverage/out
 
-  golint:
+  go:lint:
     context: golint
     description: Runs the linter and go vet and other default static checks
     allow_failure: false
     command:
       - |
         golangci-lint run
+
   releaser:
     context: goreleaser
-    command: 
-      - | 
-        release 
+    command:
+      - |
+        release
 
 pipelines:
   test:unit:
@@ -103,11 +127,18 @@ pipelines:
         - clean
         - test_prereqs
 
+  test:coverage:merge:
+    - task: coverage_merge_prereqs
+    - task: coverage_merge
+      depends_on:
+        - coverage_merge_prereqs
+
   show:coverage:
     - pipeline: test:unit
     - task: show_coverage
       depends_on:
         - test:unit
-  lints:
-    - task: golint
-    - task: vuln:check
+
+  go:linters:
+    - task: go:lint
+    - task: go:vuln:check

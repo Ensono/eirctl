@@ -13,7 +13,7 @@ import:
 contexts:
   bash:
     container:
-      name: mirror.gcr.io/bash:5.0.18-alpine3.22
+      name: mirror.gcr.io/bash:5.0.18-alpine3.22@sha256:943f4381e5c98f3be2f505464cd4b84ec84715251abf30f37476d3865ddcc2ce
 
 pipelines:
   build:binary:
@@ -24,11 +24,17 @@ pipelines:
       variables:
         RepoOwner: Ensono
         BinName: eirctl
-  
+
   gha:unit:test:
     - pipeline: test:unit
     - task: sonar:coverage:prep
       depends_on: test:unit
+
+  lints:
+    - task: go:lint
+    - task: go:vuln:check
+      variables:
+        VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
 
 tasks:
   build:
@@ -96,12 +102,14 @@ tasks:
 
       Exits in CI if changes detected.
     command:
-      - go run tools/schemagenerator/main.go
+      - go run tools/schemagenerator/main.go 2>&1
       - |
+        # cat schemas/schema_v1.json
+        git status --porcelain --untracked-files=no
         if [ ! -z "$(git status --porcelain --untracked-files=no)" ]; then
           if [ ! -z ${CI+x} ] ; then
             echo "In CI with an unclean tree - exiting"
-            echo "Info: make sure you have generatedschema and committed"
+            echo "Info: make sure you have generatedschema locally and committed"
             exit 1
           fi
         fi
@@ -130,13 +138,14 @@ tasks:
 
   tidy:
     name: "tidy me up"
+    context: go1x
     command:
       - go mod tidy
 
   sonar:coverage:prep:
     context: bash
     command:
-      - | 
+      - |
         # SonarCloud expects relative file paths, but Go generates coverage with full module paths
         # Convert from 'github.com/Ensono/eirctl/path/file.go' to 'path/file.go'
         sed -i 's|github.com/Ensono/eirctl/||g' .coverage/out

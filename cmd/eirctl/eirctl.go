@@ -11,6 +11,7 @@ import (
 	"github.com/Ensono/eirctl/internal/config"
 	outputpkg "github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/runner"
+	"github.com/Ensono/eirctl/selfupdate"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -22,50 +23,14 @@ var (
 	Revision = "aaaa1234"
 )
 
-type rootCmdFlags struct {
-	// all vars here
-	Debug       bool
-	Verbose     bool
-	CfgFilePath string
-	Output      string
-	Raw         bool
-	Cockpit     bool
-	Quiet       bool
-	VariableSet map[string]string
-	DryRun      bool
-	// NoSummary report at the end of the pipeline or task run
-	NoSummary bool
-}
-
-type OsFSOpsIface interface {
-	Rename(oldpath string, newpath string) error
-	WriteFile(name string, data []byte, perm os.FileMode) error
-	Create(name string) (io.Writer, error)
-}
-
 type EirCtlCmd struct {
 	ctx        context.Context
 	Cmd        *cobra.Command
 	ChannelOut io.Writer
 	ChannelErr io.Writer
-	OsFsOps    OsFSOpsIface
+	OsFsOps    osFSOpsIface
 	viperConf  *viper.Viper
 	rootFlags  *rootCmdFlags
-}
-
-type osFsOps struct {
-}
-
-func (o osFsOps) Rename(oldpath string, newpath string) error {
-	return os.Rename(oldpath, newpath)
-}
-
-func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(name, data, perm)
-}
-
-func (o osFsOps) Create(name string) (io.Writer, error) {
-	return os.Create(name)
 }
 
 func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtlCmd {
@@ -84,6 +49,8 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 			SilenceErrors:              true, // handle errors in the main
 		},
 	}
+	tc.Cmd.SetErr(channelErr)
+	tc.Cmd.SetOut(channelOut)
 
 	tc.rootFlags = &rootCmdFlags{}
 	tc.viperConf = viper.NewWithOptions()
@@ -107,7 +74,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.NoSummary, "no-summary", "", false, "show summary")
 	_ = tc.viperConf.BindPFlag("no-summary", tc.Cmd.PersistentFlags().Lookup("no-summary"))
 
-	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Quiet, "quiet", "q", false, "quite mode")
+	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Quiet, "quiet", "q", false, "quiet mode")
 	_ = tc.viperConf.BindPFlag("quiet", tc.Cmd.PersistentFlags().Lookup("quiet"))
 
 	return tc
@@ -115,6 +82,7 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 
 // WithSubCommands returns a manually maintained list of commands
 func WithSubCommands() []func(rootCmd *EirCtlCmd) {
+	uc := selfupdate.New("eirctl", "https://github.com/Ensono/eirctl/releases")
 	// add all sub commands
 	return []func(rootCmd *EirCtlCmd){
 		newRunCmd,
@@ -126,7 +94,9 @@ func WithSubCommands() []func(rootCmd *EirCtlCmd) {
 		newWatchCmd,
 		newGenerateCmd,
 		newShellCmd,
-		newUpdateCommand,
+		func(rootCmd *EirCtlCmd) {
+			uc.AddToRootCommand(rootCmd.Cmd)
+		},
 	}
 }
 
@@ -139,8 +109,6 @@ func (tc *EirCtlCmd) InitCommand(iocFuncs ...func(rootCmd *EirCtlCmd)) error {
 }
 
 func (tc *EirCtlCmd) Execute() error {
-	// NOTE: do we need logrus ???
-	// latest Go has structured logging...
 	logrus.SetFormatter(&logrus.TextFormatter{
 		DisableColors:   false,
 		TimestampFormat: "2006-01-02 15:04:05",
@@ -151,6 +119,21 @@ func (tc *EirCtlCmd) Execute() error {
 	return tc.Cmd.ExecuteContext(tc.ctx)
 }
 
+type rootCmdFlags struct {
+	// all vars here
+	Debug       bool
+	Verbose     bool
+	CfgFilePath string
+	Output      string
+	Raw         bool
+	Cockpit     bool
+	Quiet       bool
+	VariableSet map[string]string
+	DryRun      bool
+	// NoSummary report at the end of the pipeline or task run
+	NoSummary bool
+}
+
 var (
 	ErrIncompleteConfig = errors.New("config key is missing")
 )
@@ -159,6 +142,18 @@ var (
 func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 	// consume env and build options via Viper
 	tc.viperConf.AutomaticEnv()
+
+	// NOTE: These need to be set early, before parsing the config file,
+	// as a remote loader could fail and we want to make sure the log levels
+	// are as we expect...
+	if tc.viperConf.GetBool("debug") {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	if tc.viperConf.GetBool("verbose") {
+		logrus.SetLevel(logrus.TraceLevel)
+	}
+
 	configFilePath, err := configFileFinder(tc)
 	if err != nil {
 		return nil, err
@@ -170,23 +165,27 @@ func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// if cmd line flags were passed in, they override anything
-	// parsed from theconfig file
-	if tc.viperConf.GetBool("debug") {
-		conf.Debug = tc.viperConf.GetBool("debug") // this is bound to viper env flag
+	// If the CLI flags were passed in, they override anything
+	// parsed from the config file. We also need to re-set the
+	// log levels if they were changed by loading config, but
+	// not supplied on the CLI.
+	if tc.Cmd.Flags().Changed("debug") {
+		conf.Debug = tc.viperConf.GetBool("debug")
 	}
 
 	if conf.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	conf.Verbose = tc.viperConf.GetBool("verbose")
+	if tc.Cmd.Flags().Changed("verbose") {
+		conf.Verbose = tc.viperConf.GetBool("verbose")
+	}
 
 	if conf.Verbose {
 		logrus.SetLevel(logrus.TraceLevel)
 	}
 
-	// if default config keys were set to false
+	// If default config keys were set to false
 	// we check the overrides
 	if tc.rootFlags.Quiet {
 		conf.Quiet = tc.rootFlags.Quiet
@@ -247,6 +246,7 @@ func (tc *EirCtlCmd) buildTaskRunner(args []string, conf *config.Config) (*runne
 	// These are stdin args passed over `-- arg1 arg2`
 	vars.Set("ArgsList", argsStringer.argsList)
 	vars.Set("Args", strings.Join(argsStringer.argsList, " "))
+
 	tr, err := tc.initTaskRunner(conf, vars)
 	if err != nil {
 		return nil, nil, err
@@ -300,4 +300,26 @@ func configFileFinder(tc *EirCtlCmd) (string, error) {
 		return confFile, nil
 	}
 	return "", fmt.Errorf("%w\nincorrect config file (%s) does not exist", ErrIncompleteConfig, configFilePath)
+}
+
+type osFSOpsIface interface {
+	Rename(oldpath string, newpath string) error
+	WriteFile(name string, data []byte, perm os.FileMode) error
+	Create(name string) (io.Writer, error)
+}
+
+// osFsOps is a concrete implementation of the above iface
+type osFsOps struct {
+}
+
+func (o osFsOps) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
+
+func (o osFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(name, data, perm)
+}
+
+func (o osFsOps) Create(name string) (io.Writer, error) {
+	return os.Create(name)
 }

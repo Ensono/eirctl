@@ -46,6 +46,6 @@ Currently implemented:
 - Github
 - ...
 
-## Sample outputs
+## Sample configuration
 
-[GHA sample](../.github/workflows/gha__e__infra__e__sample.yml)
+The [GitHub Actions generator fixture](../cmd/eirctl/testdata/gha.sample.yml) is used by tests and documentation. Generated workflow output is intentionally not stored in `.github/workflows/`: generated examples must not become executable repository workflows.

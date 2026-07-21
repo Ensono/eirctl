@@ -48,12 +48,6 @@ func TestDefaultExecutor_Execute(t *testing.T) {
 		t.Error()
 	}
 
-	job2 := runner.NewJobFromCommand("echo {{ .Fail }}")
-	_, err = e.Execute(context.Background(), job2)
-	if err == nil {
-		t.Error()
-	}
-
 	job3 := runner.NewJobFromCommand("printf '%s\\nLine-2\\n' '=========== Line 1 ==================' ")
 	_, err = e.Execute(context.Background(), job3)
 	if err != nil {

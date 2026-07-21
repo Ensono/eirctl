@@ -7,6 +7,9 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/task"
 	"github.com/invopop/jsonschema"
+
+	// orderedmap "github.com/wk8/go-ordered-map/v2"
+	orderedmap "github.com/pb33f/ordered-map/v2"
 )
 
 //go:generate go run ../../tools/schemagenerator/main.go -dir ../../
@@ -18,9 +21,11 @@ import (
 // correct content-type or file extension must be specified
 // to successfully decode/unmarshal into type
 type ConfigDefinition struct {
-	// Import is a list of additional resources to bring into the main config
-	// these can be remote or local resources
-	Import []string `mapstructure:"import" yaml:"import" json:"import,omitempty" jsonschema:"anyOf_required=import"`
+	// Import is a list of additional resources to bring into the main config.
+	// Supports both plain strings (backward compatible config imports) and
+	// objects with src/hash/dest fields. Entries with a dest field are treated
+	// as file imports and written to disk; all others are config imports.
+	Import ImportList `mapstructure:"import" yaml:"import" json:"import,omitempty" jsonschema:"anyOf_required=import"`
 	// Contexts is a map of contexts to use
 	// for specific tasks
 	Contexts map[string]*ContextDefinition `mapstructure:"contexts" yaml:"contexts" json:"contexts,omitempty" jsonschema:"anyOf_required=contexts"`
@@ -54,12 +59,22 @@ type ConfigDefinition struct {
 }
 
 type ContextDefinition struct {
-	SourceFile string   `jsonschema:"-"`
-	Dir        string   `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
-	Up         []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
-	Down       []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
-	Before     []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
-	After      []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
+	SourceFile string `jsonschema:"-"`
+	Dir        string `mapstructure:"dir" yaml:"dir" json:"dir,omitempty"`
+	// Up runs once at the beginning of the usage of the context
+	// These are run in the mvdn.sh on the host
+	Up []string `mapstructure:"up" yaml:"up" json:"up,omitempty"`
+	// Down runs once at the end of the usage of the context
+	// These are run in the mvdn.sh on the host
+	Down []string `mapstructure:"down" yaml:"down" json:"down,omitempty"`
+	// Before runs any commands prior to the tasks' commands
+	// These are run in the mvdn.sh on the host
+	Before []string `mapstructure:"before" yaml:"before" json:"before,omitempty"`
+	// After runs after the commads of the task that use this context have run
+	// NB: these are run irrespective of the state of the task, this can be useful
+	// for clean up operations and similar.
+	// These are run in the mvdn.sh on the host
+	After []string `mapstructure:"after" yaml:"after" json:"after,omitempty"`
 	// Env is supplied from config file definition and is merged with the
 	// current process environment variables list
 	//
@@ -130,7 +145,7 @@ type PipelineDefinition struct {
 	// later elements in the list will overwrite keys specified previously
 	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables is the Key: Value map of vars vars to inject into the tasks
-	Variables EnvVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
+	Variables VariablesVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 	// Generator PipelineLevel
 	Generator map[string]any `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
 }
@@ -149,8 +164,11 @@ type TaskDefinition struct {
 	// Command is the actual command to run in either a specified executable or
 	// in mvdn.shell
 	Command schema.StringSlice `mapstructure:"command" yaml:"command" json:"command" jsonschema:"oneof_type=string;array"`
-	After   []string           `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
-	Before  []string           `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
+	// After runs after the commads of the task have completed
+	// If a task errors these are not run
+	After []string `mapstructure:"after" yaml:"after,omitempty" json:"after,omitempty"`
+	// Before runs before the commads of the task have run
+	Before []string `mapstructure:"before" yaml:"before,omitempty" json:"before,omitempty"`
 	// Context is the pointer to the key in the context map
 	// it must exist else it will fallback to default context
 	Context string `mapstructure:"context" yaml:"context,omitempty" json:"context,omitempty"`
@@ -182,7 +200,7 @@ type TaskDefinition struct {
 	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables merged with others if any already priovided
 	// These will overwrite any previously set keys
-	Variables EnvVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
+	Variables VariablesVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 	// ResetContext ensures each invocation of the variation is run with a Reset on the executor.
 	// Currently only applies to a default executor and when run in variations.
 	ResetContext bool `mapstructure:"reset_context" yaml:"reset_context,omitempty" json:"reset_context,omitempty" jsonschema:"default=false"`
@@ -200,6 +218,10 @@ type WatcherDefinition struct {
 	Variables map[string]string `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
 }
 
+//
+// JSONSchema definition helper types
+//
+
 // EnvVarMapType is the custom reflection type for schema generation
 type EnvVarMapType map[string]string
 
@@ -211,6 +233,49 @@ func (EnvVarMapType) JSONSchema() *jsonschema.Schema {
 				{Type: "string"},
 				{Type: "number"},
 				{Type: "boolean"},
+			},
+		},
+	}
+}
+
+// EnvVarMapType is the custom reflection type for schema generation
+type VariablesVarMapType map[string]any
+
+func (VariablesVarMapType) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type: "object",
+		AdditionalProperties: &jsonschema.Schema{
+			AnyOf: []*jsonschema.Schema{
+				{Type: "string"},
+				{Type: "number"},
+				{Type: "boolean"},
+				{Type: "object"},
+				{Type: "array"},
+			},
+		},
+	}
+}
+
+// ImportList is a list of ImportEntry items supporting heterogeneous YAML (strings and objects).
+type ImportList []schema.ImportEntry
+
+// JSONSchema provides the JSON schema for ImportList, allowing both string and object items.
+func (ImportList) JSONSchema() *jsonschema.Schema {
+	props := orderedmap.New[string, *jsonschema.Schema]()
+	props.Set("src", &jsonschema.Schema{Type: "string", Description: "Source path for the import"})
+	props.Set("hash", &jsonschema.Schema{Type: "string", Description: "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"})
+	props.Set("dest", &jsonschema.Schema{Type: "string", Description: "Destination path relative to project root (signals file import)"})
+
+	return &jsonschema.Schema{
+		Type: "array",
+		Items: &jsonschema.Schema{
+			OneOf: []*jsonschema.Schema{
+				{Type: "string"},
+				{
+					Type:       "object",
+					Properties: props,
+					Required:   []string{"src"},
+				},
 			},
 		},
 	}

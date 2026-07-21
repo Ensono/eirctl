@@ -27,7 +27,7 @@ func main() {
 func generateSchemaForEirCtl(dir string) {
 
 	r := new(jsonschema.Reflector)
-	if err := r.AddGoComments("github.com/Ensono/eirctl", "./"); err != nil {
+	if err := r.AddGoComments("github.com/Ensono/eirctl", "./", jsonschema.WithFullComment()); err != nil {
 		log.Fatal(err.Error())
 	}
 	s := r.Reflect(&config.ConfigDefinition{})

@@ -142,7 +142,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 		}
 		taskOutput.Close()
 
-		err = execContext.After()
+		err = execContext.After(r.Stdout, r.Stderr)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -189,7 +189,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	if err != nil {
 		return err
 	}
-	//
+
 	job, err := r.compiler.CompileTask(t, execContext, stdin, taskOutput.Stdout(), taskOutput.Stderr(), env, vars)
 	if err != nil {
 		return err
@@ -228,8 +228,10 @@ func (r *TaskRunner) Cancel() {
 
 // Finish makes cleanup tasks over contexts
 func (r *TaskRunner) Finish() {
-	r.cleanupList.Range(func(key, value interface{}) bool {
-		value.(*ExecutionContext).Down()
+	// future iteration should properly type these
+	// context level Down are run after the task level After
+	r.cleanupList.Range(func(key, value any) bool {
+		value.(*ExecutionContext).Down(r.Stdout, r.Stderr)
 		return true
 	})
 }
@@ -316,12 +318,12 @@ func (r *TaskRunner) contextForTask(t *task.Task) (*ExecutionContext, error) {
 		r.cleanupList.Store(t.Context, context)
 	}
 
-	err := context.Up()
+	err := context.Up(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}
 
-	err = context.Before()
+	err = context.Before(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +408,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 	t.WithStart(time.Now())
 
 	for nextJob := job; nextJob != nil; nextJob = nextJob.Next {
-		cmd, err := utils.RenderString(nextJob.Command, nextJob.Vars.Map())
+		cmd, err := utils.ParseTemplate(nextJob.Command, nextJob.Vars.Map(), nextJob.Env.Map())
 		if err != nil {
 			return err
 		}
