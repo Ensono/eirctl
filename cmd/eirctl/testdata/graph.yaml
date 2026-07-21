@@ -1,3 +1,4 @@
+# Historical image tag used only by graph-rendering tests; it is not a maintained build selector.
 contexts:
   foo:
     container:
