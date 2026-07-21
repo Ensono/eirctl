@@ -22,11 +22,13 @@ var (
 // that remain expressions are kept as strings, rather than being matched against
 // raw YAML, so quoting, flow syntax, and indentation do not affect validation.
 type Workflow struct {
-	Path        string
-	Name        string
-	Triggers    map[string]bool
-	Permissions Permissions
-	Jobs        map[string]Job
+	Path             string
+	Name             string
+	Triggers         map[string]bool
+	WorkflowRunNames []string
+	Permissions      Permissions
+	Env              map[string]string
+	Jobs             map[string]Job
 }
 
 type Permissions map[string]string
@@ -39,13 +41,17 @@ type Job struct {
 	Permissions       Permissions
 	HasJobPermissions bool
 	Concurrency       string
+	Env               map[string]string
 	Steps             []Step
 }
 
 type Step struct {
+	ID   string
+	Name string
 	Uses string
 	Run  string
 	With map[string]string
+	Env  map[string]string
 }
 
 func main() {
@@ -126,11 +132,13 @@ func parseWorkflow(path string, content []byte) (Workflow, error) {
 	}
 	root := mapping(document.Content[0])
 	workflow := Workflow{
-		Path:        path,
-		Name:        scalar(root["name"]),
-		Triggers:    triggers(root["on"]),
-		Permissions: permissions(root["permissions"]),
-		Jobs:        map[string]Job{},
+		Path:             path,
+		Name:             scalar(root["name"]),
+		Triggers:         triggers(root["on"]),
+		WorkflowRunNames: workflowRunNames(root["on"]),
+		Permissions:      permissions(root["permissions"]),
+		Env:              stringMap(root["env"]),
+		Jobs:             map[string]Job{},
 	}
 	jobs := root["jobs"]
 	if jobs == nil || jobs.Kind != yaml.MappingNode {
@@ -148,6 +156,7 @@ func parseWorkflow(path string, content []byte) (Workflow, error) {
 			Environment:       environment(values["environment"]),
 			HasJobPermissions: values["permissions"] != nil,
 			Concurrency:       concurrency(values["concurrency"]),
+			Env:               stringMap(values["env"]),
 			Steps:             steps(values["steps"]),
 		}
 		if job.HasJobPermissions {
@@ -217,8 +226,17 @@ func triggers(node *yaml.Node) map[string]bool {
 	return result
 }
 
+func workflowRunNames(node *yaml.Node) []string {
+	workflowRun := mapping(node)["workflow_run"]
+	return stringsValue(mapping(workflowRun)["workflows"])
+}
+
 func permissions(node *yaml.Node) Permissions {
-	result := Permissions{}
+	return Permissions(stringMap(node))
+}
+
+func stringMap(node *yaml.Node) map[string]string {
+	result := map[string]string{}
 	for name, value := range mapping(node) {
 		if value.Kind == yaml.ScalarNode {
 			result[name] = value.Value
@@ -258,14 +276,21 @@ func steps(node *yaml.Node) []Step {
 		for key, value := range mapping(values["with"]) {
 			with[key] = scalar(value)
 		}
-		result = append(result, Step{Uses: scalar(values["uses"]), Run: scalar(values["run"]), With: with})
+		result = append(result, Step{
+			ID:   scalar(values["id"]),
+			Name: scalar(values["name"]),
+			Uses: scalar(values["uses"]),
+			Run:  scalar(values["run"]),
+			With: with,
+			Env:  stringMap(values["env"]),
+		})
 	}
 	return result
 }
 
 func validateWorkflow(workflow Workflow) error {
-	if !samePermissions(workflow.Permissions, Permissions{"contents": "read"}) {
-		return fmt.Errorf("%s must declare exactly contents: read at workflow scope", workflow.Path)
+	if !samePermissions(workflow.Permissions, expectedWorkflowPermissions(workflow.Path)) {
+		return fmt.Errorf("%s has unexpected workflow permissions: %#v", workflow.Path, workflow.Permissions)
 	}
 	for _, job := range workflow.Jobs {
 		effective := workflow.Permissions
@@ -422,6 +447,13 @@ func samePermissions(actual, expected Permissions) bool {
 	return true
 }
 
+func expectedWorkflowPermissions(path string) Permissions {
+	if path == ".github/workflows/trusted-sonarcloud-pr.yml" {
+		return Permissions{"actions": "read", "contents": "read", "pull-requests": "read"}
+	}
+	return Permissions{"contents": "read"}
+}
+
 func expectedJobPermissions(path, job string) Permissions {
 	allowed := map[string]map[string]Permissions{
 		".github/workflows/debug-build-request.yml": {
@@ -442,6 +474,9 @@ func expectedJobPermissions(path, job string) Permissions {
 		},
 		".github/workflows/scorecard.yml": {
 			"analysis": {"contents": "read", "security-events": "write", "id-token": "write"},
+		},
+		".github/workflows/trusted-sonarcloud-pr.yml": {
+			"analyze": {"actions": "read", "contents": "read", "pull-requests": "read"},
 		},
 	}
 	if jobs, ok := allowed[path]; ok {
@@ -517,6 +552,71 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if !ok || !hasCheckoutWithoutCredentials(analysis) {
 		return errors.New("scorecard must use job-scoped permissions and a checkout without credentials")
 	}
+	return validateTrustedSonarCloudTopology(workflows)
+}
+
+func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
+	const path = ".github/workflows/trusted-sonarcloud-pr.yml"
+	workflow, err := requiredWorkflow(workflows, path)
+	if err != nil {
+		return err
+	}
+	if len(workflow.Jobs) != 1 || !workflow.Triggers["workflow_run"] || len(workflow.WorkflowRunNames) != 1 || workflow.WorkflowRunNames[0] != "Lint and Test" ||
+		!samePermissions(workflow.Permissions, Permissions{"actions": "read", "contents": "read", "pull-requests": "read"}) {
+		return errors.New("trusted SonarCloud analyzer must use only the expected read-only workflow_run topology")
+	}
+
+	job, ok := workflow.Jobs["analyze"]
+	if !ok || job.Environment != "" || (job.HasJobPermissions && !samePermissions(job.Permissions, workflow.Permissions)) ||
+		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
+		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
+		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||
+		!strings.Contains(job.Concurrency, "github.event.workflow_run.pull_requests[0].number") ||
+		!strings.Contains(job.Concurrency, "github.event.workflow_run.head_sha") {
+		return errors.New("trusted SonarCloud analyzer must require a successful PR run and serialize each PR revision")
+	}
+	if containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
+		return errors.New("trusted SonarCloud analyzer must not use caches, local actions, or workflow/job-scoped secrets")
+	}
+
+	provenance, ok := stepByID(job, "provenance")
+	if !ok || !strings.Contains(provenance.Run, "expected_workflow='Lint and Test'") ||
+		!strings.Contains(provenance.Run, "expected_event='pull_request'") ||
+		!strings.Contains(provenance.Run, "expected_branch='main'") ||
+		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}") ||
+		!strings.Contains(provenance.Run, ".base.repo.full_name == $repository") ||
+		!strings.Contains(provenance.Run, ".base.ref == $branch") ||
+		!strings.Contains(provenance.Run, ".head.sha == $sha") ||
+		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}/artifacts") ||
+		!strings.Contains(provenance.Run, "expected exactly one current Sonar report artifact") {
+		return errors.New("trusted SonarCloud analyzer must resolve immutable workflow, PR, revision, and artifact provenance")
+	}
+
+	trustedCheckout, trustedCheckoutIndex := stepNamed(job, "Check out trusted report validator")
+	download, downloadIndex := stepNamed(job, "Download only the verified Sonar report artifact")
+	validateReports, validateIndex := stepNamed(job, "Validate bounded passive report artifact")
+	configure, configureIndex := stepNamed(job, "Create trusted scanner configuration")
+	sourceCheckout, sourceCheckoutIndex := stepNamed(job, "Materialize verified pull-request source as passive data")
+	scanner, scannerIndex := stepNamed(job, "Scan passive pull-request data with SonarCloud")
+	if trustedCheckoutIndex != 0 || !strings.HasPrefix(trustedCheckout.Uses, "actions/checkout@") || trustedCheckout.With["ref"] != "main" ||
+		trustedCheckout.With["persist-credentials"] != "false" || trustedCheckout.With["path"] != "trusted" ||
+		downloadIndex <= trustedCheckoutIndex || !strings.HasPrefix(download.Uses, "actions/download-artifact@") ||
+		download.With["repository"] != "${{ github.repository }}" || !strings.Contains(download.With["run-id"], "steps.provenance.outputs.run-id") ||
+		validateIndex != downloadIndex+1 || !strings.Contains(validateReports.Run, "trusted/scripts/validate-sonar-reports.sh analysis/reports") ||
+		configureIndex != validateIndex+1 || !strings.Contains(configure.Run, "analysis/sonar-project.properties") ||
+		sourceCheckoutIndex != configureIndex+1 || !strings.HasPrefix(sourceCheckout.Uses, "actions/checkout@") ||
+		sourceCheckout.With["ref"] != "${{ steps.provenance.outputs.head-sha }}" || sourceCheckout.With["persist-credentials"] != "false" || sourceCheckout.With["path"] != "analysis/source" ||
+		scannerIndex != sourceCheckoutIndex+1 || scannerIndex != len(job.Steps)-1 || scanner.Uses != "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f" ||
+		!strings.Contains(scanner.With["args"], "-Dsonar.projectBaseDir=analysis") || !strings.Contains(scanner.With["args"], "-Dsonar.host.url=https://sonarcloud.io") ||
+		!strings.Contains(scanner.With["args"], "-Dsonar.organization=ensono") || !strings.Contains(scanner.With["args"], "-Dsonar.projectKey=Ensono_eirctl") ||
+		!strings.Contains(scanner.With["args"], "-Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}") ||
+		!strings.Contains(scanner.With["args"], "-Dsonar.pullrequest.base=main") || !strings.Contains(scanner.With["args"], "-Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}") ||
+		!strings.Contains(scanner.With["args"], "-Dsonar.qualitygate.wait=true") {
+		return errors.New("trusted SonarCloud analyzer must validate passive inputs before its isolated immutable checkout and approved scanner")
+	}
+	if !onlyScannerReceivesSonarToken(workflow, job, scannerIndex) {
+		return errors.New("trusted SonarCloud analyzer must scope SONAR_TOKEN to the approved scanner step")
+	}
 	return nil
 }
 
@@ -526,6 +626,75 @@ func requiredWorkflow(workflows map[string]Workflow, path string) (Workflow, err
 		return Workflow{}, fmt.Errorf("required workflow %s is missing", path)
 	}
 	return workflow, nil
+}
+
+func stepByID(job Job, id string) (Step, bool) {
+	for _, step := range job.Steps {
+		if step.ID == id {
+			return step, true
+		}
+	}
+	return Step{}, false
+}
+
+func stepNamed(job Job, name string) (Step, int) {
+	for index, step := range job.Steps {
+		if step.Name == name {
+			return step, index
+		}
+	}
+	return Step{}, -1
+}
+
+func containsCache(job Job) bool {
+	for _, step := range job.Steps {
+		if strings.HasPrefix(step.Uses, "actions/cache@") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLocalAction(job Job) bool {
+	for _, step := range job.Steps {
+		if strings.HasPrefix(step.Uses, "./") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSecretInMap(values map[string]string) bool {
+	for _, value := range values {
+		if strings.Contains(value, "secrets.") {
+			return true
+		}
+	}
+	return false
+}
+
+func onlyScannerReceivesSonarToken(workflow Workflow, job Job, scannerIndex int) bool {
+	if hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
+		return false
+	}
+	for index, step := range job.Steps {
+		for _, value := range step.Env {
+			if strings.Contains(value, "SONAR_TOKEN") || strings.Contains(value, "secrets.") {
+				if index != scannerIndex || step.Env["SONAR_TOKEN"] != "${{ secrets.SONAR_TOKEN }}" || len(step.Env) != 1 {
+					return false
+				}
+			}
+		}
+		if strings.Contains(step.Run, "SONAR_TOKEN") || strings.Contains(step.Uses, "SONAR_TOKEN") {
+			return false
+		}
+		for _, value := range step.With {
+			if strings.Contains(value, "SONAR_TOKEN") || strings.Contains(value, "secrets.") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func jobUses(job Job, prefix string) bool {

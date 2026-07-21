@@ -16,7 +16,7 @@ jobs:
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Install GitVersion
@@ -33,15 +33,17 @@ jobs:
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
       - name: Check maintained Go versions
         run: scripts/check-go-version.sh
       - name: Check immutable CI dependencies
         run: scripts/check-immutable-ci-dependencies.sh
+      - name: Check CODEOWNERS coverage
+        run: scripts/check-codeowners.sh
       - name: Advisory workflow policy feedback (not required)
         run: scripts/check-workflow-security.sh
       - name: Linters
@@ -73,12 +75,12 @@ jobs:
       DOCKER_HOST: ${{ matrix.docker_host }}
     steps:
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
 
       - name: Check out code into the Go module directory
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -104,10 +106,21 @@ jobs:
 
       - name: Upload inert JUnit test report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: junit-report-${{ matrix.name }}
           path: .coverage/report-junit.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload bounded SonarCloud reports
+        if: ${{ always() && matrix.name == 'Linux' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .coverage/out
+            .coverage/report-junit.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -118,16 +131,14 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    env:
-      DOCKER_HOST: unix:///var/run/docker.sock
     steps:
       - name: Check out trusted main source with history
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
 
@@ -135,11 +146,16 @@ jobs:
         run: go run cmd/main.go run pipeline gha:unit:test --verbose
 
       - name: Scan trusted main source with SonarCloud
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: >
-          go run cmd/main.go run task sonar:scanner:cli --
-          -Dsonar.qualitygate.wait=true
+        with:
+          args: >-
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.organization=ensono
+            -Dsonar.projectKey=Ensono_eirctl
+            -Dsonar.scm.revision=${{ github.sha }}
+            -Dsonar.qualitygate.wait=true
 
   report:
     name: Publish test report
@@ -151,7 +167,7 @@ jobs:
       checks: write
     steps:
       - name: Download inert JUnit test report
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           pattern: junit-report-*

@@ -26,6 +26,10 @@ steps:
   - with:
       versionSpec: '6.0.5'
 YAML
+cat >"$fixture/.github/workflows/pr.yml" <<'YAML'
+steps:
+  - uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+YAML
 
 run_check() {
   (cd "$fixture" && "$script_dir/check-immutable-ci-dependencies.sh")

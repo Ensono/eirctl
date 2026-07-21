@@ -32,4 +32,13 @@ if ! grep -RInE 'govulncheck@v[0-9]+\.[0-9]+\.[0-9]+' eirctl.yaml shared/build/g
   fail "missing exact govulncheck module version"
 fi
 
+# GitHub Actions must use the official pinned scanner action rather than the
+# container task, whose non-root scanner cannot create .scannerwork on runners.
+if grep -RIn --include='*.yml' --include='*.yaml' 'sonar:scanner:cli' .github/workflows >/dev/null; then
+  fail "GitHub Actions must not invoke the container-backed sonar:scanner:cli task"
+fi
+if ! grep -Fq 'SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1' .github/workflows/pr.yml; then
+  fail "trusted main SonarCloud scan must use the reviewed immutable official scanner action"
+fi
+
 printf 'immutable CI dependency checks passed\n'

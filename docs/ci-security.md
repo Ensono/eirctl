@@ -29,9 +29,32 @@ Production deployment jobs must continue to use protected environments. Pull-req
 
 The `Lint and Test` workflow's **Advisory workflow policy feedback (not required)** step runs against the pull-request checkout only for fast contributor feedback. It is not an authoritative security boundary and must not be configured as the required workflow-policy check.
 
+## Ownership governance
+
+`.github/CODEOWNERS` assigns `.github/CODEOWNERS`, executable workflow files, and `sonar-project.properties` to `@Ensono/digital-tools-maintainers`. The `main-is-main` ruleset must require code-owner review for these files. CODEOWNERS is merge governance only: it never authorizes runtime behavior and does not replace workflow isolation, immutable provenance validation, least-privilege permissions, or secret scoping.
+
 ## Pull-request reporting
 
-The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN` or any other protected secret. It uploads the inert JUnit report as an artifact; a separate read-only-code reporting job downloads that artifact and receives only `checks: write` to publish the check. SonarCloud PR analysis remains disabled because it would expose a protected token to pull-request-controlled code. A separate `sonarcloud` job runs only after tests succeed for a trusted push to `main`; it checks out that trusted source, generates the reports, and receives `SONAR_TOKEN` only for the scan.
+The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN`, a protected environment, or another privileged credential. It uploads the inert JUnit report for check publication and a deterministic seven-day `sonar-reports-<run-id>-<attempt>` artifact containing only `.coverage/out` and `.coverage/report-junit.xml`. Missing coverage is a visible failed Sonar preparation result; it is never a silently skipped analysis.
+
+## Trusted SonarCloud pull-request analysis
+
+`Trusted SonarCloud pull-request analysis` is a protected-default-branch `workflow_run` workflow for completed `Lint and Test` pull-request runs. It is the only PR path that can receive `SONAR_TOKEN`, and its token is scoped to the immutable `SonarSource/sonarqube-scan-action` scanner step. The workflow has only `actions: read`, `contents: read`, and `pull-requests: read` permissions and does not restore or save a cache.
+
+Before any secret-bearing step, it resolves the upstream run through the GitHub API and fails closed unless the workflow name/event, base repository and `main` branch, pull-request number, full 40-character head SHA, run ID, run attempt, current PR revision, and exactly one current report artifact all match. The validated artifact is treated as passive parser input: the protected validator rejects missing reports, files over the configured bounds, symlinks, special files, traversal-derived paths, and all unexpected content.
+
+Only after that validation, the trusted workflow writes `analysis/sonar-project.properties`, then checks out the verified full PR SHA with `persist-credentials: false` into `analysis/source`. No pull-request command, local action, dependency, package manager, cache, container, binary, or alternate action may run after that checkout; the approved scanner is the sole consumer of the isolated source and reports. The scanner parser still processes attacker-controlled source while holding a narrowly scoped token, so scanner upgrades, full-SHA action pins, forced settings, and CODEOWNERS review remain essential controls rather than optional hardening.
+
+The scanner runs from the trusted `analysis` root and forces the SonarCloud endpoint, organization (`ensono`), project (`Ensono_eirctl`), source/test/report paths, PR number/branch/base, immutable revision, and quality-gate wait. The pull-request copy of `sonar-project.properties` is not used and cannot redirect the endpoint or project identity. Trusted pushes to `main` use the same pinned scanner action, retain trusted report generation and revision metadata, and wait for the quality gate.
+
+If the analyzer needs rollback, first remove the external SonarCloud required check from `main-is-main`, then disable the trusted PR analyzer. Do not restore a secret-bearing ordinary PR job or the former container scanner path; retain CODEOWNERS and the structural workflow-policy restrictions.
+
+### Rejected PR analysis designs
+
+- **Ordinary secret-bearing PR jobs** were rejected because pull-request code and forks could exfiltrate the token.
+- **Privileged PR builds** (`pull_request_target` or similar) were rejected because checking out and executing PR content in a privileged context breaks the trust boundary.
+- **Same-repository-only scanning** was rejected because fork pull requests also require reviewable SonarCloud analysis.
+- **SonarCloud automatic analysis** was rejected because this project requires explicit Go coverage and JUnit report ingestion.
 
 ## Debug prerelease process
 
