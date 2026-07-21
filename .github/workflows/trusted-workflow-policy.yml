@@ -31,8 +31,9 @@ jobs:
         env:
           PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: |
-          candidate_root="$(mktemp -d)"
-          trap 'rm -rf "$candidate_root"' EXIT
+          tmp_root="$(mktemp -d)"
+          candidate_root="$tmp_root/candidate"
+          trap 'rm -rf "$tmp_root"' EXIT
           scripts/materialize-policy-candidate \
             --pull-request "$PULL_REQUEST" \
             --output "$candidate_root"
