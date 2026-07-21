@@ -142,7 +142,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 		}
 		taskOutput.Close()
 
-		err = execContext.After()
+		err = execContext.After(r.Stdout, r.Stderr)
 		if err != nil {
 			logrus.Error(err)
 		}
@@ -157,18 +157,23 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	env := r.env.Merge(execContext.Env)
 	env = env.With("TASK_NAME", t.Name)
 	env = env.Merge(t.Env)
+
+	envfileEnv := variables.NewVariables()
 	// denormalized graph will append all ancestral env keys to the task
 	// if task also includes an envfile property
 	// We need to read it in and hang on the env for the command compiler.
-	if reader, exists := utils.ReaderFromPath(t.EnvFile); exists {
-		m, err := utils.ReadEnvFile(reader)
-		if err != nil {
-			return fmt.Errorf("%v, %w", err, utils.ErrEnvfileFormatIncorrect)
+	if readers, exists := utils.ReaderFromPath(t.EnvFile); exists {
+		for _, reader := range readers {
+			m, err := utils.ReadEnvFile(reader)
+			if err != nil {
+				return fmt.Errorf("%v, %w", err, utils.ErrEnvfileFormatIncorrect)
+			}
+			// now overwriting any env set properties in the envfile
+			envfileEnv = envfileEnv.Merge(variables.FromMap(m))
 		}
-		// now overwriting any env set properties in the envfile
-		env = variables.FromMap(m).Merge(env)
 	}
 
+	env = envfileEnv.Merge(env)
 	meets, err := r.checkTaskCondition(t)
 	if err != nil {
 		return err
@@ -184,7 +189,7 @@ func (r *TaskRunner) Run(t *task.Task) error {
 	if err != nil {
 		return err
 	}
-	//
+
 	job, err := r.compiler.CompileTask(t, execContext, stdin, taskOutput.Stdout(), taskOutput.Stderr(), env, vars)
 	if err != nil {
 		return err
@@ -223,8 +228,10 @@ func (r *TaskRunner) Cancel() {
 
 // Finish makes cleanup tasks over contexts
 func (r *TaskRunner) Finish() {
-	r.cleanupList.Range(func(key, value interface{}) bool {
-		value.(*ExecutionContext).Down()
+	// future iteration should properly type these
+	// context level Down are run after the task level After
+	r.cleanupList.Range(func(key, value any) bool {
+		value.(*ExecutionContext).Down(r.Stdout, r.Stderr)
 		return true
 	})
 }
@@ -311,12 +318,12 @@ func (r *TaskRunner) contextForTask(t *task.Task) (*ExecutionContext, error) {
 		r.cleanupList.Store(t.Context, context)
 	}
 
-	err := context.Up()
+	err := context.Up(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}
 
-	err = context.Before()
+	err = context.Before(r.Stdout, r.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +408,7 @@ func (r *TaskRunner) execute(ctx context.Context, t *task.Task, job *Job) error 
 	t.WithStart(time.Now())
 
 	for nextJob := job; nextJob != nil; nextJob = nextJob.Next {
-		cmd, err := utils.RenderString(nextJob.Command, nextJob.Vars.Map())
+		cmd, err := utils.ParseTemplate(nextJob.Command, nextJob.Vars.Map(), nextJob.Env.Map())
 		if err != nil {
 			return err
 		}

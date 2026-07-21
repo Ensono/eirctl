@@ -25,6 +25,10 @@ Whilst it is built within the Ensono ecosystem and is used within the Ensono Ind
 
 ## [Installation](./docs/installation.md)
 
+## Development prerequisites
+
+Maintained local builds and validation require **Go 1.26.5**. Use the exact patch release so local builds match CI and the builder images.
+
 ## Configuration
 
 The configuration is driven through YAML which has its [schema](https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json) published and maintained. For an easier developer experience it can integrated into your IDE.
@@ -67,18 +71,80 @@ Each task, stage and context has variables to be used to render task's fields - 
 Along with globally predefined, variables can be set in a task's definition.
 You can use those variables according to `text/template` [documentation](https://pkg.go.dev/text/template).
 
+> In addition to all the stdlib defined functions, there are all the [sprig](https://masterminds.github.io/sprig/) available as well as the following:
+- `isset` function which checks if a variable is set i.e. not `null` for "arrays" (Golang Slice) and maps or `""` for strings. 
+- `fromYaml` function which takes in arbitrary Yaml like structure and iterates over it - see [Special note on fromYaml](#special-note-on-fromyaml)
+    > This is only available on `Variables` as `Env` must always be a string like value.
+    > NB: it's best to only set this in the YAML config directly as opposed to passing it via the command line using set - *this will result* in double escaping and the result may not be iterable/indexeable.
+- `toYaml` function which takes a yaml like string and converts it to a proper structure that can be iterated or indexed by property
+
+See below for some examples.
+
 Predefined variables are:
 
 - `.Root` - root config file directory
-- `.Dir` - config file directory
+- `.Dir` - config file directory or set by the value set in the `dir` property of the task
 - `.TempDir` - system's temporary directory
 - `.Args` - provided arguments as a string - useful in assigning additional caller defined args to binaries inside a task
 - `.ArgsList` - array of provided arguments - useful for templating
 - `.Task.Name` - current task's name
 - `.Context.Name` - current task's execution context's name
 - `.Stage.Name` - current stage's name
+- `.Env.EnvVarKey` - the current tasks injected variables these are computed throughout the pipeline execution and `EnvVarKey` is the case senstive environment variable name.
+- `.Current.OS` - is the current OS as defined by runtime.GOOS
+- `.Current.Arch` - is the current Architecture as defined by runtime.GOARCH
 
 User supplied vars i.e. using the `--set Var1=value` will all be merged and are available for templating and Required checking
+
+*example_var_from_json_list*:
+
+```yaml
+json:from:list:
+  command: 
+    - |
+      {{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}
+  env:
+    FOO: bar
+```
+
+`eirctl json:from:list --set jsonStringList='["foo","bar"]'
+
+output would be:
+
+```sh
+echo foo bar
+echo bar bar
+```
+
+#### Special note on fromYaml
+
+```yaml
+tasks:
+  yaml:structure:variable:
+    command: |
+      {{ range $_, $val := (fromYaml .YamlList) }}
+      echo "{{ $.TopLevelString }} -c {{ $val.Cmd }} > {{ $val.Path }}.test"
+      {{end }}
+    variables:
+      TopLevelString: some_command_exec
+      YamlList:
+        - Cmd: php --version
+          Path: php_v
+        - Cmd: php -m
+          Path: php_m
+        - Cmd: configmanager --version
+          Path: cfgmgr
+```
+
+`eirtctl run yaml:structure:variable` => will output
+
+```sh
+some_command_exec -c php --version > php_v.test
+some_command_exec -c php -m > php_m.test
+some_command_exec -c configmanager --version > cfgmgr.test
+```
+
+> :info: when an optional variable is not provided and it has no default,isset,if/else wrapping the template will return in its place the text: `##__EIRCTL_NO_VALUE__##`.
 
 ### Pass CLI arguments to task
 
@@ -128,6 +194,21 @@ task:requiredVar:
 
 > [!TIP]
 > When running this task in an eirctl pipeline, `REQUIRED_ENV` can be set in a previous task, in global env, in an envfile, via a direct assignment the parent pipeline(s).
+
+:warning: if a variable is not set in the `required.vars` list and the template does not do any checking - as per the below example with `isset` checking for a set value.
+
+```yaml
+task:requiredVar:
+  command: command {{ .Env.FOO }} {{ .SetMe }} {{ if isset .OptionalSet }}{{ .OptionalSet }}{{ end }}
+  required:
+    env: [FOO]
+    vars:
+      - SetMe
+```
+
+The `SetMe` variable will be checked before the command is templated and will fail if unset, the `OptionalSet` will be checked at template runtime. 
+
+> IF however the command would look like this `command {{ .Env.FOO }} {{ .SetMe }} {{ .OptionalSet }}` and the eirctl required variables have been provided by the `OptionalSet` was omitted the result would look like this `command FOO_value SetMeValue <no value>`
 
 ### Storing task's output
 
@@ -213,6 +294,7 @@ Stage definition takes following parameters:
 - `task` - task to execute on this stage
 - `pipeline` - pipeline to execute on this stage
 - `env` - environment variables. All existing environment variables will be passed automatically
+- `envfile` - envfile specifications allow you to to leverage a cascade of envfile paths and rules.Tthese get merged with  any envfiles specified on the task level.
 - `depends_on` - name of stage on which this stage depends on. This stage will be started only after referenced stage is completed.
 - `allow_failure` - if `true` failing stage will not interrupt pipeline execution. ``false`` by default
 - `condition` - condition to check before running stage
@@ -279,6 +361,14 @@ It uses the native Go API for OCI compliant runtimes (docker, podman, containerd
 > [!IMPORTANT]
 > This means you don't need the docker cli installed
 
+The `container_args` section supports several Docker-compatible flags:
+
+- `-v, --volume`: Mount volumes (supports environment variable expansion like `$HOME`, `$PWD`, `~`)
+- `-p, --port`: Port mappings
+- `-u, --user`: User and group IDs
+- `--userns`: User namespace mode (e.g., `private`, `host`, `container:id`)
+- `--add-host`: Add custom host-to-IP mappings (e.g., `--add-host=hostname:ip`)
+
 There are however _three_ ways of achieving the same thing
 
 ```yaml
@@ -292,6 +382,8 @@ contexts:
         - -v $HOME/foo:/foo
         - -v ~/bar:/bar
         - -p 10000:80
+        - --add-host=myhost:10.0.0.1
+        - --add-host=myother:127.0.0.1
       shell: sh
       shell_args:
         - -c
@@ -352,6 +444,16 @@ The runner package:
 - [Executor Container's](runner/executor_container.go) public API, specifically the `Execute` method is a potentially useful single shot execution.
 
 - [TaskRunner](runner/runner.go)'s `Run` method is a useful scheduling flow where multiple tasks need coordinating.
+
+## Troubleshooting
+
+### Windows - TLS Certificate Errors When Downloading Go Packages in Container
+
+The error `tls: failed to verify certificate: x509: certificate signed by unknown authority` can occur when downloading Go packages within a container. This is often due to corporate proxies like Cisco Umbrella intercepting HTTPS traffic.
+
+**Workaround**: Set the `GOPROXY` environment variable to `direct` to bypass the proxy.
+
+Setting `GOPROXY=direct` forces Go to fetch packages directly from their source repositories, bypassing any proxies that may be intercepting certificates.
 
 ## How to contribute?
 

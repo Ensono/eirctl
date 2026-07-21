@@ -2,19 +2,38 @@ package utils_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/sirupsen/logrus"
 )
+
+func getHomeFromEnv() (string, error) {
+	var home string
+
+	if runtime.GOOS == "windows" {
+		home = os.Getenv("USERPROFILE")
+	} else {
+		home = os.Getenv("HOME")
+	}
+
+	if home == "" {
+		return "", errors.New("Couldn't locate home directory variable")
+	}
+
+	return home, nil
+}
 
 func TestConvertEnv(t *testing.T) {
 	type args struct {
@@ -161,10 +180,11 @@ func TestMapKeys(t *testing.T) {
 	}
 }
 
-func TestRenderString(t *testing.T) {
+func TestParseTemplate(t *testing.T) {
 	type args struct {
 		tmpl      string
-		variables map[string]interface{}
+		variables map[string]any
+		env       map[string]any
 	}
 	tests := []struct {
 		name    string
@@ -172,18 +192,122 @@ func TestRenderString(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{args: args{tmpl: "hello, {{ .Name }}!", variables: map[string]interface{}{"Name": "world"}}, want: "hello, world!"},
-		{args: args{tmpl: "hello, {{ .Name | default \"John\" }}!", variables: map[string]interface{}{"Name": ""}}, want: "hello, John!"},
-		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]interface{})}, wantErr: true},
-		{args: args{tmpl: "hello, {{ .Name", variables: make(map[string]interface{})}, wantErr: true},
+		{args: args{tmpl: "hello, {{ .Name }}!", variables: map[string]any{"Name": "world"}}, want: "hello, world!"},
+		{args: args{tmpl: "hello, {{ .Name | default \"John\" }}!", variables: map[string]any{"Name": ""}}, want: "hello, John!"},
+		{args: args{tmpl: "hello, {{ .Name }}!", variables: make(map[string]any)}, want: "hello, ##__EIRCTL_NO_VALUE__##!"},
+		{args: args{tmpl: "hello, {{ .Name", variables: make(map[string]any)}, wantErr: true},
+		// sprig template funcs
+		{args: args{
+			tmpl:      "{{ range (.StringCommaSeparatedList | splitList \",\") }}echo {{ . }}\n{{ end }}",
+			variables: map[string]any{"StringCommaSeparatedList": `foo,bar`}},
+			want: "echo foo\necho bar\n"},
+		// more advanced tests and scenarios can be found on the sprig repo, since we are using their template funcs: https://masterminds.github.io/sprig/
+		// Env. tests
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      "{{ range (.StringCommaSeparatedList | splitList \",\") }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}",
+			variables: map[string]any{"StringCommaSeparatedList": `foo,bar`},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "echo foo bar\necho bar bar\n",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      "{{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}",
+			variables: map[string]any{"jsonStringList": `["foo","bar"]`},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "echo foo bar\necho bar bar\n",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      "{{ if .jsonStringList }}{{ range (fromJson .jsonStringList ) }}echo {{ . }} {{ $.Env.FOO }}\n{{ end }}{{ end }}",
+			variables: map[string]any{"jsonStringList": ``},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "",
+		},
+		{args: args{
+			tmpl:      `command {{ $.Env.FOO }} {{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": `--foo --bar`},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar --foo --bar",
+		},
+		{args: args{
+			tmpl:      `command {{ $.Env.FOO }}{{ if .jsonStringList }}{{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": ``},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar",
+		},
+		{args: args{
+			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }} {{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }}{{ if isset .jsonStringList }} {{ .jsonStringList }}{{ end }}`,
+			variables: map[string]any{"jsonStringList": "qux"},
+			env:       map[string]any{"FOO": "bar"}},
+			want: "command bar qux",
+		},
+		{args: args{
+			// need to use the $ notation as range changes the scope
+			tmpl:      `command {{ $.Env.FOO }} {{ .jsonStringList }}`,
+			variables: map[string]any{},
+			env:       map[string]any{}},
+			want: "command ##__EIRCTL_NO_VALUE__## ##__EIRCTL_NO_VALUE__##",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := utils.RenderString(tt.args.tmpl, tt.args.variables)
+			logrus.SetLevel(logrus.DebugLevel)
+			b := &bytes.Buffer{}
+			logrus.SetOutput(b)
+
+			got, err := utils.ParseTemplate(tt.args.tmpl, tt.args.variables, tt.args.env)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseTemplate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("ParseTemplate() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_RenderString_fromYaml(t *testing.T) {
+	testCases := map[string]struct {
+		tmpl      string
+		variables map[string]any
+		env       map[string]any
+		want      string
+		wantErr   bool
+	}{
+		"valid YAML simple list": {
+			tmpl:      "{{ range (fromYaml .YamlList) }}{{ . }}\n{{end }}",
+			variables: map[string]any{"YamlList": []string{"one", "two", "three"}},
+			want: `one
+two
+three
+`,
+		},
+		"valid YAML complex list": {
+			tmpl:      "{{ range $key, $val := (fromYaml .YamlList) }}echo {{ $val.key }}\n{{end }}",
+			variables: map[string]any{"YamlList": []struct{ Key string }{{Key: "one"}, {Key: "two"}, {Key: "three"}}},
+			want: `echo one
+echo two
+echo three
+`,
+		},
+	}
+	for tn, tt := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			got, err := utils.ParseTemplate(tt.tmpl, tt.variables, tt.env)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RenderString() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
 			if !tt.wantErr && got != tt.want {
 				t.Errorf("RenderString() got = %v, want %v", got, tt.want)
 			}
@@ -196,19 +320,20 @@ func TestMustGetwd(t *testing.T) {
 	if wd != utils.MustGetwd() {
 		t.Error()
 	}
-
 }
 
 func TestMustGetUserHomeDir(t *testing.T) {
-	err := os.Setenv("HOME", "/test")
+	expected, err := getHomeFromEnv()
+
 	if err != nil {
 		t.Fatal(err)
 	}
-	hd := utils.MustGetUserHomeDir()
-	if hd != "/test" {
-		t.Error()
-	}
 
+	hd := utils.MustGetUserHomeDir()
+
+	if hd != expected {
+		t.Fatal(hd)
+	}
 }
 
 // Test envfile
@@ -280,7 +405,6 @@ fdsggfd gdf`},
 }
 
 func TestUtils_ConvertToMapOfStrings(t *testing.T) {
-	t.Parallel()
 	in := make(map[string]any)
 	in["str"] = "string"
 	in["int"] = 123
@@ -336,7 +460,6 @@ func TestUtils_ConvertToMachineFriendly(t *testing.T) {
 }
 
 func TestUtils_TailExtractName(t *testing.T) {
-	t.Parallel()
 	ttests := map[string]struct {
 		input  string
 		expect string
@@ -356,6 +479,7 @@ func TestUtils_TailExtractName(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			got := utils.TailExtract(tt.input)
 			if got != tt.expect {
 				t.Errorf("TailExtract error: got %s, wanted %s\n", got, tt.expect)
@@ -365,7 +489,6 @@ func TestUtils_TailExtractName(t *testing.T) {
 }
 
 func TestUtils_CascadeName(t *testing.T) {
-	t.Parallel()
 	ttests := map[string]struct {
 		parents []string
 		curr    string
@@ -423,14 +546,16 @@ func TestUtils_DefaultTaskctlEnv(t *testing.T) {
 
 func TestUtils_ReaderFromPath(t *testing.T) {
 	t.Parallel()
-	tf, _ := os.CreateTemp("", "test-reader-*.env")
+	testDir := filepath.Join("testdata", "sandbox_test")
+	os.MkdirAll(testDir, 0755)
+	tf, _ := os.CreateTemp(testDir, "test-reader-*.env")
 	_, err := tf.Write([]byte(`FOO=bar`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(tf.Name())
 	ef := utils.NewEnvFile()
-	ef.WithPath(tf.Name())
+	ef.WithPath([]string{tf.Name()})
 	r, success := utils.ReaderFromPath(ef)
 	if !success {
 		t.Error("reader failed to create")
@@ -438,9 +563,152 @@ func TestUtils_ReaderFromPath(t *testing.T) {
 	if r == nil {
 		t.Fatal("reader empty")
 	}
-	b, err := io.ReadAll(r)
+	b := []byte{}
+	for _, reader := range r {
+		out, _ := io.ReadAll(reader)
+		b = append(b, out...)
+	}
 	if string(b) != `FOO=bar` {
 		t.Error("wrong data written")
+	}
+}
+
+func TestUtils_ReaderFromPath_WithEnvVarExpansion(t *testing.T) {
+	testDir := filepath.Join("testdata", "sandbox_test_expand")
+	os.MkdirAll(testDir, 0755)
+	defer os.RemoveAll(testDir)
+
+	envContent := "ENV_VAR=dev"
+	envFilePath := filepath.Join(testDir, "environment.env")
+	if err := os.WriteFile(envFilePath, []byte(envContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Get the absolute path of testDir so the env var expands to an absolute path inside the sandbox
+	absTestDir, err := filepath.Abs(testDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EIRCTL_TEST_ENVFILE_DIR", absTestDir)
+
+	ef := utils.NewEnvFile()
+	ef.WithPath([]string{"$EIRCTL_TEST_ENVFILE_DIR/environment.env"})
+
+	r, success := utils.ReaderFromPath(ef)
+	if !success {
+		t.Fatal("reader failed to create")
+	}
+	if r == nil {
+		t.Fatal("reader empty")
+	}
+
+	b := []byte{}
+	for _, reader := range r {
+		out, _ := io.ReadAll(reader)
+		b = append(b, out...)
+	}
+	if string(b) != envContent {
+		t.Errorf("got %q, want %q", string(b), envContent)
+	}
+}
+
+func TestIsPathInsideSandbox(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("path inside working directory", func(t *testing.T) {
+		p := filepath.Join(wd, "configs", "app.env")
+		if !utils.IsPathInsideSandbox(p) {
+			t.Errorf("expected %q to be inside sandbox", p)
+		}
+	})
+
+	t.Run("relative path stays in project", func(t *testing.T) {
+		if !utils.IsPathInsideSandbox("subdir/file.env") {
+			t.Error("expected relative path to be inside sandbox")
+		}
+	})
+
+	t.Run("path outside sandbox is rejected", func(t *testing.T) {
+		if utils.IsPathInsideSandbox("/etc/shadow") {
+			t.Error("expected /etc/shadow to be outside sandbox")
+		}
+	})
+
+	t.Run("path traversal is rejected", func(t *testing.T) {
+		p := filepath.Join(wd, "..", "..", "etc", "passwd")
+		if utils.IsPathInsideSandbox(p) {
+			t.Errorf("expected traversal path %q to be outside sandbox", p)
+		}
+	})
+
+	t.Run("symlink to outside is rejected", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink creation requires elevated privileges on Windows")
+		}
+		// Create a symlink inside the working directory pointing outside
+		linkDir := filepath.Join("testdata", "symlink_test")
+		os.MkdirAll(linkDir, 0755)
+		defer os.RemoveAll(linkDir)
+
+		linkPath := filepath.Join(linkDir, "escape")
+		os.Remove(linkPath) // clean up any prior run
+		if err := os.Symlink("/etc", linkPath); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+
+		target := filepath.Join(linkPath, "passwd")
+		if utils.IsPathInsideSandbox(target) {
+			t.Errorf("expected symlinked path %q to be outside sandbox", target)
+		}
+	})
+
+	t.Run("symlink within project is allowed", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink creation requires elevated privileges on Windows")
+		}
+		// Create a real file and a symlink to it, both inside the working directory
+		linkDir := filepath.Join("testdata", "symlink_test_happy")
+		os.MkdirAll(linkDir, 0755)
+		defer os.RemoveAll(linkDir)
+
+		realFile := filepath.Join(linkDir, "real.env")
+		os.WriteFile(realFile, []byte("OK=true"), 0644)
+
+		linkPath := filepath.Join(linkDir, "link.env")
+		os.Remove(linkPath)
+		if err := os.Symlink(realFile, linkPath); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+
+		if !utils.IsPathInsideSandbox(linkPath) {
+			t.Errorf("expected symlinked path %q within project to be inside sandbox", linkPath)
+		}
+	})
+}
+
+func TestUtils_ReaderFromPath_OutsideSandbox(t *testing.T) {
+	// Point an env var to a system directory outside the project.
+	// The file doesn't need to exist — the sandbox check should
+	// reject it before os.Stat is called.
+	outsidePath := "/etc"
+	if runtime.GOOS == "windows" {
+		outsidePath = `C:\Windows`
+	}
+
+	t.Setenv("EVIL_PATH", outsidePath)
+
+	ef := utils.NewEnvFile()
+	ef.WithPath([]string{"$EVIL_PATH/secret.env"})
+
+	r, _ := utils.ReaderFromPath(ef)
+	if len(r) > 0 {
+		for _, reader := range r {
+			reader.Close()
+		}
+		t.Error("expected no readers for path outside sandbox")
 	}
 }
 
@@ -636,21 +904,26 @@ MULTI=somekey=someval`))},
 }
 
 func Test_NormalizeHome(t *testing.T) {
-	os.Setenv("HOME", "/foo/bar")
-	defer os.Unsetenv("HOME")
+	homeDir, err := getHomeFromEnv()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ttests := map[string]struct {
 		volStr string
 		want   string
 	}{
 		"$HOME": {
 			volStr: "$HOME/baz:/usr/share/nginx/html",
-			want:   "/foo/bar/baz:/usr/share/nginx/html",
+			want:   fmt.Sprintf("%s/baz:/usr/share/nginx/html", homeDir),
 		},
 		"${HOME}": {
 			volStr: "${HOME}/baz:/usr/share/nginx/html",
-			want:   "/foo/bar/baz:/usr/share/nginx/html",
+			want:   fmt.Sprintf("%s/baz:/usr/share/nginx/html", homeDir),
 		},
 	}
+
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
 			got := utils.NormalizeHome(tt.volStr)

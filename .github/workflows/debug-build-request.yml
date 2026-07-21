@@ -1,0 +1,52 @@
+name: Request debug build
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  request:
+    if: >-
+      github.event.issue.pull_request != null &&
+      github.event.comment.body == '/build-debug'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: debug-build-request-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Authorize and dispatch debug build
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pullNumber = context.issue.number;
+            const permission = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor,
+            });
+            if (!['write', 'maintain', 'admin'].includes(permission.data.permission)) {
+              core.setFailed('Only repository maintainers may request a debug build.');
+              return;
+            }
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'debug-build.yml',
+              ref: 'main',
+              inputs: {
+                pull_request: String(pullNumber),
+                commit_sha: pullRequest.head.sha,
+              },
+            });

@@ -1,0 +1,45 @@
+version: 2
+dist: bin
+
+builds:
+  - dir: cmd/eirctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - "386"
+      - amd64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+      - "8"
+    ignore:
+      - goos: darwin
+        goarch: 386
+    gcflags:
+      - all=-trimpath={{.Env.GOPATH}}
+
+archives:
+  - format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+source:
+  enabled: true
+
+release:
+  prerelease: auto
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  skip: true

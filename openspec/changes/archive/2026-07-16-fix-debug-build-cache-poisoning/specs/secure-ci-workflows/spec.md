@@ -1,0 +1,51 @@
+## MODIFIED Requirements
+
+### Requirement: Untrusted code executes without privileged credentials
+Any workflow job that checks out or executes pull-request-controlled code SHALL run under an unprivileged `pull_request` event with read-only repository permissions and SHALL NOT receive release credentials, protected environment secrets, package-write permission, contents-write permission, or default-branch cache authority. A privileged event handler MAY authorize and signal an untrusted build but SHALL NOT check out or execute the pull-request revision itself.
+
+#### Scenario: Pull request build runs
+- **WHEN** a workflow builds or tests code from a pull request
+- **THEN** the job executes under a `pull_request` event with no more than `contents: read` repository access, no protected secrets or environment, and cache scope isolated from the default branch
+
+#### Scenario: Issue comment requests a debug build
+- **WHEN** an authorized maintainer comments `/build-debug` on a pull request
+- **THEN** the privileged comment handler performs no pull-request checkout or execution and signals a separate `pull_request`-triggered build for that PR
+
+#### Scenario: Signaled debug build runs
+- **WHEN** the build signal causes the pull-request workflow to run
+- **THEN** the build resolves identity from the pull-request event, checks out the immutable head commit SHA, and records the pull request and commit SHA in artifact provenance
+
+### Requirement: Debug publication is isolated from untrusted execution
+The system SHALL publish a debug prerelease only from a separate trusted job or workflow that does not check out or execute pull-request-controlled code and that requires an authenticated maintainer action or protected-environment approval.
+
+#### Scenario: Maintainer publishes a successful debug build
+- **WHEN** an authorized maintainer selects a successful unprivileged pull-request debug build whose workflow identity, event, repository, pull request, commit SHA, run attempt, and artifact provenance pass validation
+- **THEN** the trusted publication flow downloads the build artifact as opaque data and publishes it with only the permissions required to create the prerelease
+
+#### Scenario: Publication metadata does not match
+- **WHEN** the selected build failed, used a privileged build event, came from another repository, or does not match the intended pull request, current commit SHA, run attempt, or provenance
+- **THEN** publication stops before obtaining or using repository-write authority
+
+#### Scenario: Artifact is published
+- **WHEN** the trusted publication flow handles an artifact produced from untrusted code
+- **THEN** it does not execute that artifact or any code from the pull-request checkout
+
+## ADDED Requirements
+
+### Requirement: Workflow policy rejects privileged untrusted execution
+The repository's workflow security policy SHALL reject workflows that combine a privileged or default-branch trigger with checkout and execution of pull-request-controlled code, and SHALL validate the separated broker, builder, and publisher trust domains.
+
+#### Scenario: Privileged workflow executes pull-request code
+- **WHEN** static workflow validation finds an `issue_comment`, `pull_request_target`, `workflow_run`, `repository_dispatch`, or `workflow_dispatch` path that checks out a pull-request-controlled revision and executes content from that checkout
+- **THEN** validation fails with a trust-boundary error
+
+#### Scenario: Debug build topology is valid
+- **WHEN** static workflow validation inspects the debug-build flow
+- **THEN** it confirms that the broker performs no checkout, the builder runs under `pull_request` with immutable SHA and read-only isolation, and the publisher performs no pull-request checkout or execution
+
+### Requirement: Security validation includes static analysis
+Before this change is accepted, the repository SHALL run Go tests, `go vet`, `staticcheck`, and `gosec` in addition to workflow policy, workflow lint, Go-version, vulnerability, and OpenSpec validation. Pre-existing findings outside the debug-build trust boundary SHALL be recorded as a separately tracked baseline; this change SHALL not introduce a regression in that baseline.
+
+#### Scenario: Change validation runs
+- **WHEN** the debug-build trust-boundary change is validated
+- **THEN** workflow policy, workflow lint, Go tests, Go-version, and OpenSpec validation complete successfully; all required analyzers run; and any unrelated pre-existing analyzer findings are documented for separate remediation

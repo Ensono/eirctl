@@ -28,13 +28,14 @@ type GraphError struct {
 
 // ExecutionGraph is a DAG whose nodes are Stages and edges are their dependencies
 type ExecutionGraph struct {
-	errors    []GraphError
 	Generator map[string]any
 	Env       map[string]string
 	EnvFile   *utils.Envfile
-	name      string
-	alias     string
-	nodes     map[string]*Stage
+	//
+	errors []GraphError
+	name   string
+	alias  string
+	nodes  map[string]*Stage
 	// parent holds the children reference of the node
 	parent map[string][]string
 	// children points back children the parent reference
@@ -112,20 +113,6 @@ func (g *ExecutionGraph) AddStage(stage *Stage) error {
 	return nil
 }
 
-// addNode adds a new node to the map (index of nodes)
-func (g *ExecutionGraph) addNode(name string, stage *Stage) {
-	g.nodes[name] = stage
-}
-
-// addEdge adds a new edge to the graph
-// from is the child
-// to is the parent of the node
-func (g *ExecutionGraph) addEdge(parent string, child string) error {
-	g.parent[child] = append(g.parent[child], parent)
-	g.children[parent] = append(g.children[parent], child)
-	return g.cycleDfs(parent, make(map[string]bool), make(map[string]bool))
-}
-
 // Nodes returns ExecutionGraph stages - an n-ary tree itself
 // Stage (Node) may appear multiple times in a scheduling scenario,
 // this is desired behaviour to loop over the nodes as many times
@@ -198,6 +185,20 @@ func (g *ExecutionGraph) BFSNodesFlattened(nodeName string) StageList {
 		}
 	}
 	return bfsStages
+}
+
+// addNode adds a new node to the map (index of nodes)
+func (g *ExecutionGraph) addNode(name string, stage *Stage) {
+	g.nodes[name] = stage
+}
+
+// addEdge adds a new edge to the graph
+// from is the child
+// to is the parent of the node
+func (g *ExecutionGraph) addEdge(parent string, child string) error {
+	g.parent[child] = append(g.parent[child], parent)
+	g.children[parent] = append(g.children[parent], child)
+	return g.cycleDfs(parent, make(map[string]bool), make(map[string]bool))
 }
 
 // cycleDfs is DFS utility to traverse

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"regexp"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/docker/go-connections/nat"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 )
@@ -32,6 +34,8 @@ type ContainerContext struct {
 	Image      string
 	Entrypoint []string
 	ShellArgs  []string
+	// pullTimeout is the number of seconds to wait until we cancel the pull context
+	pullTimeout int
 	// BindMount uses --mount instead of -v
 	//
 	// when running on Windows mount is default as volume mapping does not work.
@@ -47,14 +51,37 @@ type ContainerContext struct {
 	userns string
 	// Ports map from host to container
 	ports []string
+	// extraHosts contains custom host-to-IP mappings for /etc/hosts
+	extraHosts []string
+	// platform sets the platform compatibility layer
+	platform string
+	// capabilities adds any capabilities as per the [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+	//
+	// e.g. --cap-add=SYS_ADMIN adds the `CAP_SYS_ADMIN` from the linux man page
+	//
+	// the special case of adding all capabilities can be done via `--cap-add=ALL`
+	capabilities []string
 }
 
+type ContainerContextOpt func(cc *ContainerContext)
+
 // NewContainerContext accepts name of the image
-func NewContainerContext(name string) *ContainerContext {
-	return &ContainerContext{
+func NewContainerContext(name string, opts ...ContainerContextOpt) *ContainerContext {
+	cc := &ContainerContext{
 		Image:       name,
 		volumes:     make(map[string]struct{}),
 		envOverride: make(map[string]string),
+		pullTimeout: 0,
+	}
+	for _, opt := range opts {
+		opt(cc)
+	}
+	return cc
+}
+
+func WithContainerContextPullTimeout(p int) ContainerContextOpt {
+	return func(cc *ContainerContext) {
+		cc.pullTimeout = p
 	}
 }
 
@@ -62,6 +89,11 @@ func (c *ContainerContext) WithVolumes(vols ...string) *ContainerContext {
 	for _, v := range vols {
 		c.volumes[v] = struct{}{}
 	}
+	return c
+}
+
+func (c *ContainerContext) WithPlatform(v string) *ContainerContext {
+	c.platform = v
 	return c
 }
 
@@ -101,7 +133,10 @@ func newContainerArgs(cargs []string) *containerArgs {
 	_ = flagSet.StringArrayP("volume", "v", []string{}, "")
 	_ = flagSet.StringArrayP("port", "p", []string{}, "")
 	flagSet.VarP(userVarFlag, "user", "u", "")
-	_ = flagSet.StringP("userns", "", "", "")
+	_ = flagSet.String("userns", "", "")
+	_ = flagSet.StringArray("add-host", []string{}, "")
+	_ = flagSet.StringArray("cap-add", []string{}, "")
+	_ = flagSet.String("platform", "", "")
 	// TODO: refactor this to use first class properties
 	// on the container object in config/container_definition
 
@@ -117,23 +152,29 @@ func (c *ContainerContext) ParseContainerArgs(cargs []string) (*ContainerContext
 	return c, nil
 }
 
+// parserFunc
+type parserFunc func(cc *ContainerContext) error
+
 func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	osArgs := []string{}
 	for _, v := range ca.args {
 		// expand env on the whole slice item in case
 		// both the key and value are both coming from an env variable
-		osArgs = append(osArgs, strings.Fields(os.ExpandEnv(v))...)
+		// The key/flag name should never come from a variable "¯\_(ツ)_/¯" but you never know...
+		//
+		// This ensures env expansion on containerArgs happens in a single place
+		osArgs = append(osArgs, strings.Fields(utils.NormalizeHome(os.ExpandEnv(v)))...)
 	}
 
 	if err := ca.flagSet.Parse(osArgs); err != nil {
 		return err
 	}
-
 	user, err := ca.flagSet.GetString("user")
+
 	if err != nil {
 		return err
 	}
-	cc.user = os.ExpandEnv(strings.TrimSpace(user))
+	cc.user = strings.TrimSpace(user)
 
 	ports, err := ca.flagSet.GetStringArray("port")
 	if err != nil {
@@ -155,11 +196,23 @@ func (ca *containerArgs) parseArgs(cc *ContainerContext) error {
 	if err != nil {
 		return err
 	}
-	cc.userns = os.ExpandEnv(strings.TrimSpace(userns))
+	cc.userns = strings.TrimSpace(userns)
 
-	if err := ca.parseVolumes(cc); err != nil {
+	platform, err := ca.flagSet.GetString("platform")
+	if err != nil {
 		return err
 	}
+	cc.platform = strings.TrimSpace(platform)
+
+	for _, fn := range []parserFunc{
+		ca.parseVolumes, ca.parseExtraHosts,
+		ca.parseAddCapability,
+	} {
+		if err := fn(cc); err != nil {
+			return err
+		}
+	}
+
 	// add more parsers here if needed
 	return nil
 }
@@ -171,23 +224,69 @@ func (ca *containerArgs) parseVolumes(cc *ContainerContext) error {
 		return err
 	}
 	for _, v := range volArgs {
-		vols = append(vols, expandVolumeString(strings.TrimSpace(v)))
+		vols = append(vols, strings.TrimSpace(v))
 	}
 	cc.WithVolumes(vols...)
 	return nil
 }
 
-// expandVolumeString accepts a string in the form of:
-//
-//	`-v /path/on/host:/path/in/container`
-//
-// converts any env into full string, for example:
-//
-//	`-v ${HOME}/foo:/app/foo` => `/Users/me/foo:/app/foo`
-//
-// Special consideration will be put on `~` and replaced by HOME variable
-func expandVolumeString(vol string) string {
-	return os.ExpandEnv(utils.NormalizeHome(vol))
+// parseExtraHosts parses --add-host flags and validates host:ip format
+func (ca *containerArgs) parseExtraHosts(cc *ContainerContext) error {
+	hosts, err := ca.flagSet.GetStringArray("add-host")
+	if err != nil {
+		return err
+	}
+
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+
+		// Validate format: hostname:ip
+		if err := validateHostMapping(h); err != nil {
+			return fmt.Errorf("invalid --add-host format %q: %w", h, err)
+		}
+
+		cc.extraHosts = append(cc.extraHosts, h)
+	}
+	return nil
+}
+
+func (ca *containerArgs) parseAddCapability(cc *ContainerContext) error {
+	caps, err := ca.flagSet.GetStringArray("cap-add")
+	if err != nil {
+		return err
+	}
+	// NOTE: some validation could happen here as per the
+	// [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+	// however the underlying engine will bubble up errors associated with
+	// incorrectly named capabilities
+	cc.capabilities = append(cc.capabilities, caps...)
+	return nil
+}
+
+// validateHostMapping validates the host:ip format for --add-host
+// Supports both IPv4 (hostname:192.168.1.1) and IPv6 (hostname:2001:db8::1) formats
+func validateHostMapping(mapping string) error {
+	// Find the first colon to separate hostname from IP
+	colonIdx := strings.Index(mapping, ":")
+	if colonIdx == -1 {
+		return fmt.Errorf("expected format hostname:ip, got %q", mapping)
+	}
+
+	hostname := mapping[:colonIdx]
+	ip := mapping[colonIdx+1:]
+
+	if hostname == "" {
+		return fmt.Errorf("hostname cannot be empty in %q", mapping)
+	}
+	if ip == "" {
+		return fmt.Errorf("IP address cannot be empty in %q", mapping)
+	}
+
+	// Docker runtime will validate the actual IP format
+	return nil
 }
 
 func (c *ContainerContext) Volumes() map[string]struct{} {
@@ -204,6 +303,44 @@ func (c *ContainerContext) Ports() (map[nat.Port]struct{}, map[nat.Port][]nat.Po
 		return map[nat.Port]struct{}{}, map[nat.Port][]nat.PortBinding{}
 	}
 	return containerPorts, hostPorts
+}
+
+// ExtraHosts returns the custom host-to-IP mappings
+func (c *ContainerContext) ExtraHosts() []string {
+	return c.extraHosts
+}
+
+var ErrPlatformFormatIncorrect = errors.New("platform needs to be provided in os/architecture")
+
+func (c *ContainerContext) Platform() (*ocispec.Platform, error) {
+	// no platform supplied or value is empty
+	if len(c.platform) < 1 {
+		return nil, nil
+	}
+	// There could be some cleverness here around the deduction of OS
+	// however, it's better to be explicit as there are now containers
+	// in the following OS flavours
+	// 	- linux
+	// 	- windows
+	// 	- darwin
+	platform := &ocispec.Platform{}
+
+	splitPlatform := strings.SplitN(c.platform, "/", 2)
+	// the platform must be supplied in the form of `os/arch`
+	// this is a conscious decision to remove guessing from the program
+	if len(splitPlatform) == 2 {
+		logrus.Tracef("platform: %s", c.platform)
+		platform.OS = splitPlatform[0]
+		platform.Architecture = splitPlatform[1]
+		logrus.Tracef("ocispec.Platform: %+v", platform)
+		return platform, nil
+	}
+
+	return nil, fmt.Errorf("%w, got %q", ErrPlatformFormatIncorrect, c.platform)
+}
+
+func (c *ContainerContext) CapabilitiesAdd() []string {
+	return c.capabilities
 }
 
 // BindVolume formatted for bindmount
@@ -229,14 +366,13 @@ func (c *ContainerContext) BindMounts() []BindVolume {
 }
 
 func (c *ContainerContext) WithEnvOverride(env map[string]string) *ContainerContext {
-	for k, v := range env {
-		c.envOverride[k] = v
-	}
+	maps.Copy(c.envOverride, env)
 	return c
 }
 
 // ExecutionContext allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 type ExecutionContext struct {
+	SourceFile string
 	Executable *utils.Binary
 	container  *ContainerContext
 	Dir        string
@@ -319,10 +455,10 @@ func (c *ExecutionContext) StartupError() error {
 }
 
 // Up executes tasks defined to run once before first usage of the context
-func (c *ExecutionContext) Up() error {
+func (c *ExecutionContext) Up(stdout, stderr io.Writer) error {
 	c.onceUp.Do(func() {
 		for _, command := range c.up {
-			err := c.runServiceCommand(command)
+			err := c.runServiceCommand(command, stdout, stderr)
 			if err != nil {
 				c.mu.Lock()
 				c.startupError = err
@@ -336,10 +472,10 @@ func (c *ExecutionContext) Up() error {
 }
 
 // Down executes tasks defined to run once after last usage of the context
-func (c *ExecutionContext) Down() {
+func (c *ExecutionContext) Down(stdout, stderr io.Writer) {
 	c.onceDown.Do(func() {
 		for _, command := range c.down {
-			err := c.runServiceCommand(command)
+			err := c.runServiceCommand(command, stdout, stderr)
 			if err != nil {
 				logrus.Errorf("context cleanup error: %s", err)
 			}
@@ -348,9 +484,9 @@ func (c *ExecutionContext) Down() {
 }
 
 // Before executes tasks defined to run before every usage of the context
-func (c *ExecutionContext) Before() error {
+func (c *ExecutionContext) Before(stdout, stderr io.Writer) error {
 	for _, command := range c.before {
-		err := c.runServiceCommand(command)
+		err := c.runServiceCommand(command, stdout, stderr)
 		if err != nil {
 			return err
 		}
@@ -360,9 +496,9 @@ func (c *ExecutionContext) Before() error {
 }
 
 // After executes tasks defined to run after every usage of the context
-func (c *ExecutionContext) After() error {
+func (c *ExecutionContext) After(stdout, stderr io.Writer) error {
 	for _, command := range c.after {
-		err := c.runServiceCommand(command)
+		err := c.runServiceCommand(command, stdout, stderr)
 		if err != nil {
 			return err
 		}
@@ -385,15 +521,22 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 	// create a string builder object to hold all of the lines that need to be written out to
 	// the resultant file
 	builder := []string{}
+	envfileEnv := variables.NewVariables()
 	// iterate through all of the environment variables and add the selected ones to the builder
 	// env container at this point should already include all the merged variables by precedence
 	// if envfile path was provided it is merged with Env and inject as a whole into the container
-	if reader, found := utils.ReaderFromPath(c.Envfile); reader != nil && found {
-		if envFileMap, err := utils.ReadEnvFile(reader); envFileMap != nil && err == nil {
-			// overwriting env from OS < env property with the file
-			env = variables.FromMap(envFileMap).Merge(env)
+	if readers, found := utils.ReaderFromPath(c.Envfile); readers != nil && found {
+		// the last one wins
+		for _, reader := range readers {
+			if envFile, err := utils.ReadEnvFile(reader); envFile != nil && err == nil {
+				envfileEnv = envfileEnv.Merge(variables.FromMap(envFile))
+			}
 		}
 	}
+
+	// env from OS > env property with the file
+	// i.e. envfile keys do not overwrite OS or directly set env properties
+	env = envfileEnv.Merge(env)
 	for varName, varValue := range env.Map() {
 		// check to see if the env matches an invalid variable, if it does
 		// move onto the next item in the  loop
@@ -470,9 +613,9 @@ func (c *ExecutionContext) modifyName(varName string) string {
 // currently this is run outside of the context and always in the mvdn shell
 //
 // TODO: run serviceCommand in the same context as the command slice
-func (c *ExecutionContext) runServiceCommand(command string) (err error) {
+func (c *ExecutionContext) runServiceCommand(command string, stdout, stderr io.Writer) (err error) {
 	logrus.Tracef("running context service command: %s", command)
-	ex, err := newDefaultExecutor(nil, io.Discard, io.Discard)
+	ex, err := newDefaultExecutor(nil, stdout, stderr)
 	if err != nil {
 		return err
 	}

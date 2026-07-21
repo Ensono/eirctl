@@ -29,7 +29,7 @@
       "required": [
         "type"
       ],
-      "description": "Artifact holds the information about the artifact to produce for the specific task."
+      "description": "Artifact holds the information about the artifact to produce\nfor the specific task.\n\nNB: it is run at the end of the task so any after commands\nthat mutate the output files/dotenv file will essentially\noverwrite anything set/outputted as part of the main command"
     },
     "Binary": {
       "properties": {
@@ -54,11 +54,8 @@
     "ConfigDefinition": {
       "properties": {
         "import": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Import is a list of additional resources to bring into the main config\nthese can be remote or local resources"
+          "$ref": "#/$defs/ImportList",
+          "description": "Import is a list of additional resources to bring into the main config.\nSupports both plain strings (backward compatible config imports) and\nobjects with src/hash/dest fields. Entries with a dest field are treated\nas file imports and written to disk; all others are config imports."
         },
         "contexts": {
           "additionalProperties": {
@@ -122,7 +119,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "ConfigDefinition holds the top most config definition this can be parsed from a yaml, json, toml files/mediaTypes"
+      "description": "ConfigDefinition holds the top most config definition\nthis can be parsed from a yaml, json, toml files/mediaTypes\n\nNote: works the same way for local/remote config resources\ncorrect content-type or file extension must be specified\nto successfully decode/unmarshal into type"
     },
     "Container": {
       "properties": {
@@ -155,7 +152,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the only the -v|--volume and -u|--user -p|--port args get parsed."
+          "description": "ContainerArgs are additional args used for the container supplied by the user\n\ne.g. dcoker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (command)\nThe internals will strip out any unwanted/forbidden args\n\nArgs like the switch --privileged and the --volume|-v flag with the value of /var/run/docker.sock:/var/run/docker.sock\nwill be removed.\n\nCurrently the following args get parsed\n -v|--volume\n -u|--user\n -p|--port\n --userns\n --add-host\n --cap-add\n\t\tallows `ALL` as well as most of the CAPs from this [documentation](https://man7.org/linux/man-pages/man7/capabilities.7.html) --cap-drop is not supported\n\t\tCAP_ must be dropped from the key when supplied as an arg to --cap-add\n --platform\n\t\tmust be supplied in the `os/arch` format e.g. linux/arm64 or linux/arm64/v8 or windows/amd64 or darwin/amd64"
         },
         "shell": {
           "type": "string",
@@ -167,6 +164,11 @@
           },
           "type": "array",
           "description": "Args are additional args to pass to the shell if provided.\nOnce you provide the ShellArgs, you must also specify the Shell as well, as there is no reliable way to ensure the default `sh` accepts provided shell arguments\n\nDefault Shell and ShellArgs are `sh -c`\n\ne.g. docker run (EIRCTL_ARGS...) (CONTAINER_ARGS...) image (shell) (SHELL_ARGS...) (command)\n\nExample: with powershell could be: `-Command -NonInteractive` along with a custom shell of `pwsh` would result in `pwsh -Command -NonInteractive (command)`"
+        },
+        "pull_timeout": {
+          "type": "integer",
+          "description": "PullTimeout is the amount in seconds to wait for an Image to Pull before the context is cancelled\nDefault: 0\n0 means infinite wait",
+          "default": 0
         }
       },
       "additionalProperties": false,
@@ -174,7 +176,7 @@
       "required": [
         "name"
       ],
-      "description": "Container is the specific context for containers only available to docker API compliant implementations"
+      "description": "Container is the specific context for containers\nonly available to docker API compliant implementations\n\ne.g. docker and podman\n\nThe aim is to remove some of the boilerplate away from the existing more\ngeneric context and introduce a specific context for tasks run in containers."
     },
     "ContextDefinition": {
       "properties": {
@@ -185,25 +187,29 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Up runs once at the beginning of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "down": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Down runs once at the end of the usage of the context\nThese are run in the mvdn.sh on the host"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs any commands prior to the tasks' commands\nThese are run in the mvdn.sh on the host"
         },
         "after": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task that use this context have run\nNB: these are run irrespective of the state of the task, this can be useful\nfor clean up operations and similar.\nThese are run in the mvdn.sh on the host"
         },
         "env": {
           "$ref": "#/$defs/EnvVarMapType",
@@ -265,14 +271,23 @@
           "type": "array"
         },
         "path": {
-          "type": "string",
-          "description": "PathValue points to the file to read in and compute using the modify/include/exclude instructions."
+          "$ref": "#/$defs/StringSlice",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array"
+            }
+          ],
+          "description": "Path points to the file to read in and compute using the modify/include/exclude instructions.\n\nPath supports both a single value or a list specification"
         },
         "replace_char": {
           "type": "string"
         },
         "quote": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Quote specify the quote character to use"
         },
         "modify": {
           "items": {
@@ -288,7 +303,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "Envile is a structure for storing the information required to generate an envfile which can be consumed by the specified binary"
+      "description": "Envile is a structure for storing the information required to generate an envfile which can be consumed\nby the specified binary"
     },
     "Generator": {
       "properties": {
@@ -302,6 +317,36 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ImportList": {
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "properties": {
+              "src": {
+                "type": "string",
+                "description": "Source path for the import"
+              },
+              "hash": {
+                "type": "string",
+                "description": "Integrity hash in format algorithm:hex_digest (e.g. sha256:abc...)"
+              },
+              "dest": {
+                "type": "string",
+                "description": "Destination path relative to project root (signals file import)"
+              }
+            },
+            "type": "object",
+            "required": [
+              "src"
+            ]
+          }
+        ]
+      },
+      "type": "array"
     },
     "ModifyEnv": {
       "properties": {
@@ -379,8 +424,12 @@
           "$ref": "#/$defs/EnvVarMapType",
           "description": "Env is the Key: Value map of env vars to inject into the tasks within this pipeline"
         },
+        "envfile": {
+          "$ref": "#/$defs/Envfile",
+          "description": "EnvFile definition to set on the stage (eirctl pipeline)\n\nIf a list is supplied than the order in which they are supplied will be respected\nlater elements in the list will overwrite keys specified previously"
+        },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
+          "$ref": "#/$defs/VariablesVarMapType",
           "description": "Variables is the Key: Value map of vars vars to inject into the tasks"
         },
         "ci_meta": {
@@ -458,13 +507,15 @@
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "After runs after the commads of the task have completed\nIf a task errors these are not run"
         },
         "before": {
           "items": {
             "type": "string"
           },
-          "type": "array"
+          "type": "array",
+          "description": "Before runs before the commads of the task have run"
         },
         "context": {
           "type": "string",
@@ -505,7 +556,7 @@
           "description": "EnvFile is an object points to a path of an env file.\n\nThis file is read dynamically each time before the task execution.\nAny keys specified in the `env` key=value map will overwrite those set in the env file.\n\nThe precedence of environment setting can be summarized as below\nContext \u003c Pipeline \u003c Task\n\nThis means that whilst all env vars will be merged downwards to the task\ni.e. key specified at a task level will overwrite those set at any level above.\n\nSetting a key in an envfile with the same name will be overwritten by an `env.key`."
         },
         "variables": {
-          "$ref": "#/$defs/EnvVarMapType",
+          "$ref": "#/$defs/VariablesVarMapType",
           "description": "Variables merged with others if any already priovided\nThese will overwrite any previously set keys"
         },
         "reset_context": {
@@ -527,6 +578,28 @@
       "required": [
         "command"
       ]
+    },
+    "VariablesVarMapType": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object"
+          },
+          {
+            "type": "array"
+          }
+        ]
+      },
+      "type": "object"
     },
     "WatcherDefinition": {
       "properties": {

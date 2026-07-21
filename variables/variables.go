@@ -30,6 +30,16 @@ func FromMap(values map[string]string) *Variables {
 	return vars
 }
 
+// FromMap creates new Variables instance from given map
+func FromVarsMap(values map[string]any) *Variables {
+	vars := &Variables{}
+	for k, v := range values {
+		vars.m.Store(k, v)
+	}
+
+	return vars
+}
+
 // Set stores value with given key
 func (vars *Variables) Set(key string, value any) {
 	vars.m.Store(key, value)
@@ -65,7 +75,7 @@ func (vars *Variables) Map() map[string]any {
 // src will overwrite the existing keys if exists
 // returns a new instance of the merged *Variables
 func (vars *Variables) Merge(src *Variables) *Variables {
-	dst := &Variables{}
+	dst := NewVariables()
 
 	if vars != nil {
 		for k, v := range vars.Map() {
@@ -82,7 +92,7 @@ func (vars *Variables) Merge(src *Variables) *Variables {
 
 // With creates new container and sets key to given value
 func (vars *Variables) With(key string, value interface{}) *Variables {
-	dst := &Variables{}
+	dst := NewVariables()
 	dst = dst.Merge(vars)
 	dst.Set(key, value)
 	return dst

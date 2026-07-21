@@ -1,0 +1,5 @@
+tasks:
+  fail_125:
+    command:
+      - exit 125
+  # fail:

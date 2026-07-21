@@ -3,12 +3,15 @@ package config_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -84,6 +87,10 @@ Host github.com
     Hostname ssh.github.com
     Port 443
     User git
+    # Existing parsing tests do not connect; explicitly opt out because no test known-host entry is supplied.
+    StrictHostKeyChecking no
+Host *
+    StrictHostKeyChecking no
 `))
 	sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
 	sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -137,7 +144,7 @@ func Test_NewGitSource_ValidInput(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cleanUp := createDummySshConf(t)
 			defer cleanUp()
-			gs, err := config.NewGitSource(tt.rawString)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -184,7 +191,7 @@ kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
 AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
-		`))
+				`))
 				os.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
 				return tempFile.Name(), "", func() {
 					os.Unsetenv(config.GitSshCommandVar)
@@ -200,9 +207,10 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 			cleanUp: func() (string, string, func()) {
 				tempFile, _ := os.CreateTemp("", "config-rando-*")
 				tempFile.Write([]byte(`Host github.com
-		Hostname ssh.github.com
-		Port 4443
-		`))
+				Hostname ssh.github.com
+				Port 4443
+				StrictHostKeyChecking no
+				`))
 				os.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
 				return "", tempFile.Name(), func() {
 					os.Unsetenv(config.GitSshCommandVar)
@@ -210,7 +218,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				}
 			},
 		},
-		"specify identiy and config over GIT_SSH_COMMAND": {
+		"specify identity and config over GIT_SSH_COMMAND": {
 			rawString:       "git::ssh://github.com/example/repo//config.yaml",
 			wantCheckoutStr: "ssh://git@ssh.github.com:443/example/repo",
 			wantTag:         "",
@@ -218,10 +226,11 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 			cleanUp: func() (string, string, func()) {
 				sshConfFile, _ := os.CreateTemp("", "config-rando-*")
 				sshConfFile.Write([]byte(`Host github.com
-		Port 443
-		Hostname ssh.github.com
-		`))
-				sshIdFile, _ := os.CreateTemp("", "id-rando-*")
+				Port 443
+				Hostname ssh.github.com
+				StrictHostKeyChecking no
+				`))
+				sshIdFile, _ := os.CreateTemp("", "id-rando-with-conf-*")
 				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
@@ -229,8 +238,37 @@ kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
 AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
-		`))
+				`))
 				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
+				return sshIdFile.Name(), sshConfFile.Name(), func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(sshConfFile.Name())
+					os.Remove(sshIdFile.Name())
+				}
+			},
+		},
+		"oParams and identity and config over GIT_SSH_COMMAND": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@foo.bar:1234/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				sshConfFile, _ := os.CreateTemp("", "config-rando-*")
+				sshConfFile.Write([]byte(`Host github.com
+				Port 443
+				Hostname ssh.github.com
+				StrictHostKeyChecking no
+				`))
+				sshIdFile, _ := os.CreateTemp("", "id-rando-with-conf-*")
+				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----
+				`))
+				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name()+" -o Hostname=foo.bar -oPort=1234")
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
 					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(sshConfFile.Name())
@@ -246,7 +284,83 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 			idfile, configFile, setupClean := tt.cleanUp()
 			defer setupClean()
 
-			gs, err := config.NewGitSource(tt.rawString)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gs.Tag() != tt.wantTag {
+				t.Errorf("Tag got '%s', wanted: %s", gs.Tag(), tt.wantTag)
+			}
+			if gs.GitCheckoutStr() != tt.wantCheckoutStr {
+				t.Errorf("GitCheckoutStr got '%s', wanted: %s", gs.GitCheckoutStr(), tt.wantCheckoutStr)
+			}
+			if gs.YamlPath() != tt.wantYamlPath {
+				t.Errorf("YamlPath got '%s', wanted: %s", gs.YamlPath(), tt.wantYamlPath)
+			}
+			if idfile != "" && gs.SshConfig.IdentityFile != idfile {
+				t.Errorf("identity file incorrect, got %s\nwanted %s", gs.SshConfig.IdentityFile, idfile)
+			}
+			if configFile != "" && gs.SshConfig.ConfigFile != configFile {
+				t.Errorf("config file incorrect, got %s\nwanted %s", gs.SshConfig.IdentityFile, configFile)
+			}
+		})
+	}
+}
+
+func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
+	ttests := map[string]struct {
+		rawString             string
+		wantCheckoutStr       string
+		wantTag, wantYamlPath string
+		cleanUp               func() (string, string, func())
+	}{
+		"option Hostname and Port specified with space": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@foo.bar:1234/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				tempFile, _ := os.CreateTemp("", "config-rando-*")
+				tempFile.Write([]byte(`Host github.com
+				Hostname ssh.github.com
+				Port 4443
+				StrictHostKeyChecking no
+				`))
+				os.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
+				return "", tempFile.Name(), func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(tempFile.Name())
+				}
+			},
+		},
+		"option Hostname and Port specified without space": {
+			rawString:       "git::ssh://github.com/example/repo//config.yaml",
+			wantCheckoutStr: "ssh://git@foo.bar:1234/example/repo",
+			wantTag:         "",
+			wantYamlPath:    "config.yaml",
+			cleanUp: func() (string, string, func()) {
+				tempFile, _ := os.CreateTemp("", "config-rando-*")
+				tempFile.Write([]byte(`Host github.com
+				Hostname ssh.github.com
+				Port 4443
+				StrictHostKeyChecking no
+				`))
+				os.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
+				return "", tempFile.Name(), func() {
+					os.Unsetenv(config.GitSshCommandVar)
+					os.Remove(tempFile.Name())
+				}
+			},
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			cleanUp := createDummySshConf(t)
+			defer cleanUp()
+			idfile, configFile, setupClean := tt.cleanUp()
+			defer setupClean()
+
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawString})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -281,7 +395,7 @@ func Test_NewGitSource_ValidInput_withSSH_COMMAND_hostname_port(t *testing.T) {
 	setupClean := setup()
 	defer setupClean()
 
-	gs, err := config.NewGitSource("git::ssh://github.com/example/repo//config.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://github.com/example/repo//config.yaml"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -305,7 +419,7 @@ func TestGitSource_Config_FromHead(t *testing.T) {
 		"config.yaml": cfgWriter.String(),
 	}, "", "")
 
-	gs, err := config.NewGitSource("git::ssh://bar.org//config.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://bar.org//config.yaml"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -336,9 +450,9 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 
 	repo := createTestRepo(t, map[string]string{
 		"my.yaml": cfgWriter.String(),
-	}, "feature/foo", "")
+	}, "refs/remotes/origin/feature/foo", "")
 
-	gs, err := config.NewGitSource("git::https://example.com/org/repo//my.yaml?ref=feature/foo")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::https://example.com/org/repo//my.yaml?ref=feature/foo"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -358,7 +472,7 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 }
 
 func TestNewGitSource_InvalidFormat(t *testing.T) {
-	_, err := config.NewGitSource("invalid-url-format")
+	_, err := config.NewGitSource(schema.ImportEntry{Src: "invalid-url-format"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -380,7 +494,7 @@ func TestGitSource_Config_FileNotFound(t *testing.T) {
 		"my.yaml": cfgWriter.String(),
 	}, "", "")
 
-	gs, err := config.NewGitSource("git::file://path/on/disk/repo//missing.yaml")
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file://path/on/disk/repo//missing.yaml"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -400,9 +514,9 @@ func Test_LoaderGit_Integration(t *testing.T) {
 		rawStr string
 	}{
 		// "use ssh over git public": {"git::ssh://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
-		"use https over git public":               {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
-		"use straight git protocol and with .git": {"git::https://github.com/Ensono/eirctl.git//shared/security/scaning.yaml"},
-		"ref with branch":                         {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=main"},
+		"use https over git public":               {"git::https://github.com/Ensono/eirctl.git//shared/security/eirctl.yaml"},
+		"use straight git protocol and with .git": {"git::https://github.com/Ensono/eirctl.git//shared/security/eirctl.yaml"},
+		"ref with branch":                         {"git::https://github.com/Ensono/eirctl//shared/security/eirctl.yaml?ref=main"},
 		"ref with complex tag":                    {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=0.7.0"},
 		"ref with sha1":                           {"git::https://github.com/Ensono/eirctl//shared/security/scaning.yaml?ref=2f7bd79dc9b88a328f536bd97b8358c37d7abb9e"},
 	}
@@ -410,7 +524,7 @@ func Test_LoaderGit_Integration(t *testing.T) {
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			gs, err := config.NewGitSource(tt.rawStr)
+			gs, err := config.NewGitSource(schema.ImportEntry{Src: tt.rawStr})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -429,4 +543,102 @@ func Test_LoaderGit_Integration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_LoaderGit_SSHKeySigner(t *testing.T) {
+
+	keyWithPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jYmMAAAAGYmNyeXB0AAAAGAAAABDzGKF3uX
+G1gXALZKFd6Ir4AAAAEAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIDne4/teO42zTDdj
+NwxUMNpbfmp/dxgU4ZNkC3ydgcugAAAAoJ3J/oA7+iqVOz0CIUUk9ufdP1VP4jDf2um+0s
+Sgs7x6Gpyjq67Ps7wLRdSmxr/G5b+Z8dRGFYS/wUCQEe3whwuImvLyPwWjXLzkAyMzc01f
+ywBGSrHnvP82ppenc2HuTI+E05Xc02i6JVyI1ShiekQL5twoqtR6pEBZnD17UonIx7cRzZ
+gbDGyT3bXMQtagvCwoW+/oMTKXiZP5jCJpEO8=
+-----END OPENSSH PRIVATE KEY-----`)
+	keyWithoutPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
+kAAAAAtzc2gtZWQyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQ
+AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
+wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
+-----END OPENSSH PRIVATE KEY-----`)
+	t.Run("correctly uses passphrase", func(t *testing.T) {
+		t.Setenv(config.GitSshPassphrase, "password")
+		signer, err := config.SSHKeySigner(keyWithPassphrase)
+		if err != nil {
+			t.Error(err)
+		}
+		if signer.PublicKey().Type() != "ssh-ed25519" {
+			t.Errorf("incorrectly deduced public key - got: %v, wanted 'ssh-ed25519'", signer.PublicKey().Type())
+		}
+	})
+
+	t.Run("fails with wrong passphrase", func(t *testing.T) {
+		t.Setenv(config.GitSshPassphrase, "wrong")
+		_, err := config.SSHKeySigner(keyWithPassphrase)
+		if err == nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("correctly uses key without passphrase", func(t *testing.T) {
+		signer, err := config.SSHKeySigner(keyWithoutPassphrase)
+		if err != nil {
+			t.Error(err)
+		}
+		if signer.PublicKey().Type() != "ssh-ed25519" {
+			t.Errorf("incorrectly deduced public key - got: %v, wanted 'ssh-ed25519'", signer.PublicKey().Type())
+		}
+	})
+
+	t.Run("fails on no passphrase provided for the key", func(t *testing.T) {
+		_, err := config.SSHKeySigner(keyWithPassphrase)
+		if err == nil {
+			t.Fatal("failed to error out on missing passphrase")
+		}
+		if !errors.Is(err, config.ErrGitOperation) {
+			t.Fatalf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
+		}
+	})
+}
+
+func Test_GitSource_FileContent(t *testing.T) {
+	scriptContent := "#!/bin/bash\necho hello world\n"
+	repo := createTestRepo(t, map[string]string{
+		"scripts/deploy.sh": scriptContent,
+		"README.md":         "# Test Repo",
+	}, "", "")
+
+	t.Run("retrieves raw file content from git repo", func(t *testing.T) {
+		gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file:///dummy//scripts/deploy.sh"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		content, err := gs.File()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got, _ := io.ReadAll(content)
+		if string(got) != scriptContent {
+			t.Errorf("got %q, wanted %q", string(got), scriptContent)
+		}
+	})
+
+	t.Run("returns error for non-existent file", func(t *testing.T) {
+		gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::file:///dummy//nonexistent.sh"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+
+		_, err = gs.File()
+		if err == nil {
+			t.Fatal("expected error for non-existent file")
+		}
+		if !errors.Is(err, config.ErrGitOperation) {
+			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
+		}
+	})
 }

@@ -3,6 +3,7 @@ package cmd_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -17,6 +18,23 @@ type cmdRunTestInput struct {
 	exactOutput string
 	output      []string
 	ctx         context.Context
+}
+
+type mockOsFsOps struct {
+	rename func(oldpath string, newpath string) error
+	write  func(name string, data []byte, perm os.FileMode) error
+}
+
+func (o mockOsFsOps) Rename(oldpath string, newpath string) error {
+	return nil
+}
+
+func (o mockOsFsOps) WriteFile(name string, data []byte, perm os.FileMode) error {
+	return nil
+}
+
+func (o mockOsFsOps) Create(name string) (io.Writer, error) {
+	return output.NewSafeWriter(&bytes.Buffer{}), nil
 }
 
 func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
@@ -38,6 +56,7 @@ func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 	stdOut := output.NewSafeWriter(&bytes.Buffer{})
 	cmd.Cmd.SetErr(errOut)
 	cmd.Cmd.SetOut(stdOut)
+	cmd.OsFsOps = mockOsFsOps{}
 
 	if err := cmd.InitCommand(eirctlCmd.WithSubCommands()...); err != nil {
 		t.Fatal(err)

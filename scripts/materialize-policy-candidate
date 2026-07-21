@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Materialize pull-request configuration as data for the trusted policy checker.
+# This script is intentionally run only from the protected base revision. It
+# fetches a Git object and archives an allowlisted configuration tree; it never
+# sources, executes, or checks out candidate-controlled files.
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: materialize-policy-candidate --pull-request <number> --output <directory>
+
+Fetches refs/pull/<number>/head from origin and archives only the workflow and
+maintained build configuration required by the policy checker into <directory>.
+USAGE
+}
+
+pull_request=""
+output=""
+while (($#)); do
+  case "$1" in
+    --pull-request)
+      pull_request="${2:-}"
+      shift 2
+      ;;
+    --output)
+      output="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! "$pull_request" =~ ^[1-9][0-9]*$ ]] || [[ -z "$output" ]]; then
+  usage
+  exit 2
+fi
+if [[ -e "$output" ]]; then
+  printf 'candidate output must not already exist: %s\n' "$output" >&2
+  exit 2
+fi
+
+mkdir -p "$output"
+if ! git fetch --no-tags --depth=1 origin "refs/pull/${pull_request}/head"; then
+  rm -rf "$output"
+  exit 1
+fi
+
+# Keep the candidate tree deliberately small. The workflow policy command treats
+# this directory as input data and all executable code remains in the trusted
+# base checkout that invoked this script.
+if ! git archive --format=tar FETCH_HEAD -- .github/workflows eirctl.yaml | tar -x -C "$output"; then
+  rm -rf "$output"
+  exit 1
+fi

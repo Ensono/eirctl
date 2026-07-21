@@ -4,13 +4,47 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/Ensono/eirctl/internal/utils"
+	"github.com/sirupsen/logrus"
 )
 
 // StageTable is a simple hash table of denormalized stages into a flat hash table (map)
 //
 // NOTE: used for read only at this point
 type StageTable map[string]*Stage
+
+// NthLevelChildren retrieves the nodes by prefix and depth specified
+//
+// removing the base prefix and looking at the depth of the keyprefix per stage
+func (st StageTable) NthLevelChildren(prefix string, depth int) []*Stage {
+	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
+	stages := []*Stage{}
+	for key, stageVal := range st {
+		if strings.HasPrefix(key, prefix) && key != prefix {
+			keyParts := strings.Split(key, utils.PipelineDirectionChar)
+			if len(keyParts[len(prefixParts):]) == depth {
+				stages = append(stages, stageVal)
+			}
+		}
+	}
+	return stages
+}
+
+// RecurseParents walks all the parents recursively
+// and appends to the list in reverse order
+func (st StageTable) RecurseParents(prefix string) []*Stage {
+	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
+	stages := []*Stage{}
+	for i := 1; i < len(prefixParts); i++ {
+		parentKey := strings.Join(prefixParts[0:len(prefixParts)-i], utils.PipelineDirectionChar)
+		if stageVal, ok := st[parentKey]; ok {
+			stages = append(stages, stageVal)
+		}
+	}
+	slices.Reverse(stages)
+	return stages
+}
 
 // Denormalize performs a recursive DFS traversal on the ExecutionGraph from the root node and creates a new stage reference.
 //
@@ -32,73 +66,6 @@ func (g *ExecutionGraph) Denormalize() (*ExecutionGraph, error) {
 	return dg, nil
 }
 
-// rebuildFromDenormalized rebuilds the whole tree from scratch using the denormalized stages as input
-//
-// Following the same layout as original with same levels of nestedness
-func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
-	for _, stage := range st.NthLevelChildren(g.Name(), 1) {
-		if stage.Pipeline != nil {
-			// There is no chance that at this point there would be a cycle
-			// but keep this check here just in case
-			ng, err := NewExecutionGraph(stage.Name)
-			if err != nil {
-				return err
-			}
-			if err := ng.rebuildFromDenormalized(st); err != nil {
-				return err
-			}
-			stage.Pipeline = ng
-		}
-		// stage is task - merge into the stage all the previous env and vars
-		parentStages := st.RecurseParents(stage.Name)
-		for _, v := range parentStages {
-			stage.env = stage.Env().Merge(v.Env())
-			if stage.Task != nil {
-				stage.Task.Env = stage.env.Merge(stage.Task.Env)
-				stage.env = stage.env.Merge(stage.Task.Env)
-			}
-		}
-		// Check err just in case the denormalized graph has cyclical dependancies
-		if err := g.AddStage(stage); err != nil {
-			// This should never be hit, but good to keep in place.
-			return err
-		}
-	}
-	return nil
-}
-
-// NthLevelChildren retrieves the nodes by prefix and depth specified
-//
-// removing the base prefix and looking at the depth of the keyprefix per stage
-func (st StageTable) NthLevelChildren(prefix string, depth int) []*Stage {
-	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
-	stages := []*Stage{}
-	for key, stageVal := range st {
-		if strings.HasPrefix(key, prefix) && key != prefix {
-			keyParts := strings.Split(key, utils.PipelineDirectionChar)
-			if len(keyParts[len(prefixParts):]) == depth {
-				stages = append(stages, stageVal)
-			}
-		}
-	}
-	return stages
-}
-
-// RecurseParents walks all the parents recursively
-// and appends to the list in revers order
-func (st StageTable) RecurseParents(prefix string) []*Stage {
-	prefixParts := strings.Split(prefix, utils.PipelineDirectionChar)
-	stages := []*Stage{}
-	for i := 1; i < len(prefixParts); i++ {
-		parentKey := strings.Join(prefixParts[0:len(prefixParts)-i], utils.PipelineDirectionChar)
-		if stageVal, ok := st[parentKey]; ok {
-			stages = append(stages, stageVal)
-		}
-	}
-	slices.Reverse(stages)
-	return stages
-}
-
 // Flatten is a recursive helper function to clone nodes with unique paths.
 //
 // Each new instance will have a separate memory address allocation. Will be used for denormalization.
@@ -109,8 +76,7 @@ func (graph *ExecutionGraph) Flatten(nodeName string, ancestralParentNames []str
 		clonedStage := NewStage(uniqueName)
 		// Task or stage needs adding
 		// Dereference the new stage from the original node
-		clonedStage.FromStage(originalNode, graph, ancestralParentNames)
-		flattenedStage[uniqueName] = clonedStage
+		flattenedStage[uniqueName] = clonedStage.FromStage(originalNode, graph, ancestralParentNames)
 
 		// If the node has a subgraph, recursively clone it with a new prefix
 		if originalNode.Pipeline != nil {
@@ -128,6 +94,57 @@ func (graph *ExecutionGraph) Flatten(nodeName string, ancestralParentNames []str
 	for _, child := range graph.Children(nodeName) {
 		graph.Flatten(child.Name, ancestralParentNames, flattenedStage)
 	}
+}
+
+// rebuildFromDenormalized rebuilds the whole tree from scratch using the denormalized stages as input
+//
+// Following the same layout as original with same levels of nestedness
+func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
+	for _, stage := range st.NthLevelChildren(g.Name(), 1) {
+		if stage.Pipeline != nil {
+			// There is no chance that at this point there would be a cycle
+			// but keep this check here just in case
+			ng, err := NewExecutionGraph(stage.Name)
+			if err != nil {
+				return err
+			}
+			if err := ng.rebuildFromDenormalized(st); err != nil {
+				return err
+			}
+			stage.Pipeline = ng
+		}
+
+		// stage is task - merge into the stage all the previous env and vars
+
+		// Add in reverse order - i.e. respecting the order of precedence
+		parentStages := st.RecurseParents(stage.Name)
+		for _, v := range parentStages {
+			stage.env = stage.Env().Merge(v.Env())
+			stage.variables = stage.Variables().Merge(v.Variables())
+			// we want to merge and overwrite any values in the pipeline with values specified in the stage
+			envfileMerge(stage.envfile, v.EnvFile())
+		}
+
+		// set the node name correctly
+		if stage.Task != nil {
+			if stage.Task.Name != stage.Name {
+				stage.Task.Name = stage.Name
+			}
+			// the task level defined envs and envfiles and variables will overwrite the ones defined further up the call stack
+			stage.Task.Env = stage.env.Merge(stage.Task.Env)
+			stage.env = stage.env.Merge(stage.Task.Env)
+			stage.Task.Variables = stage.variables.Merge(stage.Task.Variables)
+			stage.variables = stage.variables.Merge(stage.Task.Variables)
+			envfileMerge(stage.envfile, stage.EnvFile())
+		}
+
+		// Check err just in case the denormalized graph has cyclical dependancies
+		if err := g.AddStage(stage); err != nil {
+			// This should never be hit, but good to keep in place.
+			return err
+		}
+	}
+	return nil
 }
 
 func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*ExecutionGraph, *Stage) {
@@ -149,11 +166,47 @@ func graphClone(originalNode *Stage, clonedStage *Stage, uniqueName string) (*Ex
 				peekStage.Name = originalNode.Name
 				peekStage.WithEnv(originalNode.Env())
 				peekStage.WithVariables(originalNode.Variables())
+				peekStage.WithEnvFile(originalNode.envfile)
 				clonedStage.WithEnv(peekStage.Env())
 				clonedStage.WithVariables(peekStage.Variables())
+				clonedStage.WithEnvFile(peekStage.envfile)
 				originalNode = peekStage
 			}
 		}
 	}
 	return subGraphClone, originalNode
+}
+
+func envfileMerge(dst, src *utils.Envfile) {
+	// need to clone the slice as re-assigning simply creates a new pointer and length but not the data array
+	// dstEnvFilePath, srcEnvFilePath := slices.Clone(dst.PathValue), slices.Clone(src.PathValue)
+	dstEnvFilePath, srcEnvFilePath := []string{}, []string{}
+	for _, v := range dst.PathValue {
+		dstEnvFilePath = append(dstEnvFilePath, v)
+	}
+	for _, v := range src.PathValue {
+		srcEnvFilePath = append(srcEnvFilePath, v)
+	}
+	// we want to merge and overwrite any values in the pipeline with values specified in the stage
+	if err := mergo.Merge(dst, src, func(c *mergo.Config) {
+		c.AppendSlice = true
+		mergo.WithSliceDeepCopy(c)
+	}); err != nil {
+		logrus.Error("failed to dereference task")
+	}
+	// when there are additional source Paths
+	// we extend the existing destination Paths
+	for _, envfile := range srcEnvFilePath {
+		// destEnvFile would have already been built this way
+		// so there should be no duplicates in the dest
+		//
+		// NOTE: this is a bit rudimentary
+		// potential future state is to remove the envfile from dest at that index
+		// and append it at a new index from the source
+		// existingIdx := slices.Index(dstEnvFilePath, envfile)
+		if !slices.Contains(dstEnvFilePath, envfile) {
+			dstEnvFilePath = append(dstEnvFilePath, envfile)
+		}
+	}
+	dst.PathValue = dstEnvFilePath
 }

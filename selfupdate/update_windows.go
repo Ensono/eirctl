@@ -1,0 +1,7 @@
+//go:build windows
+
+package selfupdate
+
+func EnrichFinalLink(link string) string {
+	return link + ".exe"
+}

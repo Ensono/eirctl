@@ -16,8 +16,11 @@ import (
 	"sync"
 	"text/template"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/variables"
+	"github.com/Masterminds/sprig/v3"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 // IsURL checks if given string is a valid URL
@@ -52,10 +55,13 @@ type Envfile struct {
 	// Both of these will be skipped
 	Exclude []string `mapstructure:"exclude" yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	Include []string `mapstructure:"include" yaml:"include,omitempty" json:"include,omitempty"`
-	// PathValue points to the file to read in and compute using the modify/include/exclude instructions.
-	PathValue   string `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty"`
-	ReplaceChar string `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
-	Quote       bool   `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
+	// Path points to the file to read in and compute using the modify/include/exclude instructions.
+	//
+	// Path supports both a single value or a list specification
+	PathValue   schema.StringSlice `mapstructure:"path" yaml:"path,omitempty" json:"path,omitempty" jsonschema:"oneof_type=string;array"`
+	ReplaceChar string             `mapstructure:"replace_char" yaml:"replace_char,omitempty" json:"replace_char,omitempty"`
+	// Quote specify the quote character to use
+	Quote bool `mapstructure:"quote" yaml:"quote,omitempty" json:"quote,omitempty"`
 	// Modify specifies the modifications to make to each env var and whether it meets the criteria
 	// example:
 	// - pattern: "^(?P<keyword>TF_VAR_)(?P<varname>.*)"
@@ -111,14 +117,14 @@ func NewEnvFile(opts ...EnvFileOpts) *Envfile {
 	return e
 }
 
-func (e *Envfile) WithPath(path string) *Envfile {
+func (e *Envfile) WithPath(path []string) *Envfile {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.PathValue = path
 	return e
 }
 
-func (e *Envfile) Path() string {
+func (e *Envfile) Path() []string {
 	return e.PathValue
 }
 
@@ -187,37 +193,70 @@ func LastLine(r io.Reader) (l string) {
 	return l
 }
 
-// RenderString parses given string as a template and executes it with provided params
-func RenderString(tmpl string, variables map[string]interface{}) (string, error) {
-	funcMap := template.FuncMap{
-		"default": func(arg interface{}, value interface{}) interface{} {
-			v := reflect.ValueOf(value)
-			switch v.Kind() {
-			case reflect.String, reflect.Slice, reflect.Array, reflect.Map:
-				if v.Len() == 0 {
-					return arg
-				}
-			case reflect.Bool:
-				if !v.Bool() {
-					return arg
-				}
-			default:
-				return value
-			}
-
-			return value
-		},
+// ParseTemplate parses given string as a template and executes it with provided params
+func ParseTemplate(tmpl string, variables, env map[string]any) (string, error) {
+	if tmpl == "" {
+		return tmpl, nil
 	}
 
-	var buf bytes.Buffer
-	t, err := template.New("interpolate").Funcs(funcMap).Option("missingkey=error").Parse(tmpl)
+	// Function map extension for Eirctl Templates
+	fm := sprig.FuncMap()
+
+	// additional helper funcs defined below
+	// this will extend the existing sprig template funcs
+	fm["isset"] = func(a any) bool {
+		return a != nil && a != ""
+	}
+	//  Add Yaml parser
+	fm["fromYaml"] = func(v any) any {
+		// We need to first marshal the arbitrary data structure into a byte slice
+		input, _ := yaml.Marshal(v)
+		var output any
+		_ = yaml.Unmarshal(input, &output)
+		return output
+	}
+
+	fm["toYaml"] = func(v any) string {
+		output, _ := yaml.Marshal(v)
+		return string(output)
+	}
+
+	buf := &bytes.Buffer{}
+
+	// build environment variables for template execution
+	// under a special .Env.Key format => where `Key` is the name of the env variable
+	variables["Env"] = env
+	firstPassFailed := false
+	if err := executeParser(buf, variables, fm, tmpl, "error"); err != nil {
+		// This will will be updated  for a more user friendly message
+		// and potential introduction of a specific optional func
+		logrus.Warn("undefined variable: ", err, "continuing")
+		firstPassFailed = true
+		buf = &bytes.Buffer{}
+		if err := executeParser(buf, variables, fm, tmpl, "default"); err != nil {
+			return "", err
+		}
+	}
+
+	if firstPassFailed {
+		logrus.Info("original template: ", tmpl)
+		repl := strings.NewReplacer("<no value>", "##__EIRCTL_NO_VALUE__##").Replace(buf.String())
+		logrus.Info("replaced template: ", repl)
+		return repl, nil
+	}
+
+	return buf.String(), nil
+}
+
+func executeParser(buf *bytes.Buffer, variables map[string]any, fm template.FuncMap, tmpl, missingKey string) error {
+	tp, err := template.New(fmt.Sprintf("eirctl_parser_%s", missingKey)).
+		Funcs(fm).
+		Option("missingkey=" + missingKey).
+		Parse(tmpl)
 	if err != nil {
-		return "", err
+		return err
 	}
-
-	err = t.Execute(&buf, variables)
-
-	return buf.String(), err
+	return tp.Execute(buf, variables)
 }
 
 // IsExitError checks if given error is an instance of exec.ExitError
@@ -250,6 +289,15 @@ func escapeWinPaths(path string) string {
 	return strings.NewReplacer(`\`, `\\`).Replace(path)
 }
 
+// NormalizeHome accepts a string in any format and
+// converts any HOME type env var pointer into full string.
+//
+// Special consideration will be put on `~[tilde]` and replaced by HOME variable,
+// making it available across platforms/environments where the [tilde] symbol is not short hand $HOME
+//
+//	`-v ${HOME}/foo:/app/foo` => `/Users/me/foo:/app/foo`
+//
+//	`~/bar` => `/Users/me/bar`
 func NormalizeHome(v string) string {
 	home := MustGetUserHomeDir()
 	v = os.Expand(v, func(s string) string {
@@ -273,21 +321,75 @@ func MustGetUserHomeDir() string {
 	return hd
 }
 
+// ErrPathOutsideSandbox is returned when a resolved path escapes the allowed directories.
+var ErrPathOutsideSandbox = errors.New("resolved path is outside allowed directories")
+
+// IsPathInsideSandbox checks whether the resolved path is contained within
+// the project working directory.
+// This prevents environment variable expansion from being used to redirect
+// file reads to arbitrary locations on the filesystem, which is important
+// because configs can cross the HTTP/local filesystem trust boundary.
+// Symlinks are resolved to their real target to prevent symlink-based bypasses.
+func IsPathInsideSandbox(resolvedPath string) bool {
+	absPath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		return false
+	}
+
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		realPath = filepath.Clean(absPath)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+
+	realWd, err := filepath.EvalSymlinks(wd)
+	if err != nil {
+		realWd = filepath.Clean(wd)
+	}
+
+	rel, err := filepath.Rel(realWd, realPath)
+	if err != nil {
+		return false
+	}
+
+	// If rel starts with "..", then realPath is outside realWd
+	if rel == "." {
+		return true
+	}
+
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
+}
+
 // ReaderFromPath returns an io.ReaderCloser from provided path
-// Returning false if the file does not exist or is unable to read it
-func ReaderFromPath(envfile *Envfile) (io.ReadCloser, bool) {
+// Returning false if the file does not exist or is unable to read it.
+// Environment variables in paths are expanded, but the resolved path
+// is sandboxed to the project working directory to prevent path
+// traversal attacks via compromised remote configs.
+func ReaderFromPath(envfile *Envfile) ([]io.ReadCloser, bool) {
 	if envfile == nil {
 		return nil, false
 	}
-	if fi, err := os.Stat(envfile.PathValue); fi != nil && err == nil {
-		f, err := os.Open(envfile.PathValue)
-		if err != nil {
-			logrus.Tracef("unable to open %s", envfile.PathValue)
-			return nil, false
+	readers := []io.ReadCloser{}
+	for _, envfilepath := range envfile.PathValue {
+		envfilepath = os.ExpandEnv(envfilepath)
+		if !IsPathInsideSandbox(envfilepath) {
+			logrus.Warnf("envfile path %q resolves outside the project directory, skipping", envfilepath)
+			continue
 		}
-		return f, true
+		if fileinfo, err := os.Stat(envfilepath); fileinfo != nil && err == nil {
+			f, err := os.Open(envfilepath)
+			if err != nil {
+				logrus.Tracef("unable to open %s in %v", envfilepath, envfile.PathValue)
+				return nil, false
+			}
+			readers = append(readers, f)
+		}
 	}
-	return nil, false
+	return readers, true
 }
 
 // ReadEnvFile reads env file inv `k=v` format

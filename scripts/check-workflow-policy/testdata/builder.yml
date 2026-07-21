@@ -1,0 +1,10 @@
+on:
+  pull_request:
+    types: [labeled]
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@0123456789012345678901234567890123456789
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: go test ./...

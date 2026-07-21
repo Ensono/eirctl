@@ -3,6 +3,7 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -183,7 +184,16 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// Arrange
 		executable := runner.NewContainerContext("alpine:3.21.3")
 
-		tf, err := os.CreateTemp("", "exclude-*.env")
+		testDir := filepath.Join("testdata", "envfile_test")
+		os.MkdirAll(testDir, 0755)
+		defer os.RemoveAll(testDir)
+
+		envfileTemp1, err := os.CreateTemp(testDir, "exclude-*.env")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		envfileTemp2, err := os.CreateTemp(testDir, "exclude2-*.env")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,13 +201,16 @@ func Test_DockerExec_Cmd(t *testing.T) {
 		// on program start up from Config - os.Environ are merged into contexts
 		dockerCtx := runner.NewExecutionContext(nil, "/", variables.FromMap(map[string]string{"ADDED": "/old/foo", "NEW_STUFF": "/old/bar"}),
 			utils.NewEnvFile(func(e *utils.Envfile) {
-				e.PathValue = tf.Name()
+				e.PathValue = []string{envfileTemp1.Name(), envfileTemp2.Name()}
 				e.Exclude = append(config.DefaultContainerExcludes, "ADDED")
 			}), []string{}, []string{}, []string{}, []string{}, runner.WithContainerOpts(executable))
 
-		tf.Write([]byte(`FOO=bar
+		envfileTemp1.Write([]byte(`FOO=bar
 BAZ=wqiyh
 QUX=looopar`))
+		envfileTemp2.Write([]byte(`FOO=should_overwrite_bar
+BAR=123
+LUX=foobar`))
 
 		me := mockExecutor{
 			reset: func(b bool) {},
@@ -208,8 +221,8 @@ QUX=looopar`))
 					t.Error("should have skipped adding var")
 				}
 
-				for _, v := range [][2]string{{"FOO", "bar"}, {"QUX", "looopar"},
-					{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}} {
+				for _, v := range [][2]string{{"FOO", "should_overwrite_bar"}, {"QUX", "looopar"},
+					{"NEW_STUFF", "/old/bar"}, {"BAZ", "wqiyh"}, {"BAR", "123"}, {"LUX", "foobar"}} {
 					val, ok := got[v[0]]
 					if !ok {
 						t.Errorf("key %s not present", v[0])
@@ -255,6 +268,7 @@ QUX=looopar`))
 	// with custom envfile as well
 }
 
+// TODO: What is this, was it meant to be a test?
 func ExampleTaskRunner_Run() {
 	t := taskpkg.FromCommands("t1", "go doc github.com/Ensono/eirctl/runner.Runner")
 	ob := output.NewSafeWriter(&bytes.Buffer{})
@@ -429,7 +443,7 @@ BAZ=quzxxx`))
 	}
 	task := taskpkg.NewTask("test:with:env")
 	task.Env = task.Env.Merge(variables.FromMap(map[string]string{"ONE": "two"}))
-	task.EnvFile = utils.NewEnvFile().WithPath(tf.Name())
+	task.EnvFile = utils.NewEnvFile().WithPath([]string{tf.Name()})
 	task.Commands = []string{"true"}
 
 	err = tr.Run(task)
@@ -450,17 +464,21 @@ func TestTaskRunner_withContext(t *testing.T) {
 
 		task := taskpkg.NewTask("test:with:env")
 		task.Env = task.Env.Merge(variables.FromMap(map[string]string{"ONE": "two"}))
+		// `sleep` is also on pwsh as an alias of `Start-Sleep`
 		task.Commands = []string{"sleep 2"}
+
 		go func() {
 			time.Sleep(100 * time.Millisecond)
 			cancel()
 		}()
 
 		e := tr.Run(task)
+
 		if e == nil {
-			t.Fatalf("got %v, wanted 'context canceled'", e)
+			t.Fatal("got no error, wanted 'context canceled'")
 		}
-		if e.Error() != "context canceled" {
+
+		if !errors.Is(e, context.Canceled) {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
 	})
@@ -481,10 +499,12 @@ func TestTaskRunner_withContext(t *testing.T) {
 		}()
 
 		e := tr.Run(task)
+
 		if e == nil {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
-		if e.Error() != "context canceled" {
+
+		if !errors.Is(e, context.Canceled) {
 			t.Fatalf("got %v, wanted 'context canceled'", e)
 		}
 	})
@@ -503,10 +523,12 @@ func TestTaskRunner_withContext(t *testing.T) {
 		task.Commands = []string{"sleep 2"}
 
 		e := tr.Run(task)
+
 		if e == nil {
 			t.Fatalf("got %v, wanted error", e)
 		}
-		if e.Error() != "context deadline exceeded" {
+
+		if !errors.Is(e, context.DeadlineExceeded) {
 			t.Fatalf("got %v, wanted 'context deadline exceeded'", e)
 		}
 	})

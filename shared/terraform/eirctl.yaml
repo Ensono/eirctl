@@ -1,0 +1,99 @@
+contexts:
+  tf:
+    container:
+      name: public.ecr.aws/hashicorp/terraform:1.10.5
+      entrypoint: /usr/bin/env
+      container_args:
+        - -v ~/.ssh:/root/.ssh
+        - -v ~/.aws:/root/.aws
+    envfile:
+      exclude:
+        - PATH
+        - HOME
+
+  tf:docs:
+    container:
+      name: quay.io/terraform-docs/terraform-docs:0.19.0
+      entrypoint: /usr/bin/env
+    envfile:
+      exclude:
+        - PATH
+        - HOME
+
+tasks:
+  tf:lint:format:
+    context: tf
+    description: |
+      Perform Terraform Format Check
+
+      If you want to run the correction locally upon a CI failure
+
+      `taskctl run tf:lint:format -- -additional-flag`
+    command:
+      - |
+        terraform fmt -diff -recursive {{ if .ArgsList }}{{ .Args }}{{ end }} ${TF_DIR}
+    required:
+      env:
+        - TF_DIR
+
+  tf:lint:validate:
+    context: tf
+    description: Perform Terraform Validation
+    command:
+      - |
+        terraform -chdir=${TF_DIR} init -backend=false
+        terraform -chdir=${TF_DIR} validate
+    required:
+      env:
+        - TF_DIR
+
+  tf:test:unit:
+    context: tf
+    description: Perform Terraform Unit Tests
+    command:
+      - terraform -chdir=${TF_DIR} test {{ if .ArgsList }}{{ .Args }}{{ end }}
+    required:
+      env:
+        - TF_DIR
+
+  tf:init:
+    context: tf
+    command:
+      - terraform -chdir=${TF_DIR} init {{ if .ArgsList }}{{ .Args }}{{ end }}
+    required:
+      env:
+        - TF_DIR
+
+  tf:plan:
+    description: |
+      TF Plan runs a plan against the desired TF definition
+      Generates the plan in the TF_DIR under a file named `tfplan`
+    context: tf
+    command:
+      - |
+        terraform -chdir=${TF_DIR} workspace select -or-create ${WORKSPACE:-$ENV_NAME}
+        terraform -chdir=${TF_DIR} plan -out tfplan {{ if .ArgsList }}{{ .Args }}{{ end }}
+    required:
+      env:
+        - TF_DIR
+        - WORKSPACE
+
+  tf:apply:
+    context: tf
+    command:
+      - |
+        terraform -chdir=${TF_DIR} workspace select -or-create ${WORKSPACE:-$ENV_NAME}
+        terraform -chdir=${TF_DIR} apply -auto-approve tfplan
+    required:
+      env:
+        - TF_DIR
+        - WORKSPACE
+
+  doc:terraform:generate:
+    context: tf:docs
+    description: Generates Doc for a module. Must supply a TF_DIR environment variable.
+    command:
+      - terraform-docs --output-file README.md markdown ${TF_DIR}
+    required:
+      env:
+        - TF_DIR

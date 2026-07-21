@@ -4,6 +4,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 )
 
@@ -13,6 +14,7 @@ type Job struct {
 	Command string
 	Dir     string
 	Env     *variables.Variables
+	EnvFile *utils.Envfile
 	Vars    *variables.Variables
 	Timeout *time.Duration
 
