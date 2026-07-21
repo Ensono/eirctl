@@ -40,6 +40,8 @@ type Job struct {
 	Environment       string
 	Permissions       Permissions
 	HasJobPermissions bool
+	HasContainer      bool
+	HasServices       bool
 	Concurrency       string
 	Env               map[string]string
 	Steps             []Step
@@ -155,6 +157,8 @@ func parseWorkflow(path string, content []byte) (Workflow, error) {
 			Needs:             stringsValue(values["needs"]),
 			Environment:       environment(values["environment"]),
 			HasJobPermissions: values["permissions"] != nil,
+			HasContainer:      values["container"] != nil,
+			HasServices:       values["services"] != nil,
 			Concurrency:       concurrency(values["concurrency"]),
 			Env:               stringMap(values["env"]),
 			Steps:             steps(values["steps"]),
@@ -361,11 +365,16 @@ func isPrivilegedTrigger(values map[string]bool) bool {
 
 func checkoutStep(steps []Step) (int, int) {
 	for index, step := range steps {
-		if strings.HasPrefix(step.Uses, "actions/checkout@") {
+		if actionUses(step.Uses, "actions/checkout") {
 			return index, index + 1
 		}
 	}
 	return -1, -1
+}
+
+func actionUses(value, action string) bool {
+	at := strings.LastIndex(value, "@")
+	return at > 0 && strings.EqualFold(value[:at], action)
 }
 
 func isUntrustedCheckout(step Step, workflow Workflow, job Job) bool {
@@ -550,7 +559,12 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 }
 
 func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
-	const path = ".github/workflows/trusted-sonarcloud-pr.yml"
+	const (
+		path             = ".github/workflows/trusted-sonarcloud-pr.yml"
+		scannerAction    = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+		reviewedBounds   = "tree=384,go=160,path=160,file=131072,total=1048576"
+		materializerPath = "trusted/scripts/materialize-sonar-source/main.go"
+	)
 	workflow, err := requiredWorkflow(workflows, path)
 	if err != nil {
 		return err
@@ -561,57 +575,121 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 	}
 
 	job, ok := workflow.Jobs["analyze"]
-	if !ok || job.Environment != "" || job.HasJobPermissions ||
+	if !ok || job.Environment != "" || job.HasJobPermissions || job.HasContainer || job.HasServices ||
 		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||
-		!strings.Contains(job.Concurrency, "github.event.workflow_run.pull_requests[0].number") ||
-		!strings.Contains(job.Concurrency, "github.event.workflow_run.head_sha") {
-		return errors.New("trusted SonarCloud analyzer must require a successful PR run and serialize each PR revision")
+		job.Concurrency != "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}" {
+		return errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling per-PR concurrency")
 	}
 	if containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
 		return errors.New("trusted SonarCloud analyzer must not use caches, local actions, or workflow/job-scoped secrets")
 	}
+	if len(job.Steps) != 7 {
+		return errors.New("trusted SonarCloud analyzer must use only the seven reviewed helper, provenance, report, materializer, and scanner steps")
+	}
 
-	provenance, ok := stepByID(job, "provenance")
-	if !ok || !strings.Contains(provenance.Run, "expected_workflow='Lint and Test'") ||
+	trustedCheckout := job.Steps[0]
+	provenance := job.Steps[1]
+	download := job.Steps[2]
+	validateReports := job.Steps[3]
+	configure := job.Steps[4]
+	materialize := job.Steps[5]
+	scanner := job.Steps[6]
+
+	if trustedCheckout.Name != "Check out trusted analyzer helpers" || !actionUses(trustedCheckout.Uses, "actions/checkout") ||
+		trustedCheckout.With["ref"] != "main" || trustedCheckout.With["fetch-depth"] != "1" ||
+		trustedCheckout.With["persist-credentials"] != "false" || trustedCheckout.With["path"] != "trusted" ||
+		!strings.Contains(trustedCheckout.With["sparse-checkout"], "scripts/materialize-sonar-source/main.go") ||
+		!strings.Contains(trustedCheckout.With["sparse-checkout"], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
+		return errors.New("trusted SonarCloud analyzer may check out only the protected main helper and report validator")
+	}
+
+	if provenance.ID != "provenance" || provenance.Name != "Resolve immutable upstream provenance" ||
+		!strings.Contains(provenance.Run, "expected_workflow='Lint and Test'") ||
 		!strings.Contains(provenance.Run, "expected_event='pull_request'") ||
 		!strings.Contains(provenance.Run, "expected_branch='main'") ||
 		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}") ||
+		!strings.Contains(provenance.Run, ".head_repository.full_name") ||
 		!strings.Contains(provenance.Run, ".base.repo.full_name == $repository") ||
 		!strings.Contains(provenance.Run, ".base.ref == $branch") ||
+		!strings.Contains(provenance.Run, ".head.repo.full_name == $head_repository") ||
 		!strings.Contains(provenance.Run, ".head.sha == $sha") ||
 		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}/artifacts") ||
-		!strings.Contains(provenance.Run, "expected exactly one current Sonar report artifact") {
-		return errors.New("trusted SonarCloud analyzer must resolve immutable workflow, PR, revision, and artifact provenance")
+		!strings.Contains(provenance.Run, ".workflow_run.id == $run_id") ||
+		!strings.Contains(provenance.Run, ".workflow_run.head_sha == $sha") ||
+		!strings.Contains(provenance.Run, "expected exactly one current Sonar report artifact") ||
+		!strings.Contains(provenance.Run, "head-repository=%s") {
+		return errors.New("trusted SonarCloud analyzer must bind workflow, run, attempt, PR, base/head repositories, revision, and report artifact provenance")
 	}
 
-	trustedCheckout, trustedCheckoutIndex := stepNamed(job, "Check out trusted report validator")
-	download, downloadIndex := stepNamed(job, "Download only the verified Sonar report artifact")
-	validateReports, validateIndex := stepNamed(job, "Validate bounded passive report artifact")
-	configure, configureIndex := stepNamed(job, "Create trusted scanner configuration")
-	sourceCheckout, sourceCheckoutIndex := stepNamed(job, "Materialize verified pull-request source as passive data")
-	scanner, scannerIndex := stepNamed(job, "Scan passive pull-request data with SonarCloud")
-	if trustedCheckoutIndex != 0 || !strings.HasPrefix(trustedCheckout.Uses, "actions/checkout@") || trustedCheckout.With["ref"] != "main" ||
-		trustedCheckout.With["persist-credentials"] != "false" || trustedCheckout.With["path"] != "trusted" ||
-		downloadIndex <= trustedCheckoutIndex || !strings.HasPrefix(download.Uses, "actions/download-artifact@") ||
-		download.With["repository"] != "${{ github.repository }}" || !strings.Contains(download.With["run-id"], "steps.provenance.outputs.run-id") ||
-		validateIndex != downloadIndex+1 || !strings.Contains(validateReports.Run, "trusted/scripts/validate-sonar-reports.sh analysis/reports") ||
-		configureIndex != validateIndex+1 || !strings.Contains(configure.Run, "analysis/sonar-project.properties") ||
-		sourceCheckoutIndex != configureIndex+1 || !strings.HasPrefix(sourceCheckout.Uses, "actions/checkout@") ||
-		sourceCheckout.With["ref"] != "${{ steps.provenance.outputs.head-sha }}" || sourceCheckout.With["persist-credentials"] != "false" || sourceCheckout.With["path"] != "analysis/source" ||
-		scannerIndex != sourceCheckoutIndex+1 || scannerIndex != len(job.Steps)-1 || scanner.Uses != "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f" ||
-		!strings.Contains(scanner.With["args"], "-Dsonar.projectBaseDir=analysis") || !strings.Contains(scanner.With["args"], "-Dsonar.host.url=https://sonarcloud.io") ||
-		!strings.Contains(scanner.With["args"], "-Dsonar.organization=ensono") || !strings.Contains(scanner.With["args"], "-Dsonar.projectKey=Ensono_eirctl") ||
-		!strings.Contains(scanner.With["args"], "-Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}") ||
-		!strings.Contains(scanner.With["args"], "-Dsonar.pullrequest.base=main") || !strings.Contains(scanner.With["args"], "-Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}") ||
-		!strings.Contains(scanner.With["args"], "-Dsonar.qualitygate.wait=true") {
-		return errors.New("trusted SonarCloud analyzer must validate passive inputs before its isolated immutable checkout and approved scanner")
+	if download.Name != "Download only the verified Sonar report artifact" || !actionUses(download.Uses, "actions/download-artifact") ||
+		len(download.With) != 5 || download.With["repository"] != "${{ github.repository }}" ||
+		download.With["artifact-ids"] != "${{ steps.provenance.outputs.artifact-id }}" ||
+		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
+		download.With["github-token"] != "${{ github.token }}" || download.With["path"] != "analysis/reports" ||
+		validateReports.Name != "Validate bounded passive report artifact" || strings.TrimSpace(validateReports.Run) != "trusted/scripts/validate-sonar-reports.sh analysis/reports" {
+		return errors.New("trusted SonarCloud analyzer must download and validate only the exact verified passive report artifact")
 	}
-	if !onlyScannerReceivesSonarToken(workflow, job, scannerIndex) {
+
+	if configure.Name != "Create trusted scanner configuration" ||
+		!strings.Contains(configure.Run, "analysis/sonar-project.properties") ||
+		!strings.Contains(configure.Run, "sonar.host.url=https://sonarcloud.io") ||
+		!strings.Contains(configure.Run, "sonar.organization=ensono") ||
+		!strings.Contains(configure.Run, "sonar.projectKey=Ensono_eirctl") ||
+		!strings.Contains(configure.Run, "sonar.sources=source") ||
+		!strings.Contains(configure.Run, "sonar.tests=source") ||
+		!strings.Contains(configure.Run, "sonar.go.coverage.reportPaths=reports/.coverage/out") ||
+		!strings.Contains(configure.Run, "sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml") ||
+		!strings.Contains(configure.Run, "sonar.qualitygate.wait=true") {
+		return errors.New("trusted SonarCloud analyzer must create the forced scanner configuration outside the passive source root")
+	}
+
+	expectedMaterializer := strings.Join(strings.Fields("go run "+materializerPath+`
+		--base-repository "${GITHUB_REPOSITORY}"
+		--base-branch main
+		--head-repository "${{ steps.provenance.outputs.head-repository }}"
+		--head-sha "${{ steps.provenance.outputs.head-sha }}"
+		--pull-request "${{ steps.provenance.outputs.pr-number }}"
+		--output analysis/source
+		--bounds `+reviewedBounds), " ")
+	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
+		strings.Join(strings.Fields(materialize.Run), " ") != expectedMaterializer ||
+		len(materialize.Env) != 1 || materialize.Env["GH_TOKEN"] != "${{ github.token }}" {
+		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
+	}
+
+	args := scanner.With["args"]
+	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != scannerAction ||
+		scanner.With["scannerVersion"] != "8.1.0.6389" ||
+		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
+		scanner.With["skipSignatureVerification"] != "false" ||
+		!strings.Contains(args, "-Dsonar.projectBaseDir=analysis") || !strings.Contains(args, "-Dsonar.host.url=https://sonarcloud.io") ||
+		!strings.Contains(args, "-Dsonar.organization=ensono") || !strings.Contains(args, "-Dsonar.projectKey=Ensono_eirctl") ||
+		!strings.Contains(args, "-Dsonar.sources=source") || !strings.Contains(args, "-Dsonar.tests=source") ||
+		!strings.Contains(args, "-Dsonar.go.coverage.reportPaths=reports/.coverage/out") ||
+		!strings.Contains(args, "-Dsonar.go.tests.reportPaths=reports/.coverage/report-junit.xml") ||
+		!strings.Contains(args, "-Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}") ||
+		!strings.Contains(args, "-Dsonar.pullrequest.branch=${{ steps.provenance.outputs.head-ref }}") ||
+		!strings.Contains(args, "-Dsonar.pullrequest.base=main") ||
+		!strings.Contains(args, "-Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}") ||
+		!strings.Contains(args, "-Dsonar.qualitygate.wait=true") {
+		return errors.New("trusted SonarCloud analyzer must end with the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
+	}
+	if !onlyScannerReceivesSonarToken(workflow, job, 6) {
 		return errors.New("trusted SonarCloud analyzer must scope SONAR_TOKEN to the approved scanner step")
 	}
 	return nil
+}
+
+func checkoutCount(job Job) int {
+	count := 0
+	for _, step := range job.Steps {
+		if actionUses(step.Uses, "actions/checkout") {
+			count++
+		}
+	}
+	return count
 }
 
 func requiredWorkflow(workflows map[string]Workflow, path string) (Workflow, error) {

@@ -1,14 +1,15 @@
 ## Why
 
-SonarCloud analysis currently fails on trusted `main` pushes because the containerized scanner cannot create `/eirctl/.scannerwork`, while pull-request runs deliberately skip analysis to avoid exposing `SONAR_TOKEN` to untrusted code. The repository also has no `CODEOWNERS` file, so changes to executable workflows and `sonar-project.properties` do not receive mandatory review from the maintainers responsible for the CI trust boundary.
+SonarCloud analysis currently fails on trusted `main` pushes because the containerized scanner cannot create `/eirctl/.scannerwork`, while pull-request runs deliberately skip analysis to avoid exposing `SONAR_TOKEN` to untrusted code. The first trusted pull-request design also proved unacceptable in live validation because checking out an untrusted revision in a privileged `workflow_run` context produced a high-severity CodeQL finding that the active ruleset correctly blocks. The repository also has no `CODEOWNERS` file, so changes to executable workflows and `sonar-project.properties` do not receive mandatory review from the maintainers responsible for the CI trust boundary.
 
 ## What Changes
 
 - Replace the failing container-based GitHub Actions scan path with the latest approved, immutable-SHA-pinned official SonarQube scan action and keep main-branch quality-gate enforcement.
 - Add a default-branch-controlled trusted SonarCloud workflow that analyzes every pull-request revision, including fork-originated revisions, without executing pull-request-controlled scripts, actions, dependencies, containers, or binaries.
-- Treat pull-request source and test reports as untrusted passive analysis inputs; validate their repository, pull request, workflow-run, run-attempt, artifact, and immutable commit provenance before scanning, then materialize the verified full SHA only through an isolated `persist-credentials: false` checkout that no pull-request-controlled command can execute.
+- Treat pull-request source and test reports as untrusted passive analysis inputs; validate their repository, pull request, workflow-run, run-attempt, artifact, and immutable commit provenance before scanning.
+- Eliminate pull-request source checkout from the privileged analyzer. Materialize only allowlisted regular Go source blobs obtained through GitHub's API from the verified head repository and full commit SHA, with strict path, type, count, and size bounds and no Git metadata, scripts, actions, configuration, dependencies, containers, or binaries.
 - Keep `SONAR_TOKEN` confined to the pinned scanner step, force trusted SonarCloud endpoint/project settings and explicit pull-request metadata, and prevent pull-request configuration from redirecting or overriding security-sensitive scanner settings.
-- Extend structural workflow policy and tests to recognize only this narrowly constrained passive static-analysis topology while continuing to reject privileged execution of pull-request-controlled content.
+- Extend structural workflow policy and tests to recognize only this narrowly constrained passive static-analysis topology, reject every privileged pull-request source checkout, and require the implementation to pass the active CodeQL security threshold without suppressing or dismissing an alert.
 - Add `CODEOWNERS` entries assigning `.github/workflows/**`, `.github/CODEOWNERS`, and `/sonar-project.properties` to `@Ensono/digital-tools-maintainers`, and enable required code-owner review in the active `main` ruleset.
 - Add the stable SonarCloud quality-gate check to the `main` ruleset after a successful live analysis establishes its exact check context.
 - Resolve every action introduced or touched by this change to its latest stable release at implementation time, pin it by full commit SHA, retain a readable version comment, and keep all selected actions within the repository allow list.
@@ -26,8 +27,8 @@ None.
 ## Impact
 
 - Affected workflows: `.github/workflows/pr.yml`, a new trusted SonarCloud workflow, and `.github/workflows/trusted-workflow-policy.yml` if its candidate allow list or validation path must include the new workflow.
-- Affected policy and tests: `scripts/check-workflow-policy`, workflow-security fixtures/tests, immutable-dependency checks, and `docs/ci-security.md`.
+- Affected policy and tests: `scripts/check-workflow-policy`, a protected GitHub-API source-materialization helper and its hostile-input fixtures, workflow-security fixtures/tests, immutable-dependency checks, CodeQL validation, and `docs/ci-security.md`.
 - Affected ownership and settings: a new `.github/CODEOWNERS` file and the active `main-is-main` repository ruleset.
 - Affected Sonar configuration: `sonar-project.properties`, trusted scanner arguments/configuration, coverage and JUnit artifact handling, and the existing `SONAR_TOKEN` repository secret.
-- Dependencies: latest stable allow-listed GitHub Actions pinned by full commit SHA, including `SonarSource/sonarqube-scan-action` and any GitHub-owned artifact, checkout, or API helper actions used by the trusted topology.
+- Dependencies: latest stable allow-listed GitHub Actions pinned by full commit SHA, including `SonarSource/sonarqube-scan-action` and any GitHub-owned artifact or API helper actions used by the trusted topology. `actions/checkout` remains permitted only for protected base-branch code and is prohibited for pull-request source in the privileged analyzer.
 - Operations: one live same-repository PR, one live fork PR, and one trusted `main` push are required to verify analysis association, token isolation, quality-gate reporting, and ruleset enforcement.

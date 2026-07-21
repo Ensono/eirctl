@@ -37,8 +37,16 @@ fi
 if grep -RIn --include='*.yml' --include='*.yaml' 'sonar:scanner:cli' .github/workflows >/dev/null; then
   fail "GitHub Actions must not invoke the container-backed sonar:scanner:cli task"
 fi
-if ! grep -Fq 'SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1' .github/workflows/pr.yml; then
-  fail "trusted main SonarCloud scan must use the reviewed immutable official scanner action"
-fi
+for workflow in .github/workflows/pr.yml .github/workflows/trusted-sonarcloud-pr.yml; do
+  [[ -f "$workflow" ]] || fail "missing SonarCloud workflow: $workflow"
+  grep -Fq 'SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1' "$workflow" ||
+    fail "$workflow must use the reviewed immutable official scanner action"
+  grep -Eq 'scannerVersion:[[:space:]]*8\.1\.0\.6389$' "$workflow" ||
+    fail "$workflow must pin the reviewed SonarScanner CLI version"
+  grep -Eq 'scannerBinariesUrl:[[:space:]]*https://binaries\.sonarsource\.com/Distribution/sonar-scanner-cli$' "$workflow" ||
+    fail "$workflow must use the reviewed SonarScanner binaries URL"
+  grep -Eq 'skipSignatureVerification:[[:space:]]*"?false"?$' "$workflow" ||
+    fail "$workflow must keep SonarScanner signature verification enabled"
+done
 
 printf 'immutable CI dependency checks passed\n'

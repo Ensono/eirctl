@@ -17,19 +17,23 @@ jobs:
       github.event.workflow_run.repository.full_name == github.repository
     runs-on: ubuntu-24.04
     concurrency:
-      group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+      # One group per PR lets a newer revision cancel stale analysis. The helper
+      # still binds every materialized object to this run's verified head SHA.
+      group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}
       cancel-in-progress: true
     steps:
-      # This is a protected-base helper. It is checked out before any pull-request
-      # source is materialized and contains only the report validator.
-      - name: Check out trusted report validator
+      # These helpers come only from protected main. Pull-request source is never
+      # passed to checkout, git, an archive extractor, or another action.
+      - name: Check out trusted analyzer helpers
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 1
           persist-credentials: false
           path: trusted
-          sparse-checkout: scripts/validate-sonar-reports.sh
+          sparse-checkout: |
+            scripts/materialize-sonar-source/main.go
+            scripts/validate-sonar-reports.sh
           sparse-checkout-cone-mode: false
 
       - name: Resolve immutable upstream provenance
@@ -56,28 +60,35 @@ jobs:
             '.id == $run_id and .run_attempt == $run_attempt and .name == $workflow and
              .event == $event and .repository.full_name == $repository and
              (.head_sha | test("^[0-9a-f]{40}$")) and
+             (.head_repository.full_name | type == "string" and length > 0) and
              (.pull_requests | type == "array" and length == 1)' <<<"$run" >/dev/null
 
           pr_number="$(jq -er '.pull_requests[0].number | select(type == "number" and . > 0)' <<<"$run")"
           head_sha="$(jq -er '.head_sha' <<<"$run")"
+          run_head_repository="$(jq -er '.head_repository.full_name' <<<"$run")"
           pull_request="$(gh api "repos/${repository}/pulls/${pr_number}")"
           jq -e \
             --arg repository "$repository" \
             --arg branch "$expected_branch" \
+            --arg head_repository "$run_head_repository" \
             --arg sha "$head_sha" \
-            '.base.repo.full_name == $repository and .base.ref == $branch and .head.sha == $sha' \
-            <<<"$pull_request" >/dev/null
+            --argjson pr_number "$pr_number" \
+            '.number == $pr_number and .base.repo.full_name == $repository and
+             .base.ref == $branch and .head.repo.full_name == $head_repository and
+             .head.sha == $sha' <<<"$pull_request" >/dev/null
           head_ref="$(jq -er '.head.ref | select(type == "string" and length > 0)' <<<"$pull_request")"
 
           artifacts="$(gh api "repos/${repository}/actions/runs/${RUN_ID}/artifacts?per_page=100")"
-          artifact_id="$(jq -er --arg name "$expected_artifact" \
-            '[.artifacts[] | select(.name == $name and .expired == false)] |
+          artifact_id="$(jq -er --arg name "$expected_artifact" --arg sha "$head_sha" --argjson run_id "$RUN_ID" \
+            '[.artifacts[] | select(.name == $name and .expired == false and
+              .workflow_run.id == $run_id and .workflow_run.head_sha == $sha)] |
              if length == 1 then .[0].id else error("expected exactly one current Sonar report artifact") end' \
             <<<"$artifacts")"
 
           {
             printf 'artifact-id=%s\n' "$artifact_id"
             printf 'head-ref=%s\n' "$head_ref"
+            printf 'head-repository=%s\n' "$run_head_repository"
             printf 'head-sha=%s\n' "$head_sha"
             printf 'pr-number=%s\n' "$pr_number"
             printf 'run-attempt=%s\n' "$RUN_ATTEMPT"
@@ -87,7 +98,7 @@ jobs:
       - name: Download only the verified Sonar report artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: sonar-reports-${{ steps.provenance.outputs.run-id }}-${{ steps.provenance.outputs.run-attempt }}
+          artifact-ids: ${{ steps.provenance.outputs.artifact-id }}
           path: analysis/reports
           repository: ${{ github.repository }}
           run-id: ${{ steps.provenance.outputs.run-id }}
@@ -115,24 +126,36 @@ jobs:
           sonar.qualitygate.wait=true
           PROPERTIES
 
-      - name: Materialize verified pull-request source as passive data
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.provenance.outputs.head-sha }}
-          fetch-depth: 0
-          persist-credentials: false
-          path: analysis/source
+      - name: Materialize bounded verified Go source through the Git Data API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          go run trusted/scripts/materialize-sonar-source/main.go
+          --base-repository "${GITHUB_REPOSITORY}"
+          --base-branch main
+          --head-repository "${{ steps.provenance.outputs.head-repository }}"
+          --head-sha "${{ steps.provenance.outputs.head-sha }}"
+          --pull-request "${{ steps.provenance.outputs.pr-number }}"
+          --output analysis/source
+          --bounds tree=384,go=160,path=160,file=131072,total=1048576
 
       - name: Scan passive pull-request data with SonarCloud
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          scannerVersion: 8.1.0.6389
+          scannerBinariesUrl: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli
+          skipSignatureVerification: "false"
           args: >-
             -Dsonar.projectBaseDir=analysis
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.organization=ensono
             -Dsonar.projectKey=Ensono_eirctl
+            -Dsonar.sources=source
+            -Dsonar.tests=source
+            -Dsonar.go.coverage.reportPaths=reports/.coverage/out
+            -Dsonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
             -Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}
             -Dsonar.pullrequest.branch=${{ steps.provenance.outputs.head-ref }}
             -Dsonar.pullrequest.base=main

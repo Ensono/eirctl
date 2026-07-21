@@ -1,12 +1,14 @@
 ## Context
 
-The `Lint and Test` workflow serves both `pull_request` and trusted `push` events. Its current SonarCloud job is restricted to a push on `main`, receives `SONAR_TOKEN`, and invokes the repository's container-backed `sonar:scanner:cli` task. Recent trusted runs reach the scanner with the secret present but fail before analysis because the image's non-root UID cannot create `.scannerwork` in the bind-mounted GitHub workspace. Pull-request runs skip the job by design.
+The `Lint and Test` workflow serves both `pull_request` and trusted `push` events. Its original SonarCloud job was restricted to a push on `main`, received `SONAR_TOKEN`, and invoked the repository's container-backed `sonar:scanner:cli` task. Trusted runs reached the scanner but failed because the image's non-root UID could not create `.scannerwork` in the bind-mounted GitHub workspace. Pull-request runs skipped the job to avoid exposing the secret.
 
-This repository already separates untrusted execution from privileged publication, pins actions by full commit SHA, restricts actions to a selected allow list, and structurally validates privileged workflow topologies. GitHub treats `workflow_run` as privileged because it executes default-branch workflow code and can access repository secrets. GitHub also warns that checking out and executing pull-request-controlled content in such a workflow can expose secrets or poison shared state.
+This repository already separates untrusted execution from privileged publication, pins actions by full commit SHA, restricts actions to a selected allow list, and structurally validates privileged workflow topologies. GitHub treats `workflow_run` as privileged because it executes default-branch workflow code and can access repository secrets.
 
-SonarCloud analysis differs from a build: the scanner must parse pull-request-controlled source while authenticating to SonarCloud, but it does not need to execute repository scripts, install dependencies, restore caches, run generated binaries, or load repository-local actions. This design makes that narrow parser boundary explicit rather than treating a privileged checkout as generally safe.
+The first implementation of this change verified a full pull-request head SHA, checked it out with `persist-credentials: false` into an isolated directory, and permitted only the pinned Sonar scanner afterward. Live PR validation demonstrated that this exception is not acceptable: CodeQL reported `actions/untrusted-checkout/high` because a privileged `workflow_run` checked out untrusted source before an external action. The active `main-is-main` code-scanning rule correctly blocks that high-severity finding. The design must therefore remove privileged pull-request checkout rather than dismiss, suppress, or bypass the alert.
 
-The repository currently has no `CODEOWNERS` file. The `main-is-main` ruleset requires one approving review but has `require_code_owner_review` disabled. `@Ensono/digital-tools-maintainers` has maintain access and is the appropriate owner for CI trust-boundary files. CODEOWNERS strengthens merge governance but does not prevent a workflow from running before review, so it does not replace runtime isolation.
+SonarCloud analysis still requires the scanner to parse attacker-controlled Go source and reports while authenticating. The remaining narrow trust boundary must minimize the materialized input surface, eliminate repository execution surfaces, and keep credentials and configuration outside pull-request control.
+
+At the proposal baseline, the repository had no `CODEOWNERS` file and code-owner review was not required. `@Ensono/digital-tools-maintainers` is the appropriate owner for CI trust-boundary files. CODEOWNERS strengthens merge governance but does not prevent pre-review workflow execution and cannot replace runtime isolation.
 
 ## Goals / Non-Goals
 
@@ -14,140 +16,171 @@ The repository currently has no `CODEOWNERS` file. The `main-is-main` ruleset re
 
 - Restore successful SonarCloud analysis and quality-gate waiting for trusted `main` pushes.
 - Analyze every pull-request revision, including fork-originated revisions, without giving pull-request code direct access to `SONAR_TOKEN`.
-- Preserve Go coverage and JUnit report ingestion, which rules out SonarCloud automatic analysis.
+- Preserve Go coverage and JUnit report ingestion.
 - Run trusted scanner orchestration only from the protected default branch.
-- Establish and validate immutable provenance between the initiating PR workflow run, exact pull-request revision, reports, and SonarCloud analysis.
-- Ensure pull-request-controlled scanner configuration cannot redirect credentials or override the project identity.
-- Keep new and touched Actions allow-listed, at the latest stable release selected at implementation time, and pinned by full commit SHA.
-- Require code-owner approval for executable workflow files, `CODEOWNERS` itself, and `sonar-project.properties`.
-- Make the SonarCloud quality gate a required merge check once its stable check context is observed.
+- Eliminate all privileged checkout or Git materialization of pull-request source.
+- Establish immutable provenance between the initiating PR workflow run, current pull request, head repository, full head SHA, reports, Git tree, selected source blobs, and SonarCloud analysis.
+- Materialize only bounded, non-executable regular Go source files and never materialize pull-request Git metadata, workflows, scripts, local actions, scanner configuration, dependencies, containers, or binaries.
+- Ensure pull-request-controlled scanner configuration cannot redirect credentials or override project identity.
+- Pass the active CodeQL security threshold without dismissing or suppressing a finding.
+- Keep new and touched Actions allow-listed, current at implementation time, and pinned by full commit SHA.
+- Require code-owner approval for executable workflows, `CODEOWNERS` itself, and `sonar-project.properties`.
+- Make the SonarCloud quality gate a required merge check after its stable identity is observed.
 
 **Non-Goals:**
 
 - Giving fork or pull-request workflows direct access to repository secrets.
-- Running pull-request build commands, scripts, local actions, package installation, containers, or binaries in the trusted SonarCloud workflow.
+- Checking out pull-request source in any privileged workflow, even by full SHA with stored credentials disabled.
+- Running pull-request build commands, scripts, local actions, package installation, containers, dependencies, or binaries in the trusted SonarCloud workflow.
+- Generically extracting an attacker-controlled source archive in the privileged workflow.
 - Replacing existing lint, test, report, debug-build, release, or deployment trust domains.
-- Enabling SonarCloud automatic analysis, because it does not ingest Go coverage reports.
-- Broadly updating unrelated dependencies or all repository ownership rules.
-- Treating CODEOWNERS approval as a substitute for least privilege and data/execution separation.
+- Enabling SonarCloud automatic analysis, because it does not ingest the required Go coverage reports.
+- Preserving full Git checkout metadata at the cost of the privileged-workflow boundary.
+- Treating CODEOWNERS approval or a security-alert dismissal as runtime authorization.
 
 ## Decisions
 
 ### 1. Use separate untrusted preparation and trusted analysis workflows
 
-The existing `pull_request` workflow remains the only place where pull-request code is built and tested. It has no `SONAR_TOKEN` and uploads an inert Sonar report artifact for the Linux test leg containing only the expected Go coverage and JUnit report files.
+The existing `pull_request` workflow remains the only place where pull-request code is built and tested. It has no `SONAR_TOKEN` and uploads a dedicated inert report artifact containing only the expected Go coverage and JUnit files.
 
-A new default-branch workflow is triggered by `workflow_run` completion of `Lint and Test`. It obtains protected credentials because its workflow definition comes from `main`, but it performs only trusted orchestration and static analysis. It runs for pull-request events regardless of whether the head repository is the base repository or a fork. A pull request that cannot produce a usable report may still receive source analysis with an explicitly handled missing-coverage result; it must not silently disappear.
+A protected-default-branch workflow is triggered by `workflow_run` completion of `Lint and Test`. It performs trusted orchestration and passive static analysis for same-repository and fork pull requests. A missing or invalid report produces a visible failed-preparation result rather than a silently absent Sonar check.
 
-Alternatives considered:
+Alternatives rejected:
 
-- Put `SONAR_TOKEN` in the ordinary PR workflow: rejected because fork workflows do not receive the secret and pull-request code could exfiltrate it.
-- Use `pull_request_target` and build the PR: rejected because privileged untrusted execution violates GitHub guidance and repository policy.
-- Scan only same-repository PRs: rejected because it does not satisfy every-PR coverage.
-- Use SonarCloud automatic analysis: rejected because automatic analysis does not support the Go coverage reports required by this project.
+- An ordinary secret-bearing PR job exposes the token to pull-request code and does not work safely for forks.
+- `pull_request_target` or another privileged PR build executes attacker-controlled content.
+- Same-repository-only scanning omits fork pull requests.
+- SonarCloud automatic analysis does not ingest the required reports.
 
-### 2. Resolve and validate immutable upstream provenance before scanning
+### 2. Resolve immutable run, PR, artifact, repository, tree, and blob provenance
 
-Trusted code resolves the originating workflow run through the GitHub API and verifies all of the following before any secret-bearing step:
+Before any step receives `SONAR_TOKEN`, protected code verifies:
 
-- workflow identity is the expected `Lint and Test` workflow;
-- upstream event is `pull_request` and base repository is `Ensono/eirctl`;
-- base branch is `main`;
-- pull-request number exists and belongs to this repository;
-- the recorded head SHA is a full immutable SHA and matches the PR revision being analyzed;
-- the report artifact belongs to the exact upstream run ID and run attempt;
-- artifact name, expected files, extraction paths, file types, and bounded sizes match the passive-data contract.
+- the upstream workflow is the expected `Lint and Test` workflow and event is `pull_request`;
+- the base repository is `Ensono/eirctl` and base branch is `main`;
+- the pull-request number is valid and still resolves through the base repository API;
+- the head repository identity matches the current pull request, including fork identity;
+- the head SHA is a full immutable commit SHA and still matches the current PR revision;
+- the run ID and run attempt match the event and report artifact;
+- exactly one unexpired report artifact has the deterministic expected name;
+- the report artifact contains only the bounded regular coverage and JUnit files;
+- the Git commit API in the verified head repository resolves the exact full SHA;
+- the commit's tree identity matches a complete, non-truncated recursive Git tree response;
+- each selected source blob response matches the tree-recorded blob SHA and size.
 
-The workflow uses PR-number/revision concurrency so a newer revision supersedes stale analysis without conflating artifacts between revisions. Provenance failures fail closed and never expose `SONAR_TOKEN`.
+Per-PR/revision concurrency cancels stale analysis. The source materializer performs a final current-head check before it exits so a revision changed during API retrieval fails closed. A later race is handled by concurrency cancellation; artifacts and source identities are never mixed across revisions.
 
-### 3. Materialize PR source and reports as passive data, not an executable workspace
+### 3. Materialize source through the Git Data API, never through checkout or a generic archive
 
-The trusted workflow first verifies the upstream workflow run, pull request, full head SHA, run attempt, and report artifact. It then uses an immutable full-SHA `actions/checkout` with `persist-credentials: false` to materialize exactly that revision into `analysis/source`. This is deliberately a constrained source-materialization primitive, not a general privileged checkout: no branch, tag, mutable ref, event value, stored credential, or default workspace path is permitted.
+The analyzer checks out protected `main` helper code only. It never passes pull-request repository or revision data to `actions/checkout`, `git checkout`, `git fetch`, `gh pr checkout`, or an equivalent source materializer.
 
-Before source materialization, trusted default-branch orchestration creates the scanner configuration in the isolated `analysis` root and validates the passive report artifact. The scanner therefore uses `analysis` as its project base and `analysis/source` only as source data; a pull-request-controlled `sonar-project.properties` cannot become the loaded configuration file. After source materialization, only the pinned official scanner action may consume the isolated source and report data. No shell command, cache, local action, container, package manager, dependency hook, binary, or alternate external action may run.
+A protected helper uses the GitHub Git Data API against the verified head repository:
 
-The workflow does not restore or save caches and does not use the analysis directory as a source of workflow code, scripts, actions, tools, dependency metadata, containers, or commands. Coverage and JUnit artifacts are parser inputs only. The structural policy gains an explicit model for this one scanner topology instead of a generic exception for privileged untrusted checkout.
+1. Resolve the exact commit and root tree from the full head SHA.
+2. Request the recursive tree and reject a truncated response.
+3. Validate every tree path as a canonical relative slash-separated path with no absolute prefix, `.` or `..` segment, backslash, control character, duplicate normalized value, or excessive length.
+4. Permit tree entries and regular blob modes for inspection, but reject symlinks, submodules, special modes, and unknown entry types.
+5. Select only regular files ending in `.go`; all workflows, scripts, local actions, project properties, module/dependency metadata, container definitions, generated executables, archives, and other non-Go content remain unmaterialized.
+6. Enforce reviewed protected constants for maximum tree entries, selected Go files, path length, per-file decoded bytes, and aggregate decoded bytes. Implementation records the current repository baseline and chooses the smallest practical bounds with documented headroom.
+7. Fetch each selected blob by its tree-recorded immutable blob SHA, require the expected API encoding and identity, verify decoded length against both the tree and blob response, and reject a changed or missing value.
+8. Create a fresh isolated `analysis/source` root, create parent directories without following links, and write each file once with exclusive creation and mode `0644`.
+9. Revalidate the current PR head SHA before returning success.
 
-### 4. Use trusted scanner configuration and command-line security invariants
+The helper uses protected base-branch code and the Go standard library. Its GitHub token has only `contents: read`; `SONAR_TOKEN` is absent. The pinned Go setup disables dependency caching. A GitHub-hosted ephemeral runner is used, and no privileged cache is restored or saved.
 
-The official `SonarSource/sonarqube-scan-action` replaces the container-backed scanner in GitHub Actions. The main job and trusted PR job use the same pinned action and trusted property set. The action avoids the container UID mismatch and currently bundles a newer supported scanner runtime.
+This design intentionally does not preserve `.git`. Explicit Sonar pull-request metadata and `sonar.scm.revision` bind analysis to the verified revision. Live same-repository and fork exercises must prove that PR decoration and new-code behavior remain acceptable. If they do not, implementation pauses; it does not reintroduce privileged checkout.
 
-The trusted workflow writes a configuration file in the trusted `analysis` root, uses that root as the scanner project base, and ignores the PR revision's `analysis/source/sonar-project.properties`. Security-sensitive values are supplied from trusted default-branch configuration or highest-precedence scanner arguments, including:
+Alternatives rejected:
+
+- An immutable `actions/checkout` still triggers the high-severity CodeQL rule and leaves an unnecessarily broad repository surface.
+- A source artifact produced by the untrusted workflow is harder to bind independently to the exact Git tree.
+- A GitHub-generated tarball still requires a general archive parser and extractor against attacker-controlled paths and entry types.
+- Materializing the complete repository exposes scripts, actions, scanner configuration, dependency hooks, containers, binaries, and unrelated parser inputs that Sonar does not need for Go analysis.
+
+### 4. Keep scanner configuration, runtime selection, and credentials trusted
+
+Protected orchestration creates scanner configuration in `analysis`, outside `analysis/source`, before source materialization. The scanner project base is `analysis`; the pull-request copy of `sonar-project.properties` is never materialized.
+
+Trusted configuration or highest-precedence arguments force:
 
 - `sonar.host.url=https://sonarcloud.io`;
 - `sonar.projectKey=Ensono_eirctl`;
 - `sonar.organization=ensono`;
-- source, test, coverage, and JUnit paths;
+- Go source, test, coverage, and JUnit paths;
 - `sonar.pullrequest.key`, `sonar.pullrequest.branch`, and `sonar.pullrequest.base`;
 - `sonar.scm.revision` set to the verified immutable SHA;
 - `sonar.qualitygate.wait=true`.
 
-`SONAR_TOKEN` is scoped to the scanner step rather than workflow or job scope. No earlier validation/materialization step receives it. The `GITHUB_TOKEN` remains read-only and is supplied to the scanner only if SonarCloud integration requires it.
+The official `SonarSource/sonarqube-scan-action` is pinned by full action commit SHA. The workflow explicitly fixes the scanner CLI version and approved Sonar binaries URL exposed by that action and keeps signature verification enabled. The policy rejects an omitted or mutable scanner version, an alternate binaries URL, or disabled signature verification.
 
-### 5. Encode the narrow scanner boundary in structural policy
+`SONAR_TOKEN` exists only in the scanner step environment. No provenance, API retrieval, report validation, or source-materialization step receives it. The scanner receives no write-capable GitHub token. The trusted `main` job uses the same reviewed scanner selection but continues to analyze its trusted checkout with full report and revision metadata.
 
-The existing policy continues to reject privileged workflows that execute pull-request-controlled content. The only accepted trusted PR analysis path must structurally prove:
+### 5. Permit only the exact passive analyzer topology
 
-- expected `workflow_run` trigger and upstream workflow;
-- read-only job permissions with only the minimum artifact/API read permission;
-- immutable full-SHA revision and provenance validation before scan;
-- isolated `persist-credentials: false` checkout into `analysis/source` only after that validation;
-- no caches;
-- no local actions;
-- no shell/build/package/container execution after untrusted materialization;
-- exactly the approved, immutable-SHA-pinned Sonar action consumes the passive source;
-- secret reference appears only on the approved scan step;
-- trusted endpoint and project identity are explicit.
+The structural policy requires:
 
-Tests cover bypass attempts, including a PR-controlled scanner configuration, mutable refs, alternate actions, commands after materialization, cache use, environment-wide secrets, missing provenance checks, and YAML syntax variants.
+- the expected `workflow_run` trigger and upstream workflow;
+- exact read-only permissions;
+- protected base-branch helper code;
+- immutable run, PR, head-repository, head-SHA, report, tree, and blob validation;
+- no pull-request checkout mechanism;
+- no generic untrusted source archive extraction;
+- a bounded Git Data API source helper that materializes only non-executable regular `.go` files;
+- no caches or local actions;
+- no shell, build, package, dependency, container, binary, or alternate action after source materialization;
+- exactly the approved immutable scanner as the final step;
+- scanner-step-only `SONAR_TOKEN`;
+- explicit trusted endpoint, project identity, scanner version, binaries URL, signature verification, PR metadata, and revision.
+
+Hostile fixtures cover mutable and derived refs, checkout aliases, missing provenance checks, forged head repositories, truncated trees, symlinks, submodules, unsafe or duplicate paths, wrong blob identities, size/count bypasses, job/workflow-scoped secrets, untrusted scanner settings, post-materialization commands, caches, alternate actions, and equivalent YAML syntax.
+
+Acceptance includes the repository CodeQL workflow. A new untrusted-checkout or equivalent high-severity alert is a design failure. Dismissal, suppression, ruleset bypass, or threshold reduction is not an accepted mitigation.
 
 ### 6. Add CODEOWNERS and activate code-owner review
 
-Create `.github/CODEOWNERS` with explicit entries for:
-
-- `/.github/CODEOWNERS`;
-- `/.github/workflows/**`;
-- `/sonar-project.properties`.
-
-Each entry names `@Ensono/digital-tools-maintainers`. The repository's active `main-is-main` ruleset is updated to require code-owner review while retaining the existing general approval and required checks. Protecting `CODEOWNERS` itself prevents an unreviewed ownership-removal change from bypassing the intended review path.
+`.github/CODEOWNERS` explicitly assigns `/.github/CODEOWNERS`, `/.github/workflows/**`, and `/sonar-project.properties` to `@Ensono/digital-tools-maintainers`. The active `main-is-main` ruleset requires code-owner review while retaining general approval and required checks. Runtime controls remain effective before review.
 
 ### 7. Pin current, allow-listed Actions and avoid immediate version churn
 
-At implementation time, query each introduced or touched action's latest stable release, resolve annotated tags to the underlying commit where necessary, pin the full commit SHA, and retain a readable release comment. Update other occurrences of the same action in the touched workflow set when needed for consistency and to avoid immediate Dependabot follow-up PRs.
+Each introduced or touched action is resolved to its latest stable release at implementation time, including annotated-tag dereferencing. Workflows retain a readable version comment and full commit SHA. Other occurrences of touched action families are aligned where necessary to avoid immediate grouped Dependabot churn.
 
-The selected-action policy is checked before introducing an action. `SonarSource/sonarqube-scan-action` and GitHub-owned `actions/*` are currently allow-listed; no new third-party action is added unless it is explicitly approved first. The implementation records release/tag/SHA evidence and runs the immutable-dependency validator.
+No new third-party action is introduced without selected-action approval. Immutable-dependency validation covers the scanner action, explicit scanner CLI selection, GitHub-owned actions, and any downloaded runtime verification.
 
 ### 8. Require the external SonarCloud quality-gate check
 
-The trusted workflow passes explicit PR metadata and revision so SonarCloud associates analysis with the pull-request head SHA and publishes its stable external check. After a live successful analysis confirms the exact check context and integration, update `main-is-main` to require that SonarCloud check alongside `Lint` and `Test (Linux)`. The GitHub Actions `workflow_run` job itself is not used as the required PR-head check because it executes against the default-branch workflow context.
+The analyzer supplies explicit PR metadata and revision so SonarCloud associates analysis with the PR head and publishes its stable external check. After a successful same-repository and fork analysis establishes the exact context and integration ID, `main-is-main` requires that external check alongside `Lint` and `Test (Linux)`. The default-branch `workflow_run` job context is not substituted for the external PR-head check.
 
 ## Risks / Trade-offs
 
-- **[Scanner parses attacker-controlled source while holding a token]** → Use only the latest pinned official scanner, force trusted endpoint/project settings, remove untrusted scanner configuration, expose the token only to the scan step, prohibit all repository execution, and document this as the sole narrow parser trust boundary.
-- **[A scanner or analyzer vulnerability could turn passive input into execution]** → Keep scanner dependencies current, avoid caches and write credentials, minimize token scope, and retain CODEOWNERS review for scanner/configuration changes.
-- **[A malicious artifact could exploit extraction or parser behavior]** → Download only the exact run artifact, use current GitHub-owned artifact handling, validate paths/types/sizes, reject symlinks or unexpected files, and keep artifacts outside trusted code directories.
-- **[Immutable checkout materializes attacker-controlled source in a privileged workflow]** → Require verified full-SHA provenance before checkout, `persist-credentials: false`, an isolated analysis path, no post-materialization command or cache, and the pinned scanner as the sole source consumer; validate SonarCloud SCM/new-code fidelity in a live fork PR.
-- **[A completed upstream run may refer to a superseded PR revision]** → Bind analysis to the recorded SHA and use per-PR concurrency; newer revisions supersede stale runs without mixing provenance.
-- **[Ruleset update can block all merges if the observed check name is wrong]** → Add the required check only after a successful live PR scan establishes the exact context and integration ID; document rollback.
-- **[CODEOWNERS does not prevent pre-review workflow execution]** → Continue to rely on default-branch workflow code, secret scoping, provenance validation, and passive-data isolation.
-- **[Latest releases can move between proposal and implementation]** → Resolve and record versions immediately before editing, then validate SHA pins and Dependabot configuration.
+- **[The scanner parses attacker-controlled Go source and reports while holding a token]** → Minimize inputs to bounded regular Go files and two bounded reports, use the latest reviewed pinned scanner/action, verify the scanner distribution, force trusted settings, expose the token only to the final step, and document this as the sole parser trust boundary.
+- **[A scanner vulnerability turns passive input into execution]** → Use an ephemeral runner, no Git metadata or repository execution surface, no caches or credentials, non-executable files, minimal token scope, current dependencies, and CODEOWNERS review.
+- **[The source helper mishandles malicious Git paths or modes]** → Avoid archive extraction, use standard-library API parsing, canonicalize and bound paths, reject symlinks/submodules/special modes and duplicates, use exclusive non-link-following writes, and add hostile table-driven tests.
+- **[GitHub API tree retrieval is truncated, unavailable, or rate-limited]** → Require a complete response, use the read-only token, bound requests, retry only safe transient failures, and fail visibly before scanning rather than falling back to checkout or an untrusted archive.
+- **[A fork changes or disappears during analysis]** → Bind every request to the verified head repository and immutable commit/blob identities; fail closed if the repository or object is unavailable.
+- **[No `.git` metadata reduces blame or new-code fidelity]** → Supply explicit PR and revision metadata and verify same-repository and fork behavior live. Do not weaken the boundary if fidelity is inadequate.
+- **[A newer PR revision supersedes analysis]** → Recheck the current head at the end of materialization and use per-PR/revision concurrency cancellation.
+- **[CodeQL behavior changes]** → Keep an explicit no-PR-checkout policy and require security scanning to pass; do not encode query evasion as a control.
+- **[The required Sonar check identity is configured incorrectly]** → Add it only after a successful live analysis establishes exact context and integration ID; document rollback.
+- **[CODEOWNERS does not prevent pre-review execution]** → Continue relying on protected workflow code, least privilege, immutable provenance, bounded materialization, and secret scoping.
 
 ## Migration Plan
 
-1. Capture baseline failures/skips and current ruleset/action-policy state.
-2. Add CODEOWNERS and policy/spec tests without enabling a new secret path.
-3. Update the untrusted PR workflow to publish the bounded Sonar reports artifact.
-4. Add the trusted PR analysis workflow and structural policy enforcement.
-5. Replace the trusted-main container scan with the same official pinned scanner action.
-6. Run static workflow, policy, immutable-dependency, unit, and OpenSpec validation.
-7. Exercise a same-repository PR, a fork PR, and a trusted `main` push; inspect source revision, coverage, quality-gate result, PR decoration, and logs for secret isolation.
-8. Enable required code-owner review in `main-is-main`.
-9. After observing the external SonarCloud check identity, add it to required status checks.
+1. Retain the completed baseline, CODEOWNERS, report-artifact contract, trusted-main scanner repair, and action pin evidence.
+2. Reopen analyzer policy, implementation, documentation, and validation tasks affected by the rejected checkout design.
+3. Add and test the protected Git Data API source-materialization helper and conservative baseline-derived bounds.
+4. Replace pull-request source checkout with the helper and remove the checkout exception from structural policy.
+5. Require explicit scanner CLI version, approved binaries URL, and signature verification.
+6. Run hostile helper fixtures, policy unit tests, immutable-dependency checks, workflow/YAML validation, full relevant Go tests, CodeQL, and OpenSpec validation.
+7. Push a new PR revision and confirm that the previous high-severity CodeQL finding is absent before seeking merge.
+8. After the workflow exists on `main`, exercise a trusted `main` push, a same-repository PR, and an adversarial fork PR. Verify exact revision, coverage, PR decoration, new-code behavior, token isolation, and no source execution.
+9. Confirm code-owner enforcement and add the observed external SonarCloud check identity to `main-is-main`.
+10. Record final workflow URLs, ruleset state, release/SHA evidence, API bounds, and residual parser risk.
 
-Rollback removes the SonarCloud required check first, disables the trusted PR workflow, and restores main analysis only if the previous path is known to work. CODEOWNERS and the strengthened privileged-workflow policy remain safe to retain independently.
+Rollback removes the external SonarCloud required check first, disables the trusted PR analyzer, and preserves CODEOWNERS plus the stricter no-privileged-checkout policy. The rejected checkout design is not a rollback target.
 
 ## Open Questions
 
-- Confirm the exact SonarCloud external quality-gate check context and integration ID from the first successful live PR analysis before changing the ruleset.
-- Confirm through a live fork PR that the constrained immutable checkout provides adequate SonarCloud SCM/new-code fidelity while the static policy continues to enforce its passive-only boundary.
-- Confirm whether missing coverage after a failed upstream test should produce source-only analysis or an explicit failed Sonar preparation check; it must not silently skip the PR.
+- Confirm the smallest practical Git tree, selected-file, path-length, per-file, and aggregate-size limits from the current repository baseline before implementation.
+- Confirm through live same-repository and fork PRs that an allowlisted source tree without `.git` provides acceptable SonarCloud PR decoration and new-code behavior.
+- Confirm the exact SonarCloud external quality-gate context and integration ID before changing required checks.
