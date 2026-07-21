@@ -51,12 +51,12 @@ jobs:
           persist-credentials: false
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
+        uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         with:
-          versionSpec: '6.0.5'
+          versionSpec: '6.2.0'
       - name: Set SemVer version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
+        uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
