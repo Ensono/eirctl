@@ -51,7 +51,7 @@ jobs:
           persist-credentials: false
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
+        uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v3.0
         with:
           versionSpec: '6.0.5'
       - name: Set SemVer version
