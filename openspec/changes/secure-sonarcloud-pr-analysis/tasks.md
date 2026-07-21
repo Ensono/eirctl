@@ -52,7 +52,7 @@
 - [x] 7.1 Update `docs/ci-security.md` with the no-checkout Git Data API flow, source and report provenance invariants, materialization bounds, scanner parser risk, forced runtime/settings, secret scope, CodeQL acceptance rule, and rollback procedure.
 - [x] 7.2 Document why ordinary secret-bearing PR jobs, privileged PR builds, privileged immutable checkout, untrusted or generic source archives, same-repository-only scanning, and automatic analysis were rejected.
 - [x] 7.3 Run hostile source-helper tests, focused policy unit tests, immutable-dependency validation, workflow security/YAML validation, and the repository's relevant Go tests; resolve every failure.
-- [ ] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
+- [x] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
 - [x] 7.5 Run `openspec validate secure-sonarcloud-pr-analysis` and confirm the revised implementation satisfies every modified and added scenario.
 
 ## 8. Exercise Live Workflows and Enforce Repository Rules
@@ -61,6 +61,6 @@
 - [ ] 8.2 Exercise a same-repository PR and confirm the exact head SHA, coverage, SonarCloud PR decoration, quality-gate result, acceptable no-`.git` new-code behavior, and no secret exposure in the untrusted workflow.
 - [ ] 8.3 Exercise a fork-originated PR with adversarial Git tree entries, `sonar-project.properties`, scripts, workflows, local actions, dependency hooks, container definitions, and inert executable-looking files; confirm forbidden entries fail closed or remain unmaterialized, trusted settings win, no fork content executes, and SonarCloud decorates the exact fork revision.
 - [ ] 8.4 Use the same-repository and fork exercises to confirm and document the API-materialized source tree's SonarCloud SCM/new-code fidelity and passive-only boundary without `.git`, then rerun static policy and CodeQL validation for the selected form.
-- [ ] 8.5 Confirm `main-is-main` requires code-owner review and verify workflow, CODEOWNERS, and Sonar property changes request `@Ensono/digital-tools-maintainers` approval.
+- [x] 8.5 Confirm `main-is-main` requires code-owner review and verify workflow, CODEOWNERS, and Sonar property changes request `@Ensono/digital-tools-maintainers` approval.
 - [ ] 8.6 Observe the stable external SonarCloud check context and integration ID from a successful live PR analysis, add that exact check to `main-is-main`, and verify a missing or failing quality gate blocks merge while a passing gate satisfies the rule.
 - [ ] 8.7 Record final workflow URLs, ruleset state, action and scanner release/SHA/version evidence, source bounds, residual scanner-parser risk, and rollback information in the change verification notes without recording secret values.

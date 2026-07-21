@@ -61,3 +61,13 @@ The protected Git Data API helper and policy were validated with:
 - `git diff --check`.
 
 All passed. An independent security review found and prompted fixes for revision-specific concurrency (which could not cancel stale runs) and report download by name rather than the verified artifact ID. The workflow now uses one concurrency group per PR and downloads through `steps.provenance.outputs.artifact-id`; regression fixtures reject both former forms.
+
+## Revised PR Static Acceptance — 2026-07-21
+
+The no-checkout implementation was pushed at revision `1abff98005c54a91b77af36d00c01ed8f56da1df`. [CodeQL run 29823553510](https://github.com/Ensono/eirctl/actions/runs/29823553510) passed both `Analyze (actions)` and `Analyze (go)`. The repository API reports alert [#21](https://github.com/Ensono/eirctl/security/code-scanning/21), `actions/untrusted-checkout/high`, as `fixed` at `2026-07-21T10:43:13Z`; there are no open or dismissed matching alerts for pull request #114. `dismissed_at` and `dismissed_reason` remain null, and the active `main-is-main` threshold and empty bypass list were not changed.
+
+The same revision passed [Trusted workflow policy run 29823554649](https://github.com/Ensono/eirctl/actions/runs/29823554649) and every `Lint and Test` job in [run 29823555786](https://github.com/Ensono/eirctl/actions/runs/29823555786), including `Lint` and `Test (Linux)`. The PR's ordinary `SonarCloud analysis` job remained skipped and received no secret, as designed.
+
+## Live CODEOWNERS Governance — 2026-07-21
+
+The active `main-is-main` ruleset requires code-owner review, one approval, last-push approval, stale-review dismissal, and resolved review threads, with no bypass actors. Pull request #114 changes `.github/CODEOWNERS` and protected workflow paths; GitHub requests review from the `Ensono/digital-tools-maintainers` team. The repository's `sonar-project.properties` remains covered by the same CODEOWNERS rule even though this revision does not modify it.
