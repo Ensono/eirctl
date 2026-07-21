@@ -448,9 +448,6 @@ func samePermissions(actual, expected Permissions) bool {
 }
 
 func expectedWorkflowPermissions(path string) Permissions {
-	if path == ".github/workflows/trusted-sonarcloud-pr.yml" {
-		return Permissions{"actions": "read", "contents": "read", "pull-requests": "read"}
-	}
 	return Permissions{"contents": "read"}
 }
 
@@ -474,9 +471,6 @@ func expectedJobPermissions(path, job string) Permissions {
 		},
 		".github/workflows/scorecard.yml": {
 			"analysis": {"contents": "read", "security-events": "write", "id-token": "write"},
-		},
-		".github/workflows/trusted-sonarcloud-pr.yml": {
-			"analyze": {"actions": "read", "contents": "read", "pull-requests": "read"},
 		},
 	}
 	if jobs, ok := allowed[path]; ok {
@@ -562,12 +556,12 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		return err
 	}
 	if len(workflow.Jobs) != 1 || !workflow.Triggers["workflow_run"] || len(workflow.WorkflowRunNames) != 1 || workflow.WorkflowRunNames[0] != "Lint and Test" ||
-		!samePermissions(workflow.Permissions, Permissions{"actions": "read", "contents": "read", "pull-requests": "read"}) {
+		!samePermissions(workflow.Permissions, Permissions{"contents": "read"}) {
 		return errors.New("trusted SonarCloud analyzer must use only the expected read-only workflow_run topology")
 	}
 
 	job, ok := workflow.Jobs["analyze"]
-	if !ok || job.Environment != "" || (job.HasJobPermissions && !samePermissions(job.Permissions, workflow.Permissions)) ||
+	if !ok || job.Environment != "" || job.HasJobPermissions ||
 		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||

@@ -39,7 +39,7 @@ The pull-request execution job is intentionally limited to `contents: read` and 
 
 ## Trusted SonarCloud pull-request analysis
 
-`Trusted SonarCloud pull-request analysis` is a protected-default-branch `workflow_run` workflow for completed `Lint and Test` pull-request runs. It is the only PR path that can receive `SONAR_TOKEN`, and its token is scoped to the immutable `SonarSource/sonarqube-scan-action` scanner step. The workflow has only `actions: read`, `contents: read`, and `pull-requests: read` permissions and does not restore or save a cache.
+`Trusted SonarCloud pull-request analysis` is a protected-default-branch `workflow_run` workflow for completed `Lint and Test` pull-request runs. It is the only PR path that can receive `SONAR_TOKEN`, and its token is scoped to the immutable `SonarSource/sonarqube-scan-action` scanner step. The workflow has only `contents: read` permission and does not restore or save a cache.
 
 Before any secret-bearing step, it resolves the upstream run through the GitHub API and fails closed unless the workflow name/event, base repository and `main` branch, pull-request number, full 40-character head SHA, run ID, run attempt, current PR revision, and exactly one current report artifact all match. The validated artifact is treated as passive parser input: the protected validator rejects missing reports, files over the configured bounds, symlinks, special files, traversal-derived paths, and all unexpected content.
 
