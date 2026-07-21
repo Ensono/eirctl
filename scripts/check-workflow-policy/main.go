@@ -700,24 +700,6 @@ func requiredWorkflow(workflows map[string]Workflow, path string) (Workflow, err
 	return workflow, nil
 }
 
-func stepByID(job Job, id string) (Step, bool) {
-	for _, step := range job.Steps {
-		if step.ID == id {
-			return step, true
-		}
-	}
-	return Step{}, false
-}
-
-func stepNamed(job Job, name string) (Step, int) {
-	for index, step := range job.Steps {
-		if step.Name == name {
-			return step, index
-		}
-	}
-	return Step{}, -1
-}
-
 func containsCache(job Job) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "actions/cache@") {

@@ -321,7 +321,7 @@ func validateTree(tree treeResponse) ([]treeEntry, int64, error) {
 			continue
 		}
 		if entry.Size == nil || *entry.Size < 0 || *entry.Size > maxFileBytes {
-			return nil, 0, fmt.Errorf("Go blob %q has invalid or excessive size", entry.Path)
+			return nil, 0, fmt.Errorf("go blob %q has invalid or excessive size", entry.Path)
 		}
 		total += *entry.Size
 		if total > maxTotalBytes {
