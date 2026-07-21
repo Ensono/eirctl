@@ -87,16 +87,13 @@ Host github.com
     Hostname ssh.github.com
     Port 443
     User git
-<<<<<<< HEAD
+    # Existing parsing tests do not connect; explicitly opt out because no test known-host entry is supplied.
+    StrictHostKeyChecking no
 // Match User adminuser Address 10.10.10.5
 //     PermitRootLogin yes
 //     AllowTcpForwarding no
-=======
-    # Existing parsing tests do not connect; explicitly opt out because no test known-host entry is supplied.
-    StrictHostKeyChecking no
 Host *
     StrictHostKeyChecking no
->>>>>>> origin/main
 `))
 	sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
 	sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -430,7 +427,7 @@ Match User adminuser Address 10.10.10.5
 		defer os.Unsetenv(config.GitSshCommandVar)
 		defer os.Remove(sshConfFile.Name())
 
-		_, err := config.NewGitSource("git::ssh://github.com/example/repo//config.yaml")
+		_, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://github.com/example/repo//config.yaml"})
 		if !errors.Is(err, config.ErrSSHConfig) {
 			t.Errorf("wrong error type\ngot: %v, wanted %v", err, config.ErrSSHConfig)
 		}

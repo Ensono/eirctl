@@ -283,7 +283,9 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 		}
 	}
 
-	processSSHConfig(sshCfgFile, sshConf, host)
+	if err := processSSHConfig(sshCfgFile, sshConf, host); err != nil {
+		return nil, err
+	}
 
 	if sshConf.IdentityFile == "" {
 		sshConf.IdentityFile = sshDefaultConf.IdentityFile
@@ -540,7 +542,7 @@ func parseDefaultSshConfigFilePaths() *SSHConfigAuth {
 }
 
 // processSSHConfig extracts the relevant info from a config file, merging with the overrides and defaults
-func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
+func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
 
 	if sshConfig.Port == "" {
 		filePort, _ := fileSSHCfg.Get(hostname, "Port")
@@ -569,8 +571,6 @@ func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, h
 		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
 		sshConfig.IdentityFile = fileIdentityFile
 	}
-<<<<<<< HEAD
-=======
 	if len(sshConfig.UserKnownHostsFiles) == 0 && sshConfig.UserKnownHostsFile == "" {
 		sshConfig.UserKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "UserKnownHostsFile")
 		if len(sshConfig.UserKnownHostsFiles) > 0 {
@@ -587,5 +587,4 @@ func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, h
 		sshConfig.StrictHostKeyChecking, _ = fileSSHCfg.Get(hostname, "StrictHostKeyChecking")
 	}
 	return nil
->>>>>>> origin/main
 }
