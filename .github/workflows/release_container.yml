@@ -9,40 +9,47 @@ on:
       - main
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   set-version-tag:
-    if: ${{ github.event.workflow_run.head_branch == 'main' }}
-    runs-on: ubuntu-26.04
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-24.04
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-      # get version
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Check out the validated workflow-run commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         with:
-          versionSpec: "5.x"
+          versionSpec: "6.0.5"
       - name: Set SemVer Version
-        uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        uses: gittools/actions/gitversion/execute@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
         id: gitversion
 
   build-and-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' }}
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
+    environment: prod
     needs: set-version-tag
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Check out the validated workflow-run commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           # GITHUB_TOKEN is automatically provided in GitHub Actions
@@ -50,28 +57,28 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU (for multi-arch builds, optional)
-        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push Docker image - alpine
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
-          build-args: Version=${{ needs.set-version-tag.outputs.semVer }},Revision=${{ github.sha }}
+          build-args: Version=${{ needs.set-version-tag.outputs.semVer }},Revision=${{ github.event.workflow_run.head_sha }}
           tags: |
             ghcr.io/ensono/eirctl:${{ needs.set-version-tag.outputs.semVer }}
           platforms: linux/amd64,linux/x86_64,linux/arm64
 
       - name: Build and push Docker image - pwsh
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
           file: Dockerfile.pwsh
-          build-args: Version=${{ needs.set-version-tag.outputs.semVer }},Revision=${{ github.sha }}
+          build-args: Version=${{ needs.set-version-tag.outputs.semVer }},Revision=${{ github.event.workflow_run.head_sha }}
           tags: |
             ghcr.io/ensono/eirctl:pwsh-${{ needs.set-version-tag.outputs.semVer }}
           platforms: linux/amd64,linux/x86_64,linux/arm64

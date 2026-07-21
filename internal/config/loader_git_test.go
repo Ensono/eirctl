@@ -87,6 +87,10 @@ Host github.com
     Hostname ssh.github.com
     Port 443
     User git
+    # Existing parsing tests do not connect; explicitly opt out because no test known-host entry is supplied.
+    StrictHostKeyChecking no
+Host *
+    StrictHostKeyChecking no
 `))
 	sshIdFile, _ := os.Create(filepath.Join(tmpSShNew, "id_ed25519"))
 	sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -203,6 +207,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				tempFile.Write([]byte(`Host github.com
 				Hostname ssh.github.com
 				Port 4443
+				StrictHostKeyChecking no
 				`))
 				t.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
 				return "", tempFile.Name(), func() {
@@ -220,6 +225,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				sshConfFile.Write([]byte(`Host github.com
 				Port 443
 				Hostname ssh.github.com
+				StrictHostKeyChecking no
 				`))
 				sshIdFile, _ := os.CreateTemp("", "id-rando-with-conf-*")
 				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -247,6 +253,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				sshConfFile.Write([]byte(`Host github.com
 				Port 443
 				Hostname ssh.github.com
+				StrictHostKeyChecking no
 				`))
 				sshIdFile, _ := os.CreateTemp("", "id-rando-with-conf-*")
 				sshIdFile.Write([]byte(`-----BEGIN OPENSSH PRIVATE KEY-----
@@ -313,6 +320,7 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				tempFile.Write([]byte(`Host github.com
 				Hostname ssh.github.com
 				Port 4443
+				StrictHostKeyChecking no
 				`))
 				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {
@@ -330,6 +338,7 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				tempFile.Write([]byte(`Host github.com
 				Hostname ssh.github.com
 				Port 4443
+				StrictHostKeyChecking no
 				`))
 				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {

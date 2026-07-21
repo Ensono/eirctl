@@ -25,6 +25,10 @@ Whilst it is built within the Ensono ecosystem and is used within the Ensono Ind
 
 ## [Installation](./docs/installation.md)
 
+## Development prerequisites
+
+Maintained local builds and validation require **Go 1.26.5**. Use the exact patch release so local builds match CI and the builder images.
+
 ## Configuration
 
 The configuration is driven through YAML which has its [schema](https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json) published and maintained. For an easier developer experience it can integrated into your IDE.

@@ -1,0 +1,101 @@
+name: Debug build
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request number authorized by the request broker
+        required: true
+        type: string
+      commit_sha:
+        description: Immutable current pull-request head SHA authorized by the request broker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate dispatched pull-request identity before checkout
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PULL_REQUEST: ${{ inputs.pull_request }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        with:
+          script: |
+            const pullNumber = Number(process.env.PULL_REQUEST);
+            const commitSHA = process.env.COMMIT_SHA;
+            const repository = context.repo.owner + '/' + context.repo.repo;
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1 || !/^[0-9a-f]{40}$/i.test(commitSHA)) {
+              core.setFailed('A positive pull request number and full 40-character commit SHA are required.');
+              return;
+            }
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (pullRequest.base.repo.full_name !== repository || pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()) {
+              core.setFailed('The dispatched pull request does not resolve to the requested current commit SHA in this repository.');
+              return;
+            }
+
+      - name: Check out validated pull-request revision
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
+        with:
+          versionSpec: '6.0.5'
+      - name: Set SemVer version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@2ef88d1c60c94a47f22e4add7032a9bc597fb07e # v3.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: 1.26.5
+          cache: false
+
+      - name: Build debug binaries
+        env:
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+          HEAD_SHA: ${{ inputs.commit_sha }}
+        run: |
+          go run cmd/main.go run pipeline build:binary \
+            --set Version="v${SEMVER}" \
+            --set Revision="${HEAD_SHA}"
+
+      - name: Record build provenance
+        env:
+          PULL_REQUEST: ${{ inputs.pull_request }}
+          HEAD_SHA: ${{ inputs.commit_sha }}
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+        run: |
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg pull_request "$PULL_REQUEST" \
+            --arg commit_sha "$HEAD_SHA" \
+            --arg workflow_run_id "$GITHUB_RUN_ID" \
+            --arg workflow_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg semver "$SEMVER" \
+            '{repository: $repository, event: $event, pull_request: $pull_request, commit_sha: $commit_sha, workflow_run_id: $workflow_run_id, workflow_run_attempt: $workflow_run_attempt, semver: $semver}' \
+            > debug-build-provenance.json
+
+      - name: Upload debug build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: debug-build-${{ github.run_id }}
+          path: |
+            bin/
+            debug-build-provenance.json
+          if-no-files-found: error
+          retention-days: 14

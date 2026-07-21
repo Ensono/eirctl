@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # Cooldowns and update-type groups apply only to version updates. Dependabot
+  # cannot group security updates by advisory severity, so security updates
+  # remain individual and are not delayed.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 5
+    groups:
+      low-risk:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 5
+    groups:
+      low-risk:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 5
+    groups:
+      low-risk:
+        update-types:
+          - "minor"
+          - "patch"
