@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Ensono/eirctl/internal/schema"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,43 +19,19 @@ var (
 	shaExpression = regexp.MustCompile(`(?i)^\$\{\{\s*github\.event\.pull_request\.(head|merge)_sha\s*}}$`)
 )
 
-// Workflow is the structural representation used by the policy validators. Values
-// that remain expressions are kept as strings, rather than being matched against
-// raw YAML, so quoting, flow syntax, and indentation do not affect validation.
+// Workflow adds source metadata to the shared, typed GitHub Actions model.
+// Policy validation consumes schema.GithubWorkflow, GithubJob, and GithubStep
+// directly instead of maintaining a second representation of workflow YAML.
 type Workflow struct {
-	Path             string
-	Name             string
-	Triggers         map[string]bool
-	WorkflowRunNames []string
-	Permissions      Permissions
-	Env              map[string]string
-	Jobs             map[string]Job
+	Path string
+	schema.GithubWorkflow
 }
 
-type Permissions map[string]string
+type Permissions = map[string]string
 
-type Job struct {
-	Name              string
-	If                string
-	Needs             []string
-	Environment       string
-	Permissions       Permissions
-	HasJobPermissions bool
-	HasContainer      bool
-	HasServices       bool
-	Concurrency       string
-	Env               map[string]string
-	Steps             []Step
-}
+type Job = schema.GithubJob
 
-type Step struct {
-	ID   string
-	Name string
-	Uses string
-	Run  string
-	With map[string]string
-	Env  map[string]string
-}
+type Step = schema.GithubStep
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -125,184 +102,48 @@ func LoadWorkflows(root string) (map[string]Workflow, error) {
 }
 
 func parseWorkflow(path string, content []byte) (Workflow, error) {
-	var document yaml.Node
-	if err := yaml.Unmarshal(content, &document); err != nil {
+	var definition schema.GithubWorkflow
+	if err := yaml.Unmarshal(content, &definition); err != nil {
 		return Workflow{}, fmt.Errorf("invalid YAML in %s: %w", path, err)
 	}
-	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return Workflow{}, fmt.Errorf("%s must contain a mapping", path)
-	}
-	root := mapping(document.Content[0])
-	workflow := Workflow{
-		Path:             path,
-		Name:             scalar(root["name"]),
-		Triggers:         triggers(root["on"]),
-		WorkflowRunNames: workflowRunNames(root["on"]),
-		Permissions:      permissions(root["permissions"]),
-		Env:              stringMap(root["env"]),
-		Jobs:             map[string]Job{},
-	}
-	jobs := root["jobs"]
-	if jobs == nil || jobs.Kind != yaml.MappingNode {
+	if definition.Jobs.Values == nil {
 		return Workflow{}, fmt.Errorf("%s needs jobs", path)
 	}
-	for name, rawJob := range mapping(jobs) {
-		if rawJob.Kind != yaml.MappingNode {
-			return Workflow{}, fmt.Errorf("%s job %s is not a mapping", path, name)
-		}
-		values := mapping(rawJob)
-		job := Job{
-			Name:              name,
-			If:                scalar(values["if"]),
-			Needs:             stringsValue(values["needs"]),
-			Environment:       environment(values["environment"]),
-			HasJobPermissions: values["permissions"] != nil,
-			HasContainer:      values["container"] != nil,
-			HasServices:       values["services"] != nil,
-			Concurrency:       concurrency(values["concurrency"]),
-			Env:               stringMap(values["env"]),
-			Steps:             steps(values["steps"]),
-		}
-		if job.HasJobPermissions {
-			job.Permissions = permissions(values["permissions"])
-		}
-		workflow.Jobs[name] = job
-	}
-	return workflow, nil
+	return Workflow{Path: path, GithubWorkflow: definition}, nil
 }
 
-func mapping(node *yaml.Node) map[string]*yaml.Node {
-	result := map[string]*yaml.Node{}
-	if node == nil || node.Kind != yaml.MappingNode {
-		return result
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		result[node.Content[index].Value] = node.Content[index+1]
-	}
-	return result
+func hasTrigger(workflow Workflow, name string) bool {
+	return workflow.On.Has(name)
 }
 
-func scalar(node *yaml.Node) string {
-	if node == nil || node.Kind != yaml.ScalarNode {
+func concurrencyGroup(job Job) string {
+	if job.Concurrency == nil {
 		return ""
 	}
-	return node.Value
+	return job.Concurrency.Group
 }
 
-func stringsValue(node *yaml.Node) []string {
-	if node == nil {
-		return nil
-	}
-	if node.Kind == yaml.ScalarNode {
-		return []string{node.Value}
-	}
-	if node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	result := make([]string, 0, len(node.Content))
-	for _, value := range node.Content {
-		if value.Kind == yaml.ScalarNode {
-			result = append(result, value.Value)
-		}
-	}
-	return result
-}
-
-func triggers(node *yaml.Node) map[string]bool {
-	result := map[string]bool{}
-	if node == nil {
-		return result
-	}
-	switch node.Kind {
-	case yaml.ScalarNode:
-		result[node.Value] = true
-	case yaml.SequenceNode:
-		for _, value := range node.Content {
-			if value.Kind == yaml.ScalarNode {
-				result[value.Value] = true
-			}
-		}
-	case yaml.MappingNode:
-		for name := range mapping(node) {
-			result[name] = true
-		}
-	}
-	return result
-}
-
-func workflowRunNames(node *yaml.Node) []string {
-	workflowRun := mapping(node)["workflow_run"]
-	return stringsValue(mapping(workflowRun)["workflows"])
-}
-
-func permissions(node *yaml.Node) Permissions {
-	return Permissions(stringMap(node))
-}
-
-func stringMap(node *yaml.Node) map[string]string {
-	result := map[string]string{}
-	for name, value := range mapping(node) {
-		if value.Kind == yaml.ScalarNode {
-			result[name] = value.Value
-		}
-	}
-	return result
-}
-
-func environment(node *yaml.Node) string {
-	if node == nil {
+func scalarValue(value any) string {
+	if value == nil {
 		return ""
 	}
-	if node.Kind == yaml.ScalarNode {
-		return node.Value
+	if text, ok := value.(string); ok {
+		return text
 	}
-	return scalar(mapping(node)["name"])
-}
-
-func concurrency(node *yaml.Node) string {
-	if node == nil {
-		return ""
-	}
-	if node.Kind == yaml.ScalarNode {
-		return node.Value
-	}
-	return scalar(mapping(node)["group"])
-}
-
-func steps(node *yaml.Node) []Step {
-	if node == nil || node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	result := make([]Step, 0, len(node.Content))
-	for _, rawStep := range node.Content {
-		values := mapping(rawStep)
-		with := map[string]string{}
-		for key, value := range mapping(values["with"]) {
-			with[key] = scalar(value)
-		}
-		result = append(result, Step{
-			ID:   scalar(values["id"]),
-			Name: scalar(values["name"]),
-			Uses: scalar(values["uses"]),
-			Run:  scalar(values["run"]),
-			With: with,
-			Env:  stringMap(values["env"]),
-		})
-	}
-	return result
+	return fmt.Sprint(value)
 }
 
 func validateWorkflow(workflow Workflow) error {
 	if !samePermissions(workflow.Permissions, expectedWorkflowPermissions(workflow.Path)) {
 		return fmt.Errorf("%s has unexpected workflow permissions: %#v", workflow.Path, workflow.Permissions)
 	}
-	for _, job := range workflow.Jobs {
+	for jobID, job := range workflow.Jobs.Values {
 		effective := workflow.Permissions
-		if job.HasJobPermissions {
+		if job.Has("permissions") {
 			effective = job.Permissions
 		}
-		if !samePermissions(effective, expectedJobPermissions(workflow.Path, job.Name)) {
-			return fmt.Errorf("%s job %s has unexpected permissions: %#v", workflow.Path, job.Name, effective)
+		if !samePermissions(effective, expectedJobPermissions(workflow.Path, jobID)) {
+			return fmt.Errorf("%s job %s has unexpected permissions: %#v", workflow.Path, jobID, effective)
 		}
 		if err := validateActions(workflow.Path, job); err != nil {
 			return err
@@ -333,17 +174,17 @@ func validateActions(path string, job Job) error {
 }
 
 func rejectScorecardDangerousCheckouts(workflow Workflow) error {
-	if !workflow.Triggers["pull_request_target"] && !workflow.Triggers["workflow_run"] {
+	if !hasTrigger(workflow, "pull_request_target") && !hasTrigger(workflow, "workflow_run") {
 		return nil
 	}
-	for _, job := range workflow.Jobs {
+	for jobID, job := range workflow.Jobs.Values {
 		for _, step := range job.Steps {
 			if !actionUses(step.Uses, "actions/checkout") {
 				continue
 			}
 			ref := step.With["ref"]
 			if strings.Contains(ref, "github.event.pull_request") || strings.Contains(ref, "github.event.workflow_run") {
-				return fmt.Errorf("%s job %s uses a Scorecard Dangerous-Workflow dynamic checkout ref", workflow.Path, job.Name)
+				return fmt.Errorf("%s job %s uses a Scorecard Dangerous-Workflow dynamic checkout ref", workflow.Path, jobID)
 			}
 		}
 	}
@@ -351,10 +192,10 @@ func rejectScorecardDangerousCheckouts(workflow Workflow) error {
 }
 
 func validatePrivilegedFlow(workflow Workflow) error {
-	if !isPrivilegedTrigger(workflow.Triggers) {
+	if !isPrivilegedTrigger(workflow) {
 		return nil
 	}
-	for _, job := range workflow.Jobs {
+	for jobID, job := range workflow.Jobs.Values {
 		checkout, afterCheckout := checkoutStep(job.Steps)
 		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
 			continue
@@ -363,28 +204,28 @@ func validatePrivilegedFlow(workflow Workflow) error {
 		// when its declared token is read-only, so it must never execute an
 		// untrusted checkout. Other privileged paths require write authority or a
 		// protected environment before this stricter execution rule applies.
-		if !workflow.Triggers["pull_request_target"] && !jobCanWrite(job, workflow) {
+		if !hasTrigger(workflow, "pull_request_target") && !jobCanWrite(job, workflow) {
 			continue
 		}
 		for _, step := range job.Steps[afterCheckout:] {
 			if executesWorkspace(step) {
-				return fmt.Errorf("%s job %s checks out and executes pull-request-controlled content from a privileged trigger", workflow.Path, job.Name)
+				return fmt.Errorf("%s job %s checks out and executes pull-request-controlled content from a privileged trigger", workflow.Path, jobID)
 			}
 		}
 	}
 	return nil
 }
 
-func isPrivilegedTrigger(values map[string]bool) bool {
+func isPrivilegedTrigger(workflow Workflow) bool {
 	for _, trigger := range []string{"issue_comment", "pull_request_target", "workflow_run", "repository_dispatch", "workflow_dispatch"} {
-		if values[trigger] {
+		if hasTrigger(workflow, trigger) {
 			return true
 		}
 	}
 	return false
 }
 
-func checkoutStep(steps []Step) (int, int) {
+func checkoutStep(steps []*Step) (int, int) {
 	for index, step := range steps {
 		if actionUses(step.Uses, "actions/checkout") {
 			return index, index + 1
@@ -398,7 +239,7 @@ func actionUses(value, action string) bool {
 	return at > 0 && strings.EqualFold(value[:at], action)
 }
 
-func isUntrustedCheckout(step Step, workflow Workflow, job Job) bool {
+func isUntrustedCheckout(step *Step, workflow Workflow, job Job) bool {
 	ref := strings.TrimSpace(step.With["ref"])
 	if ref == "" || shaExpression.MatchString(ref) || ref == "${{ github.event.pull_request.base.sha }}" {
 		return false
@@ -417,7 +258,7 @@ func trustedWorkflowRun(condition string) bool {
 
 func jobCanWrite(job Job, workflow Workflow) bool {
 	permissions := workflow.Permissions
-	if job.HasJobPermissions {
+	if job.Has("permissions") {
 		permissions = job.Permissions
 	}
 	for _, value := range permissions {
@@ -428,7 +269,7 @@ func jobCanWrite(job Job, workflow Workflow) bool {
 	return job.Environment != ""
 }
 
-func executesWorkspace(step Step) bool {
+func executesWorkspace(step *Step) bool {
 	if step.Run != "" || strings.HasPrefix(step.Uses, "./") {
 		return true
 	}
@@ -448,10 +289,10 @@ func executesWorkspace(step Step) bool {
 // Validate and treats any execution after an untrusted checkout as unsafe.
 func hasPrivilegedPRExecution(content string) bool {
 	workflow, err := parseWorkflow("fixture.yml", []byte(content))
-	if err != nil || !isPrivilegedTrigger(workflow.Triggers) {
+	if err != nil || !isPrivilegedTrigger(workflow) {
 		return err != nil
 	}
-	for _, job := range workflow.Jobs {
+	for _, job := range workflow.Jobs.Values {
 		checkout, afterCheckout := checkoutStep(job.Steps)
 		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
 			continue
@@ -516,8 +357,8 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	policyJob, ok := policy.Jobs["policy"]
-	if !ok || !policy.Triggers["pull_request_target"] || len(policyJob.Steps) < 3 ||
+	policyJob, ok := policy.Jobs.Values["policy"]
+	if !ok || !hasTrigger(policy, "pull_request_target") || len(policyJob.Steps) < 3 ||
 		!isProtectedBaseCheckout(policyJob.Steps[0]) ||
 		!strings.Contains(policyJob.Steps[2].Run, "scripts/materialize-policy-candidate") ||
 		!strings.Contains(policyJob.Steps[2].Run, "go run ./scripts/check-workflow-policy --candidate-root") {
@@ -528,8 +369,8 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	request, ok := broker.Jobs["request"]
-	if !ok || !broker.Triggers["issue_comment"] || request.Concurrency != "debug-build-request-${{ github.event.issue.number }}" ||
+	request, ok := broker.Jobs.Values["request"]
+	if !ok || !hasTrigger(broker, "issue_comment") || concurrencyGroup(request) != "debug-build-request-${{ github.event.issue.number }}" ||
 		!strings.Contains(request.If, "github.event.comment.body == '/build-debug'") || hasCheckout(request) {
 		return errors.New("debug build broker must authorize exact requests, serialize them per PR, and never check out code")
 	}
@@ -544,8 +385,8 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	buildJob, ok := build.Jobs["build"]
-	if !ok || !build.Triggers["workflow_dispatch"] ||
+	buildJob, ok := build.Jobs.Values["build"]
+	if !ok || !hasTrigger(build, "workflow_dispatch") ||
 		!hasCheckoutRef(buildJob, "${{ inputs.commit_sha }}") || !stepWithContains(buildJob, "actions/github-script@", "script", "github.rest.pulls.get") ||
 		!stepWithContains(buildJob, "actions/github-script@", "script", "pullRequest.head.sha") ||
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) {
@@ -556,9 +397,9 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	validate, hasValidate := publish.Jobs["validate-build"]
-	publishJob, hasPublish := publish.Jobs["publish"]
-	if !publish.Triggers["workflow_dispatch"] || !hasValidate || !hasPublish ||
+	validate, hasValidate := publish.Jobs.Values["validate-build"]
+	publishJob, hasPublish := publish.Jobs.Values["publish"]
+	if !hasTrigger(publish, "workflow_dispatch") || !hasValidate || !hasPublish ||
 		validate.If != "github.ref == 'refs/heads/main'" || publishJob.If != "github.ref == 'refs/heads/main'" ||
 		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read"}) || jobHasEnvironment(validate) ||
 		!samePermissions(publishJob.Permissions, Permissions{"actions": "read", "contents": "write"}) ||
@@ -573,9 +414,9 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		if err != nil {
 			return err
 		}
-		for _, job := range workflow.Jobs {
+		for jobID, job := range workflow.Jobs.Values {
 			if !trustedWorkflowRun(job.If) || !hasVerifiedStaticMainCheckout(job) {
-				return fmt.Errorf("%s job %s must require a successful trusted push and verify a static protected-main checkout against its workflow-run SHA", file, job.Name)
+				return fmt.Errorf("%s job %s must require a successful trusted push and verify a static protected-main checkout against its workflow-run SHA", file, jobID)
 			}
 		}
 	}
@@ -584,7 +425,7 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	analysis, ok := scorecard.Jobs["analysis"]
+	analysis, ok := scorecard.Jobs.Values["analysis"]
 	if !ok || !hasCheckoutWithoutCredentials(analysis) {
 		return errors.New("scorecard must use job-scoped permissions and a checkout without credentials")
 	}
@@ -602,17 +443,17 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	if len(workflow.Jobs) != 1 || !workflow.Triggers["workflow_run"] || len(workflow.WorkflowRunNames) != 1 || workflow.WorkflowRunNames[0] != "Lint and Test" ||
+	if len(workflow.Jobs.Values) != 1 || !hasTrigger(workflow, "workflow_run") || len(workflow.On.WorkflowRun.Workflows) != 1 || workflow.On.WorkflowRun.Workflows[0] != "Lint and Test" ||
 		!samePermissions(workflow.Permissions, Permissions{"contents": "read"}) {
 		return errors.New("trusted SonarCloud analyzer must use only the expected read-only workflow_run topology")
 	}
 
-	job, ok := workflow.Jobs["analyze"]
-	if !ok || job.Environment != "" || job.HasJobPermissions || job.HasContainer || job.HasServices ||
+	job, ok := workflow.Jobs.Values["analyze"]
+	if !ok || job.Environment != "" || job.Has("permissions") || job.Has("container") || job.Has("services") ||
 		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||
-		job.Concurrency != "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}" {
+		concurrencyGroup(job) != "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}" {
 		return errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling per-PR concurrency")
 	}
 	if containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
@@ -688,7 +529,7 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		--bounds `+reviewedBounds), " ")
 	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
 		strings.Join(strings.Fields(materialize.Run), " ") != expectedMaterializer ||
-		len(materialize.Env) != 1 || materialize.Env["GH_TOKEN"] != "${{ github.token }}" {
+		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != "${{ github.token }}" {
 		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
 	}
 
@@ -725,7 +566,7 @@ func checkoutCount(job Job) int {
 	return count
 }
 
-func isProtectedBaseCheckout(step Step) bool {
+func isProtectedBaseCheckout(step *Step) bool {
 	return actionUses(step.Uses, "actions/checkout") && step.With["ref"] == "" &&
 		step.With["fetch-depth"] == "1" && step.With["persist-credentials"] == "false"
 }
@@ -739,7 +580,7 @@ func hasVerifiedStaticMainCheckout(job Job) bool {
 	return actionUses(checkout.Uses, "actions/checkout") && checkout.With["ref"] == "main" &&
 		checkout.With["persist-credentials"] == "false" &&
 		verify.Name == "Verify the validated workflow-run revision" && len(verify.Env) == 1 &&
-		verify.Env["VALIDATED_HEAD_SHA"] == "${{ github.event.workflow_run.head_sha }}" &&
+		scalarValue(verify.Env["VALIDATED_HEAD_SHA"]) == "${{ github.event.workflow_run.head_sha }}" &&
 		strings.TrimSpace(verify.Run) == `test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"`
 }
 
@@ -769,9 +610,9 @@ func hasLocalAction(job Job) bool {
 	return false
 }
 
-func hasSecretInMap(values map[string]string) bool {
+func hasSecretInMap(values map[string]any) bool {
 	for _, value := range values {
-		if strings.Contains(value, "secrets.") {
+		if strings.Contains(scalarValue(value), "secrets.") {
 			return true
 		}
 	}
@@ -784,8 +625,9 @@ func onlyScannerReceivesSonarToken(workflow Workflow, job Job, scannerIndex int)
 	}
 	for index, step := range job.Steps {
 		for _, value := range step.Env {
-			if strings.Contains(value, "SONAR_TOKEN") || strings.Contains(value, "secrets.") {
-				if index != scannerIndex || step.Env["SONAR_TOKEN"] != "${{ secrets.SONAR_TOKEN }}" || len(step.Env) != 1 {
+			text := scalarValue(value)
+			if strings.Contains(text, "SONAR_TOKEN") || strings.Contains(text, "secrets.") {
+				if index != scannerIndex || scalarValue(step.Env["SONAR_TOKEN"]) != "${{ secrets.SONAR_TOKEN }}" || len(step.Env) != 1 {
 					return false
 				}
 			}

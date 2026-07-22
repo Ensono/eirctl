@@ -136,7 +136,7 @@ func addMetaToJob(job *schema.GithubJob, node *scheduler.Stage) error {
 		if gh.Environment != "" {
 			job.Environment = gh.Environment
 		}
-		if gh.RunsOn != "" {
+		if len(gh.RunsOn) != 0 {
 			job.RunsOn = gh.RunsOn
 		}
 		if gh.Env != nil {
@@ -204,7 +204,7 @@ func jobBuilder(ciyaml *schema.GithubWorkflow, pipeline *scheduler.ExecutionGrap
 		jobName := ghaNameConverter(utils.TailExtract(node.Name))
 		job := &schema.GithubJob{
 			Name:   jobName,
-			RunsOn: "ubuntu-24.04",
+			RunsOn: schema.GithubStringList{"ubuntu-24.04"},
 			Env:    node.Env().Map(),
 		}
 		// Add defaults

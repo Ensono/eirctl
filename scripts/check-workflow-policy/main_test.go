@@ -74,18 +74,18 @@ jobs:
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := workflow.Jobs["analyze"]
+	job := workflow.Jobs.Values["analyze"]
 	step := job.Steps[0]
-	if workflow.Env["WORKFLOW_TOKEN"] != "safe" || job.Env["JOB_TOKEN"] != "safe" ||
-		job.Concurrency != "analyzer-${{ github.run_id }}" || step.Name != "Scan passive inputs" ||
-		step.Env["SONAR_TOKEN"] != "${{ secrets.SONAR_TOKEN }}" || step.With["args"] != "-Dsonar.projectBaseDir=analysis" {
+	if scalarValue(workflow.Env["WORKFLOW_TOKEN"]) != "safe" || scalarValue(job.Env["JOB_TOKEN"]) != "safe" ||
+		concurrencyGroup(job) != "analyzer-${{ github.run_id }}" || step.Name != "Scan passive inputs" ||
+		scalarValue(step.Env["SONAR_TOKEN"]) != "${{ secrets.SONAR_TOKEN }}" || step.With["args"] != "-Dsonar.projectBaseDir=analysis" {
 		t.Fatalf("trusted topology fields were not preserved: %#v", workflow)
 	}
 }
 
 func TestParseWorkflowSupportsEquivalentTriggerSyntax(t *testing.T) {
 	cases := []string{
-		"on: [workflow_dispatch]\npermissions: {contents: read}\njobs: {build: {runs-on: ubuntu-24.04}}\n",
+		"on: [workflow_dispatch]\npermissions: {contents: read}\njobs: {build: {runs-on: [self-hosted, linux]}}\n",
 		"on:\n  workflow_dispatch:\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: ubuntu-24.04\n",
 	}
 	for _, content := range cases {
@@ -93,9 +93,28 @@ func TestParseWorkflowSupportsEquivalentTriggerSyntax(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !workflow.Triggers["workflow_dispatch"] {
-			t.Fatalf("workflow triggers = %#v, want workflow_dispatch", workflow.Triggers)
+		if !hasTrigger(workflow, "workflow_dispatch") {
+			t.Fatal("workflow triggers do not include workflow_dispatch")
 		}
+	}
+}
+
+func TestPolicyUsesJobIDForPermissionRules(t *testing.T) {
+	content := `name: Broker
+on: [push]
+permissions: {contents: read}
+jobs:
+  request:
+    name: Human-readable display name
+    permissions: {actions: write, pull-requests: read}
+    runs-on: ubuntu-24.04
+`
+	workflow, err := parseWorkflow(".github/workflows/debug-build-request.yml", []byte(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkflow(workflow); err != nil {
+		t.Fatalf("validateWorkflow() used the display name instead of the job ID: %v", err)
 	}
 }
 
