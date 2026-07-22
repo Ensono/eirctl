@@ -77,3 +77,26 @@ The branch now removes all five dynamic checkout refs. `pull_request_target` use
 ## Live CODEOWNERS Governance — 2026-07-21
 
 The active `main-is-main` ruleset requires code-owner review, one approval, last-push approval, stale-review dismissal, and resolved review threads, with no bypass actors. Pull request #114 changes `.github/CODEOWNERS` and protected workflow paths; GitHub requests review from the `Ensono/digital-tools-maintainers` team. The repository's `sonar-project.properties` remains covered by the same CODEOWNERS rule even though this revision does not modify it.
+
+## SonarQube Cloud Identity and Access Blocker — 2026-07-22
+
+Organization `ensono` and project key `Ensono_eirctl` are confirmed fixed identifiers. The current maintainer cannot administer the SonarQube Cloud project, change its binding, generate a replacement analysis token, or inspect the existing token value and has requested the required access. No alternate key, project rename, duplicate project, token disclosure, or credential workaround was attempted.
+
+Trusted-main [`Lint and Test` run 29914871551](https://github.com/Ensono/eirctl/actions/runs/29914871551) ran for revision `882d7623cf5d428cc8995d6cf9c1304d99b82c9b` from `2026-07-22T11:13:13Z` to `2026-07-22T11:21:34Z` and failed only in the `SonarCloud analysis` job after the tests and report generation succeeded. The immutable `SonarSource/sonarqube-scan-action` revision `22918119ff8e1ca75a623e15c8296b6ea4fbe28f` installed SonarScanner CLI `8.1.0.6389`, downloaded its detached signature, imported the SonarSource signing key, verified the distribution, and invoked the scanner with trusted organization `ensono`, project key `Ensono_eirctl`, revision `882d7623cf5d428cc8995d6cf9c1304d99b82c9b`, and quality-gate waiting enabled. `SONAR_TOKEN` was present only as a masked scanner-step environment value.
+
+The scanner reached SonarQube Cloud and attempted to load settings for `Ensono_eirctl`. It then reported `NOT_FOUND`, detected project binding `NONEXISTENT`, and ended with `Not authorized or project not found`. The former `/eirctl/.scannerwork` permission failure did not recur. This result proves scanner installation and connectivity but cannot distinguish an inaccessible or invalid token from authenticated project-state or binding problems.
+
+Unauthenticated public API evidence collected on `2026-07-22` shows:
+
+- organization `ensono` resolves as `Ensono`; the public response grants no administration or provisioning action;
+- component `Ensono_eirctl` returns `404` with `Project doesn't exist`; because this request is unauthenticated, it is not treated as authority to change the confirmed fixed key or create another project;
+- public component `Ensono_taskctl` exists in organization `ensono`, is named `taskctl`, reports version `2.0.5`, and was last analyzed on `2025-03-04`; it is recorded as historical public evidence only and is not assumed to be a migration source; and
+- the GitHub repository exposes a `SONAR_TOKEN` Actions secret last updated at `2025-08-27T09:20:00Z`; its value, credential type, owner, expiry, validity, and project authorization were neither retrieved nor inferred.
+
+### Authorized-maintainer handoff
+
+1. Use authenticated SonarQube Cloud administration to verify that fixed project `Ensono_eirctl` belongs to organization `ensono`, is bound to `Ensono/eirctl`, and uses `main` as its main branch. Repair or provision the binding only under that same fixed identity; do not rename the key, substitute `Ensono_taskctl`, or create a blind duplicate.
+2. Confirm the `ensono` plan and select the supported least-privilege analysis credential: a project-scoped Scoped Organization Token granting only **Execute analysis** when available, otherwise a minimally authorized maintained-identity personal access token.
+3. Replace the GitHub repository `SONAR_TOKEN` secret without placing its value in a ticket, pull request, command output, workflow diagnostic, or this repository. Record credential type, owner, and expiry in the team's secret-management process.
+4. Rerun trusted `main` analysis and require successful project-settings loading, report ingestion, submission, scanner completion, and quality-gate waiting before revoking the superseded credential.
+5. After trusted-main success, complete same-repository and adversarial fork PR exercises, document no-`.git` SCM/new-code fidelity, observe the external SonarCloud check context and integration ID, and only then add that exact check to `main-is-main`.

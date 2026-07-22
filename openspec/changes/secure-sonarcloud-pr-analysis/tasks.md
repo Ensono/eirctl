@@ -52,14 +52,17 @@
 - [x] 7.1 Update `docs/ci-security.md` with the no-checkout Git Data API flow, source and report provenance invariants, materialization bounds, scanner parser risk, forced runtime/settings, secret scope, CodeQL acceptance rule, and rollback procedure.
 - [x] 7.2 Document why ordinary secret-bearing PR jobs, privileged PR builds, privileged immutable checkout, untrusted or generic source archives, same-repository-only scanning, and automatic analysis were rejected.
 - [x] 7.3 Run hostile source-helper tests, focused policy unit tests, immutable-dependency validation, workflow security/YAML validation, and the repository's relevant Go tests; resolve every failure.
-- [ ] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
+- [x] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
 - [x] 7.5 Run `openspec validate secure-sonarcloud-pr-analysis` and confirm the revised implementation satisfies every modified and added scenario.
 
 ## 8. Exercise Live Workflows and Enforce Repository Rules
 
-- [ ] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
-- [ ] 8.2 Confirm the `ensono` organization plan and have an administrator determine whether `Ensono_taskctl` is the historical SonarQube Cloud project for `Ensono/eirctl`.
-- [ ] 8.3 Migrate and bind the historical project or import the repository according to the administrator's decision; verify organization `ensono`, exact project key `Ensono_eirctl`, binding to `Ensono/eirctl`, and main branch `main` without creating a blind duplicate.
+- [x] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
+- [x] 8.2 Record organization `ensono` and project key `Ensono_eirctl` as fixed, document that the current maintainer lacks SonarQube Cloud administration and token-generation rights, and record that access has been requested without changing project identity or creating a duplicate.
+
+**Access dependency:** Tasks 8.3–8.11 remain blocked until an authorized maintainer can inspect the canonical project and replace the analysis credential.
+
+- [ ] 8.3 Through authenticated SonarQube Cloud access, verify the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl` with main branch `main`, determine the `ensono` organization plan, and repair or provision the binding only under the same fixed organization and project key if required.
 - [ ] 8.4 Generate the plan-supported least-privilege analysis credential, replace the GitHub `SONAR_TOKEN` secret value without exposing it, and record its type, owner, and expiry in the team's secret-management process.
 - [ ] 8.5 Exercise a trusted `main` push and confirm project settings load, reports upload, analysis submission, coverage ingestion, scanner completion, and quality-gate waiting; verify the absence of `.scannerwork`, `NOT_FOUND`, `NONEXISTENT`, and authorization failures, then revoke the superseded credential.
 - [ ] 8.6 Exercise a same-repository PR and confirm the exact head SHA, coverage, SonarCloud PR decoration, quality-gate result, acceptable no-`.git` new-code behavior, and no secret exposure in the untrusted workflow.

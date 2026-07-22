@@ -61,15 +61,19 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 - **THEN** the analyzer produces the explicitly configured source-only or failed-preparation outcome and does not silently skip SonarCloud reporting
 
 ### Requirement: SonarCloud project identity and analysis credential are operationally valid
-Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
+Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with the fixed key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
 
-#### Scenario: Historical project belongs to the repository
-- **WHEN** an `ensono` administrator confirms that `Ensono_taskctl` is the historical SonarQube Cloud project for `Ensono/eirctl`
-- **THEN** the administrator migrates its key and name, binds it to `Ensono/eirctl`, renames its main branch to `main`, preserves its history, and verifies the exact `Ensono_eirctl` key before live scanning
+#### Scenario: Fixed project identity is preserved
+- **WHEN** implementation or operations configure SonarQube Cloud analysis for this repository
+- **THEN** they use organization `ensono` and project key `Ensono_eirctl` without renaming the key, substituting an alternate project, or creating a blind duplicate
 
-#### Scenario: Historical project is unrelated
-- **WHEN** an `ensono` administrator determines that `Ensono_taskctl` is not the historical project for `Ensono/eirctl`
-- **THEN** the administrator imports `Ensono/eirctl` to create the bound canonical project and does not create a blind duplicate or discard unrelated history
+#### Scenario: Authorized project state is validated
+- **WHEN** an authorized `ensono` administrator performs the pre-live validation
+- **THEN** the administrator verifies through authenticated SonarQube Cloud access that `Ensono_eirctl` is bound to `Ensono/eirctl` and uses `main` as its main branch, repairing or provisioning that binding only under the same fixed identity if required
+
+#### Scenario: SonarCloud administration access is pending
+- **WHEN** the maintainer cannot inspect the authenticated project state, generate the supported credential, or replace the repository secret
+- **THEN** live acceptance and required-check rollout remain blocked without changing the fixed project identity, exposing a token value, weakening the workflow trust boundary, or creating an unauthorized workaround
 
 #### Scenario: Team plan supplies the analysis credential
 - **WHEN** the `ensono` organization uses the Team plan or higher
