@@ -1,0 +1,3 @@
+/.github/CODEOWNERS @Ensono/digital-tools-maintainers
+/.github/workflows/** @Ensono/digital-tools-maintainers
+/sonar-project.properties @Ensono/digital-tools-maintainers

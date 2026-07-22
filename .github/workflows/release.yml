@@ -18,11 +18,16 @@ jobs:
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - name: Check out the validated workflow-run commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Check out protected main with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the validated workflow-run revision
+        env:
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         with:
@@ -41,23 +46,22 @@ jobs:
     env:
       SEMVER: ${{ needs.set-version-tag.outputs.semVer }}
     steps:
-      - name: Check out the validated workflow-run commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Check out protected main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify the validated workflow-run revision
+        env:
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"
 
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
-
-      - name: set up git for tag pushing
-        run: |
-          apt-get update && apt-get install -y git
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config user.email ${{ github.actor }}-ci@gha.org
-          git config user.name ${{ github.actor }}
 
       - name: build binaries
         run: |
@@ -65,13 +69,20 @@ jobs:
           echo "Revision: ${{ github.event.workflow_run.head_sha }}"
           go run cmd/main.go run pipeline build:binary --set Version=v${SEMVER} --set Revision=${{ github.event.workflow_run.head_sha }}
 
-      # tag repo
-      - name: tag repo
+      - name: Create annotated release tag with step-scoped credentials
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          echo "REVISION  -> $GITHUB_SHA"
-          echo "VERSION -> $GITVERSION_SEMVER"
-          git tag -a "v${SEMVER}" -m "ci tag release" "${{ github.event.workflow_run.head_sha }}"
-          git push origin "v${SEMVER}"
+          tag_sha="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="v${SEMVER}" \
+            -f message='ci tag release' \
+            -f object="$VALIDATED_HEAD_SHA" \
+            -f type=commit \
+            --jq .sha)"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/v${SEMVER}" \
+            -f sha="$tag_sha"
 
       - name: Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
