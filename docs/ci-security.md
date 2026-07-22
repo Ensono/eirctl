@@ -23,15 +23,50 @@ The existing `debug-release` GitHub Environment has required-release-maintainer 
 
 Production deployment jobs must continue to use protected environments. Pull-request validation and untrusted debug-build jobs must not reference a protected environment or receive its secrets.
 
+## Trusted workflow checkout provenance
+
+Privileged `pull_request_target` and `workflow_run` jobs must not pass a `github.event.pull_request.*` or `github.event.workflow_run.*` expression to `actions/checkout`. OpenSSF Scorecard reports every such form as `Dangerous-Workflow`, even when a separate condition proves that the revision came from protected `main`.
+
+The authoritative pull-request policy workflow therefore relies on `pull_request_target`'s implicit protected base revision and omits the checkout `ref` entirely. Trusted release workflows use the literal `main` ref, then immediately compare the checked-out commit to `github.event.workflow_run.head_sha` supplied through an environment variable. The release job fails closed before GitVersion, builds, registry login, tagging, or publication if protected `main` has advanced or the completed upstream run does not match. Release checkouts never persist credentials; the binary release job receives its `contents: write` token only in the Git Data API tag-creation step after the build. The structural checker rejects the Scorecard dynamic checkout forms and requires this static-checkout-plus-verification and non-persistent-credential topology for every release job.
+
 ## Authoritative workflow policy
 
 **Trusted workflow policy** is the stable required check name for branch protection. It runs from the protected base revision through `pull_request_target`, checks out only that base SHA, and materializes pull-request workflow/configuration files as data before passing them to the base-branch checker with `--candidate-root`. It never executes candidate scripts or local actions.
 
 The `Lint and Test` workflow's **Advisory workflow policy feedback (not required)** step runs against the pull-request checkout only for fast contributor feedback. It is not an authoritative security boundary and must not be configured as the required workflow-policy check.
 
+## Ownership governance
+
+`.github/CODEOWNERS` assigns `.github/CODEOWNERS`, executable workflow files, and `sonar-project.properties` to `@Ensono/digital-tools-maintainers`. The `main-is-main` ruleset must require code-owner review for these files. CODEOWNERS is merge governance only: it never authorizes runtime behavior and does not replace workflow isolation, immutable provenance validation, least-privilege permissions, or secret scoping.
+
 ## Pull-request reporting
 
-The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN` or any other protected secret. It uploads the inert JUnit report as an artifact; a separate read-only-code reporting job downloads that artifact and receives only `checks: write` to publish the check. SonarCloud PR analysis remains disabled because it would expose a protected token to pull-request-controlled code. A separate `sonarcloud` job runs only after tests succeed for a trusted push to `main`; it checks out that trusted source, generates the reports, and receives `SONAR_TOKEN` only for the scan.
+The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN`, a protected environment, or another privileged credential. It uploads the inert JUnit report for check publication and a deterministic seven-day `sonar-reports-<run-id>-<attempt>` artifact containing only `.coverage/out` and `.coverage/report-junit.xml`. Missing coverage is a visible failed Sonar preparation result; it is never a silently skipped analysis.
+
+## Trusted SonarCloud pull-request analysis
+
+`Trusted SonarCloud pull-request analysis` is a protected-default-branch `workflow_run` workflow for completed `Lint and Test` pull-request runs. It is the only PR path that can receive `SONAR_TOKEN`. The workflow has only `contents: read` permission, uses no job container or services, restores or saves no cache, and supports both same-repository and fork pull requests without executing either source tree.
+
+Before any secret-bearing step, protected code resolves and binds the expected workflow and event, base repository and `main` branch, verified head repository (including fork identity), pull-request number, full current head SHA, run ID, run attempt, and exactly one unexpired `sonar-reports-<run-id>-<attempt>` artifact. The report download remains tied to that run and revision. Its protected validator accepts only the bounded regular coverage and JUnit files and rejects missing reports, oversized content, symlinks, special files, traversal-derived paths, and unexpected entries.
+
+Pull-request source is never passed to `actions/checkout`, `git checkout`, `git fetch`, an archive extractor, or another source action. After writing trusted `analysis/sonar-project.properties` outside the source root, the protected standard-library helper resolves the exact head commit and root tree through the verified head repository's Git Data API, requires a complete non-truncated recursive tree, validates every canonical path and mode, and retrieves each selected regular non-executable `.go` blob by its tree-recorded SHA. It verifies the API identity, declared and decoded size, and Git blob identity before making an exclusive `0644` write beneath the newly created `analysis/source` root. Symlinks, submodules, special or unknown entries, unsafe or duplicate paths, executable `.go` files, non-Go files, and changed PR heads fail closed or remain unmaterialized. The helper rechecks the current PR head after all writes.
+
+The protected source limits are 384 recursive tree entries, 160 selected Go files, 160 path bytes, 131,072 bytes per Go blob, and 1,048,576 aggregate Go bytes. The measured baseline and headroom are recorded in the change verification notes. These values are reviewed constants represented by the workflow policy; they are not attacker-controlled inputs. Increasing one requires a new baseline, hostile boundary tests, and CODEOWNERS review.
+
+The scanner is the only command or action after materialization. It runs from the trusted `analysis` root and forces the SonarCloud endpoint, organization (`ensono`), project (`Ensono_eirctl`), source/test/report paths, PR number/branch/base, immutable revision, and quality-gate wait. The action is pinned to full SHA `22918119ff8e1ca75a623e15c8296b6ea4fbe28f`; its CLI is fixed at `8.1.0.6389`, binaries URL at `https://binaries.sonarsource.com/Distribution/sonar-scanner-cli`, and signature verification remains enabled. `SONAR_TOKEN` exists only in this scanner step. The pull-request copy of `sonar-project.properties`, `.git`, workflows, scripts, local actions, dependency metadata and hooks, containers, archives, and binaries are never materialized.
+
+This boundary narrows, but cannot eliminate, the risk that the trusted scanner parser processes hostile Go source and passive reports while holding its scoped token. Full-SHA action pins, forced settings and runtime, the no-post-materialization-execution policy, CodeQL, and CODEOWNERS review therefore remain required controls. A new `actions/untrusted-checkout/high` or equivalent high-severity CodeQL alert is a design failure and must be fixed in code; dismissal, suppression, lowering the ruleset threshold, or bypassing `main-is-main` is not acceptance.
+
+Trusted pushes to `main` use the same pinned scanner action, retain trusted report generation and revision metadata, and wait for the quality gate. If the PR analyzer needs rollback, first remove the observed external SonarCloud required check from `main-is-main`, then disable the trusted PR analyzer. Do not restore a secret-bearing ordinary PR job, privileged checkout, source archive, or former container scanner path. Retain CODEOWNERS and the stricter structural no-checkout policy.
+
+### Rejected PR analysis designs
+
+- **Ordinary secret-bearing PR jobs** were rejected because pull-request code and forks could exfiltrate the token.
+- **Privileged PR builds** (`pull_request_target` or similar) were rejected because executing PR content in a privileged context breaks the trust boundary.
+- **Privileged immutable checkout** was rejected even with a full SHA and disabled credential persistence: CodeQL correctly treats pull-request-controlled checkout in `workflow_run` as `actions/untrusted-checkout/high`, and checkout also materializes executable repository content plus Git metadata.
+- **Untrusted or generic source archives** were rejected because path/type handling and broad extraction recreate a checkout-like attack surface without per-blob provenance.
+- **Same-repository-only scanning** was rejected because fork pull requests also require reviewable SonarCloud analysis.
+- **SonarCloud automatic analysis** was rejected because this project requires explicit Go coverage and JUnit report ingestion and an auditable repository-controlled trust boundary.
 
 ## Debug prerelease process
 
