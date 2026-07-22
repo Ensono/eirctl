@@ -32,7 +32,7 @@ contexts:
         - /app
         - --env-file
         - envfile
-        - ensono/eir-golang:1.1.224
+        - ensono/eir-golang:1.2.113
         - pwsh
         - -Command
     envfile:
@@ -48,7 +48,7 @@ contexts:
 contexts:
   buildenv:
     container:
-      name: ensono/eir-golang:1.1.224
+      name: ensono/eir-golang:1.2.113
       shell: pwsh
       shell_args:
         - -Command
@@ -108,7 +108,7 @@ runs:
 [source,yaml]
 ----
   - name: EirctlVersion
-    value: 0.4.48
+    value: 0.11.4
 ----
 The following command can be used to find the latest version of `eirctl`:
 * PowerShell
