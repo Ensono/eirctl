@@ -41,7 +41,7 @@ The `Lint and Test` workflow's **Advisory workflow policy feedback (not required
 
 ## Pull-request reporting
 
-The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN`, a protected environment, or another privileged credential. It uploads the inert JUnit report for check publication and a deterministic seven-day `sonar-reports-<run-id>-<attempt>` artifact containing only `.coverage/out` and `.coverage/report-junit.xml`. Missing coverage is a visible failed Sonar preparation result; it is never a silently skipped analysis.
+The pull-request execution job is intentionally limited to `contents: read` and does not receive `SONAR_TOKEN`, a protected environment, or another privileged credential. It uploads the inert JUnit report for check publication and selects only `.coverage/out` and `.coverage/report-junit.xml` for a deterministic seven-day `sonar-reports-<run-id>-<attempt>` artifact. GitHub's artifact action strips their common `.coverage` parent, so the downloaded artifact contract is exactly two root-level regular files named `out` and `report-junit.xml`. After validating names, types, and size bounds, protected code normalizes those files under `reports/.coverage/` so the trusted scanner keeps its established report paths without broadening the accepted artifact surface. Missing coverage is a visible failed Sonar preparation result; it is never a silently skipped analysis.
 
 ## Trusted SonarCloud pull-request analysis
 

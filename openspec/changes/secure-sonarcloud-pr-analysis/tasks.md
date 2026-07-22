@@ -14,9 +14,9 @@
 
 ## 3. Produce Bounded Untrusted Sonar Reports
 
-- [x] 3.1 Update the Linux pull-request test path to upload a dedicated Sonar reports artifact containing only the expected Go coverage and JUnit report files, with a bounded retention period and deterministic name.
+- [x] 3.1 Update the Linux pull-request test path to upload a dedicated Sonar reports artifact containing only the expected Go coverage and JUnit report files, with a bounded retention period, deterministic name, and documented root-level downloaded layout after `upload-artifact` strips their common `.coverage` parent.
 - [x] 3.2 Ensure the pull-request workflow retains read-only permissions, never references `SONAR_TOKEN`, and does not gain a protected environment or other privileged credential.
-- [x] 3.3 Define and test the artifact contract for expected paths, regular-file types, maximum sizes, missing coverage, and rejection of symlinks, special files, traversal paths, or unexpected content.
+- [x] 3.3 Define and test the downloaded artifact contract for root-level `out` and `report-junit.xml` paths, regular-file types, maximum sizes, missing coverage, and rejection of symlinks, special files, traversal paths, directories, or unexpected content.
 
 ## 4. Enforce the No-Checkout Trusted Analyzer Policy
 
@@ -54,13 +54,14 @@
 - [x] 7.3 Run hostile source-helper tests, focused policy unit tests, immutable-dependency validation, workflow security/YAML validation, and the repository's relevant Go tests; resolve every failure.
 - [x] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
 - [x] 7.5 Run `openspec validate secure-sonarcloud-pr-analysis` and confirm the revised implementation satisfies every modified and added scenario.
+- [x] 7.6 Reproduce the live `upload-artifact` path layout from PR run `29918022977`, align the trusted report validator, protected path normalization, exact structural-policy assertions, tests, and documentation to exactly two root-level downloaded report files while preserving the established scanner paths, and prove the corrected validator accepts the downloaded live artifact while retaining fail-closed negative fixtures.
 
 ## 8. Exercise Live Workflows and Enforce Repository Rules
 
 - [x] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
 - [x] 8.2 Record organization `ensono` and project key `Ensono_eirctl` as fixed, document that the current maintainer lacks SonarQube Cloud administration and token-generation rights, and record that access has been requested without changing project identity or creating a duplicate.
 
-**Access dependency:** Tasks 8.3–8.11 remain blocked until an authorized maintainer can inspect the canonical project and replace the analysis credential.
+**Access dependency:** Tasks 8.3–8.8 and 8.10–8.11 remain blocked until an authorized maintainer can inspect the canonical project and replace the analysis credential; independently completed governance task 8.9 is not blocked.
 
 - [ ] 8.3 Through authenticated SonarQube Cloud access, verify the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl` with main branch `main`, determine the `ensono` organization plan, and repair or provision the binding only under the same fixed organization and project key if required.
 - [ ] 8.4 Generate the plan-supported least-privilege analysis credential, replace the GitHub `SONAR_TOKEN` secret value without exposing it, and record its type, owner, and expiry in the team's secret-management process.
