@@ -121,7 +121,7 @@ jobs:
           path: |
             .coverage/out
             .coverage/report-junit.xml
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
   sonarcloud:
