@@ -95,9 +95,12 @@ Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Acti
 Extensive Go template usage in task definitions:
 
 -   `.Root`, `.Dir`, `.TempDir` - path variables
--   `.Args`, `.ArgsList` - CLI arguments passed after `--`
+-   `.Args`, `.ArgsList` - CLI arguments passed after `--` 
 -   `.Task.Name`, `.Context.Name`, `.Stage.Name` - runtime context
--   User variables via `--set key=value`
+-   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic   
+-   User variables via `--set key=value` and can also be passed in via the `vars` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
+-   `.Current.OS`,  `.Current.Arch` - OS and Architecture variables
+    > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2 
 
 ### Task Variations
 
