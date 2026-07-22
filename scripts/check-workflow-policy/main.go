@@ -29,10 +29,6 @@ type Workflow struct {
 
 type Permissions = map[string]string
 
-type Job = schema.GithubJob
-
-type Step = schema.GithubStep
-
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "workflow security check failed:", err)
@@ -116,7 +112,7 @@ func hasTrigger(workflow Workflow, name string) bool {
 	return workflow.On.Has(name)
 }
 
-func concurrencyGroup(job Job) string {
+func concurrencyGroup(job schema.GithubJob) string {
 	if job.Concurrency == nil {
 		return ""
 	}
@@ -155,7 +151,7 @@ func validateWorkflow(workflow Workflow) error {
 	return validatePrivilegedFlow(workflow)
 }
 
-func validateActions(path string, job Job) error {
+func validateActions(path string, job schema.GithubJob) error {
 	for _, step := range job.Steps {
 		if step.Uses == "" || strings.HasPrefix(step.Uses, "./") {
 			continue
@@ -225,7 +221,7 @@ func isPrivilegedTrigger(workflow Workflow) bool {
 	return false
 }
 
-func checkoutStep(steps []*Step) (int, int) {
+func checkoutStep(steps []*schema.GithubStep) (int, int) {
 	for index, step := range steps {
 		if actionUses(step.Uses, "actions/checkout") {
 			return index, index + 1
@@ -239,7 +235,7 @@ func actionUses(value, action string) bool {
 	return at > 0 && strings.EqualFold(value[:at], action)
 }
 
-func isUntrustedCheckout(step *Step, workflow Workflow, job Job) bool {
+func isUntrustedCheckout(step *schema.GithubStep, workflow Workflow, job schema.GithubJob) bool {
 	ref := strings.TrimSpace(step.With["ref"])
 	if ref == "" || shaExpression.MatchString(ref) || ref == "${{ github.event.pull_request.base.sha }}" {
 		return false
@@ -256,7 +252,7 @@ func trustedWorkflowRun(condition string) bool {
 		strings.Contains(condition, "github.event.workflow_run.head_branch == 'main'")
 }
 
-func jobCanWrite(job Job, workflow Workflow) bool {
+func jobCanWrite(job schema.GithubJob, workflow Workflow) bool {
 	permissions := workflow.Permissions
 	if job.Has("permissions") {
 		permissions = job.Permissions
@@ -269,7 +265,7 @@ func jobCanWrite(job Job, workflow Workflow) bool {
 	return job.Environment != ""
 }
 
-func executesWorkspace(step *Step) bool {
+func executesWorkspace(step *schema.GithubStep) bool {
 	if step.Run != "" || strings.HasPrefix(step.Uses, "./") {
 		return true
 	}
@@ -556,7 +552,7 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 	return nil
 }
 
-func checkoutCount(job Job) int {
+func checkoutCount(job schema.GithubJob) int {
 	count := 0
 	for _, step := range job.Steps {
 		if actionUses(step.Uses, "actions/checkout") {
@@ -566,12 +562,12 @@ func checkoutCount(job Job) int {
 	return count
 }
 
-func isProtectedBaseCheckout(step *Step) bool {
+func isProtectedBaseCheckout(step *schema.GithubStep) bool {
 	return actionUses(step.Uses, "actions/checkout") && step.With["ref"] == "" &&
 		step.With["fetch-depth"] == "1" && step.With["persist-credentials"] == "false"
 }
 
-func hasVerifiedStaticMainCheckout(job Job) bool {
+func hasVerifiedStaticMainCheckout(job schema.GithubJob) bool {
 	if len(job.Steps) < 2 {
 		return false
 	}
@@ -592,7 +588,7 @@ func requiredWorkflow(workflows map[string]Workflow, path string) (Workflow, err
 	return workflow, nil
 }
 
-func containsCache(job Job) bool {
+func containsCache(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "actions/cache@") {
 			return true
@@ -601,7 +597,7 @@ func containsCache(job Job) bool {
 	return false
 }
 
-func hasLocalAction(job Job) bool {
+func hasLocalAction(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "./") {
 			return true
@@ -619,7 +615,7 @@ func hasSecretInMap(values map[string]any) bool {
 	return false
 }
 
-func onlyScannerReceivesSonarToken(workflow Workflow, job Job, scannerIndex int) bool {
+func onlyScannerReceivesSonarToken(workflow Workflow, job schema.GithubJob, scannerIndex int) bool {
 	if hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
 		return false
 	}
@@ -644,7 +640,7 @@ func onlyScannerReceivesSonarToken(workflow Workflow, job Job, scannerIndex int)
 	return true
 }
 
-func jobUses(job Job, prefix string) bool {
+func jobUses(job schema.GithubJob, prefix string) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, prefix) {
 			return true
@@ -653,9 +649,9 @@ func jobUses(job Job, prefix string) bool {
 	return false
 }
 
-func hasCheckout(job Job) bool { _, after := checkoutStep(job.Steps); return after != -1 }
+func hasCheckout(job schema.GithubJob) bool { _, after := checkoutStep(job.Steps); return after != -1 }
 
-func stepWithContains(job Job, usesPrefix, key, expected string) bool {
+func stepWithContains(job schema.GithubJob, usesPrefix, key, expected string) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, usesPrefix) && strings.Contains(step.With[key], expected) {
 			return true
@@ -664,7 +660,7 @@ func stepWithContains(job Job, usesPrefix, key, expected string) bool {
 	return false
 }
 
-func hasCheckoutRef(job Job, ref string) bool {
+func hasCheckoutRef(job schema.GithubJob, ref string) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "actions/checkout@") && step.With["ref"] == ref {
 			return true
@@ -673,9 +669,9 @@ func hasCheckoutRef(job Job, ref string) bool {
 	return false
 }
 
-func jobHasEnvironment(job Job) bool { return job.Environment != "" }
+func jobHasEnvironment(job schema.GithubJob) bool { return job.Environment != "" }
 
-func hasSecretReference(job Job) bool {
+func hasSecretReference(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
 		if strings.Contains(step.Run, "secrets.") || strings.Contains(step.Uses, "secrets.") {
 			return true
@@ -698,7 +694,7 @@ func containsNeed(needs []string, expected string) bool {
 	return false
 }
 
-func hasCheckoutWithoutCredentials(job Job) bool {
+func hasCheckoutWithoutCredentials(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, "actions/checkout@") && step.With["persist-credentials"] == "false" {
 			return true
