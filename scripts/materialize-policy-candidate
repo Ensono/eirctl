@@ -55,7 +55,7 @@ fi
 # Keep the candidate tree deliberately small. The workflow policy command treats
 # this directory as input data and all executable code remains in the trusted
 # base checkout that invoked this script.
-if ! git archive --format=tar FETCH_HEAD -- .github/workflows eirctl.yaml | tar -x -C "$output"; then
+if ! git archive --format=tar FETCH_HEAD -- .github/workflows eirctl.yaml sonar-project.properties | tar -x -C "$output"; then
   rm -rf "$output"
   exit 1
 fi
