@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   set-version-tag:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       semVer: ${{ steps.gitversion.outputs.semVer }}
     steps:
@@ -26,10 +26,17 @@ jobs:
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         id: gitversion
+        with:
+          configFilePath: GitVersion.yml
+      - name: Validate stable production SemVer
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+        run: scripts/check-release-versioning.sh
 
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
@@ -85,7 +92,7 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Go modules
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
