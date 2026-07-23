@@ -55,13 +55,14 @@
 - [x] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
 - [x] 7.5 Run `openspec validate secure-sonarcloud-pr-analysis` and confirm the revised implementation satisfies every modified and added scenario.
 - [x] 7.6 Reproduce the live `upload-artifact` path layout from PR run `29918022977`, align the trusted report validator, protected path normalization, exact structural-policy assertions, tests, and documentation to exactly two root-level downloaded report files while preserving the established scanner paths, and prove the corrected validator accepts the downloaded live artifact while retaining fail-closed negative fixtures.
+- [x] 7.7 Reproduce same-repository run `30002506806` coverage-key rejection, validate canonical repository-relative Go coverage records, normalize them into the fixed `source/` scanner namespace before materialization, add malformed and unsafe-path fixtures, and prove the exact live report maps to API-materialized source keys.
 
 ## 8. Exercise Live Workflows and Enforce Repository Rules
 
 - [x] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
 - [x] 8.2 Record organization `ensono` and project key `Ensono_eirctl` as fixed, document that the current maintainer lacks SonarQube Cloud administration and token-generation rights, and record that access has been requested without changing project identity or creating a duplicate.
 
-**Access dependency:** The authorized-access dependency was resolved for tasks 8.3–8.5. Tasks 8.6–8.8 and 8.10–8.11 now depend on merging the corrected report validator to protected `main` and completing the same-repository and fork live exercises; independently completed governance task 8.9 is not blocked.
+**Access dependency:** The authorized-access dependency was resolved for tasks 8.3–8.5. The root-level report validator is now on protected `main`; task 8.6 exposed a coverage namespace mismatch that must be corrected by task 7.7 before repeating the same-repository exercise. Tasks 8.7–8.8 and 8.10–8.11 remain sequenced after successful same-repository and fork live exercises; independently completed governance task 8.9 is not blocked.
 
 - [x] 8.3 Through authenticated SonarQube Cloud access, verify the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl` with main branch `main`, determine the `ensono` organization plan, and repair or provision the binding only under the same fixed organization and project key if required.
 - [x] 8.4 Generate the plan-supported least-privilege analysis credential, replace the GitHub `SONAR_TOKEN` secret value without exposing it, and record its type, owner, and expiry in the team's secret-management process.

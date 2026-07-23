@@ -107,8 +107,12 @@ The trusted analyzer SHALL verify the upstream workflow identity, event, base re
 - **THEN** the analyzer fails closed before exposing `SONAR_TOKEN`
 
 #### Scenario: Artifact contains unexpected content
-- **WHEN** the report artifact contains an unexpected path, file, symlink, special file, or content beyond the configured bound
+- **WHEN** the report artifact contains an unexpected path, file, symlink, special file, invalid UTF-8, malformed coverage mode or record, unsafe coverage path, or content beyond the configured bound
 - **THEN** the analyzer rejects the artifact and does not invoke the scanner
+
+#### Scenario: Coverage paths match isolated source
+- **WHEN** a valid bounded Go coverage report names files relative to the verified repository root and the same Go files are materialized beneath `analysis/source`
+- **THEN** protected pre-materialization code prefixes each canonical coverage record with the fixed `source/` namespace so the scanner imports coverage against the corresponding isolated source file
 
 #### Scenario: Git tree cannot be proven complete
 - **WHEN** GitHub returns a truncated tree, an unresolved commit, a changed head revision, a missing blob, or a blob whose identity or size differs from the verified tree entry

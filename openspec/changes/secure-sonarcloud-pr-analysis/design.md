@@ -66,12 +66,14 @@ Before any step receives `SONAR_TOKEN`, protected code verifies:
 - the head SHA is a full immutable commit SHA and still matches the current PR revision;
 - the run ID and run attempt match the event and report artifact;
 - exactly one unexpired report artifact has the deterministic expected name;
-- the report artifact contains only the bounded regular coverage and JUnit files;
+- the report artifact contains only the bounded regular coverage and JUnit files, and every coverage record uses a canonical repository-relative Go path that protected code maps into the fixed `source/` scanner namespace;
 - the Git commit API in the verified head repository resolves the exact full SHA;
 - the commit's tree identity matches a complete, non-truncated recursive Git tree response;
 - each selected source blob response matches the tree-recorded blob SHA and size.
 
 Per-PR/revision concurrency cancels stale analysis. The source materializer performs a final current-head check before it exits so a revision changed during API retrieval fails closed. A later race is handled by concurrency cancellation; artifacts and source identities are never mixed across revisions.
+
+The untrusted Go coverage report names files relative to the repository root, while the protected analyzer deliberately materializes those same paths beneath `analysis/source`. Before source materialization and before any secret is exposed, the protected report validator requires UTF-8 reports, a supported Go coverage mode, and canonical relative `.go` records; rejects malformed or unsafe paths; and prefixes each record with the fixed `source/` namespace. This deterministic normalization aligns scanner file keys without moving source out of its isolated root, adding `.git`, or executing report-controlled content.
 
 ### 3. Materialize source through the Git Data API, never through checkout or a generic archive
 
