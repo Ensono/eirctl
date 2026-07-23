@@ -46,7 +46,7 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 
 #### Scenario: Trusted main push is analyzed
 - **WHEN** tests succeed for a trusted push to `main`
-- **THEN** the workflow generates the configured Go reports, runs the approved SonarCloud scanner successfully, and waits for the quality-gate result
+- **THEN** the workflow loads settings for organization `ensono` and the bound `Ensono_eirctl` project whose main branch is `main`, generates the configured Go reports, runs the approved SonarCloud scanner successfully, and waits for the quality-gate result
 
 #### Scenario: Same-repository pull request is analyzed
 - **WHEN** the untrusted pull-request workflow completes for a branch in `Ensono/eirctl`
@@ -59,6 +59,37 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 #### Scenario: Pull-request tests do not produce coverage
 - **WHEN** the upstream pull-request run completes without the expected coverage report
 - **THEN** the analyzer produces the explicitly configured source-only or failed-preparation outcome and does not silently skip SonarCloud reporting
+
+### Requirement: SonarCloud project identity and analysis credential are operationally valid
+Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with the fixed key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
+
+#### Scenario: Fixed project identity is preserved
+- **WHEN** implementation or operations configure SonarQube Cloud analysis for this repository
+- **THEN** they use organization `ensono` and project key `Ensono_eirctl` without renaming the key, substituting an alternate project, or creating a blind duplicate
+
+#### Scenario: Authorized project state is validated
+- **WHEN** an authorized `ensono` administrator performs the pre-live validation
+- **THEN** the administrator verifies through authenticated SonarQube Cloud access that `Ensono_eirctl` is bound to `Ensono/eirctl` and uses `main` as its main branch, repairing or provisioning that binding only under the same fixed identity if required
+
+#### Scenario: SonarCloud administration access is pending
+- **WHEN** the maintainer cannot inspect the authenticated project state, generate the supported credential, or replace the repository secret
+- **THEN** live acceptance and required-check rollout remain blocked without changing the fixed project identity, exposing a token value, weakening the workflow trust boundary, or creating an unauthorized workaround
+
+#### Scenario: Team plan supplies the analysis credential
+- **WHEN** the `ensono` organization uses the Team plan or higher
+- **THEN** operations generate a project-scoped Scoped Organization Token granting only **Execute analysis**, store its value as the repository `SONAR_TOKEN` secret, and record its owner and expiry outside the repository
+
+#### Scenario: Free plan supplies the analysis credential
+- **WHEN** the `ensono` organization uses the Free plan
+- **THEN** operations generate a personal access token from a maintained identity with only the authorization required to analyze `Ensono_eirctl`, store its value as the repository `SONAR_TOKEN` secret, and record its owner and expiry outside the repository
+
+#### Scenario: Project settings or authorization is invalid
+- **WHEN** a trusted-main scan reports `NOT_FOUND`, a `NONEXISTENT` binding, an authorization failure, or inability to load settings for the exact canonical project
+- **THEN** the scan fails visibly and same-repository PR, fork PR, and required-check rollout do not proceed until project settings load and analysis succeeds
+
+#### Scenario: Replacement credential succeeds
+- **WHEN** the rotated credential successfully loads canonical project settings and submits trusted-main analysis
+- **THEN** operations revoke the superseded credential, or revoke it immediately without waiting if compromise is suspected
 
 ### Requirement: Trusted SonarCloud analysis validates immutable provenance
 The trusted analyzer SHALL verify the upstream workflow identity, event, base repository, head repository, pull request, base branch, immutable head SHA, run ID, run attempt, report-artifact identity, bounded report contents, Git tree response, and selected source-blob identities before any step receives `SONAR_TOKEN`.
@@ -89,6 +120,10 @@ The trusted analyzer SHALL scope `SONAR_TOKEN` to the immutable-SHA-pinned offic
 #### Scenario: Scanner receives protected credentials
 - **WHEN** all provenance and passive-input validation succeeds
 - **THEN** only the approved Sonar scanner step receives `SONAR_TOKEN`, while preceding provenance, API retrieval, validation, and materialization steps do not
+
+#### Scenario: Credential authorization is validated without broader exposure
+- **WHEN** operations validate the rotated credential against the canonical project
+- **THEN** only the approved scanner step receives `SONAR_TOKEN`, no token-bearing preflight or diagnostic step is added, and no log exposes the credential value
 
 #### Scenario: Pull request changes Sonar configuration
 - **WHEN** the analyzed revision adds or modifies `sonar-project.properties` or equivalent scanner settings
