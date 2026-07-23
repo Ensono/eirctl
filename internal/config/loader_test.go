@@ -183,6 +183,26 @@ func TestLoader_Load(t *testing.T) {
 	}
 }
 
+func TestLoader_Load_task_check(t *testing.T) {
+	t.TempDir()
+	f, err := os.CreateTemp(t.TempDir(), "task-tester-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.Write([]byte(`tasks:
+  task:check:default:vars:
+    command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"`))
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cfg, err := cl.Load(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tasks["task:check:default:vars"] == nil || cfg.Tasks["task:check:default:vars"].Commands[0] != "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'" {
+		t.Error("yaml parsing failed")
+	}
+}
+
 func Test_LoadImport(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "imprt-tes*")
 	if err != nil {

@@ -104,10 +104,9 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 `))
-	os.Setenv("HOME", tmpHomeDir)
+	t.Setenv("HOME", tmpHomeDir)
 	return func() {
 		os.RemoveAll(tmpHomeDir)
-		os.Setenv("HOME", oh)
 	}
 }
 
@@ -195,9 +194,8 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				os.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
 				return tempFile.Name(), "", func() {
-					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},
@@ -214,9 +212,8 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				os.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
 				return "", tempFile.Name(), func() {
-					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},
@@ -242,9 +239,8 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
-					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(sshConfFile.Name())
 					os.Remove(sshIdFile.Name())
 				}
@@ -271,7 +267,7 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				os.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name()+" -o Hostname=foo.bar -oPort=1234")
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name()+" -o Hostname=foo.bar -oPort=1234")
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
 					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(sshConfFile.Name())
@@ -329,9 +325,8 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				os.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
+				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {
-					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},
@@ -348,9 +343,8 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				os.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
+				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
 				return "", tempFile.Name(), func() {
-					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(tempFile.Name())
 				}
 			},
@@ -390,7 +384,7 @@ func Test_NewGitSource_ValidInput_withSSH_COMMAND_hostname_port(t *testing.T) {
 	cleanUp := createDummySshConf(t)
 	defer cleanUp()
 	setup := func() func() {
-		os.Setenv(config.GitSshCommandVar, "ssh -oHostname=altssh.github.org -oPort=443")
+		t.Setenv(config.GitSshCommandVar, "ssh -oHostname=altssh.github.org -oPort=443")
 		return func() {
 			os.Unsetenv(config.GitSshCommandVar)
 		}
@@ -456,7 +450,12 @@ func TestGitSource_Config_FromHead(t *testing.T) {
 	}
 	gs.WithRepo(repo)
 
-	cfg, err := gs.Config()
+	cfg, err := gs.Config(func(entry schema.ImportEntry, content io.ReadCloser) error {
+		return nil
+	}, func(fullPath string, content io.Reader) error {
+		_, _ = io.ReadAll(content)
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("Config error: %v", err)
 	}
@@ -489,7 +488,12 @@ func TestGitSource_Config_FromBranch(t *testing.T) {
 	}
 	gs.WithRepo(repo)
 
-	cfg, err := gs.Config()
+	cfg, err := gs.Config(func(entry schema.ImportEntry, content io.ReadCloser) error {
+		return nil
+	}, func(fullPath string, content io.Reader) error {
+		_, _ = io.ReadAll(content)
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("Config error: %v", err)
 	}
@@ -531,7 +535,9 @@ func TestGitSource_Config_FileNotFound(t *testing.T) {
 	}
 	gs.WithRepo(repo)
 
-	_, err = gs.Config()
+	_, err = gs.Config(
+		func(entry schema.ImportEntry, content io.ReadCloser) error { return nil },
+		func(fullPath string, content io.Reader) error { return nil })
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -562,7 +568,14 @@ func Test_LoaderGit_Integration(t *testing.T) {
 			if err := gs.Clone(); err != nil {
 				t.Fatal(err)
 			}
-			cfg, err := gs.Config()
+			cfg, err := gs.Config(
+				func(entry schema.ImportEntry, content io.ReadCloser) error {
+					return nil
+				},
+				func(fullPath string, content io.Reader) error {
+					_, _ = io.ReadAll(content)
+					return nil
+				})
 			if err != nil {
 				t.Fatal(err)
 			}

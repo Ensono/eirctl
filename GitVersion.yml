@@ -1,0 +1,10 @@
+# Production releases are stable versions on main. Keep null (rather than an
+# empty string) so GitVersion does not create a numeric pre-release label.
+workflow: GitHubFlow/v1
+# ContinuousDeployment omits the numeric commit-count suffix when the label is
+# null; this makes a validated main commit a stable release.
+mode: ContinuousDeployment
+label: null
+branches:
+  main:
+    label: null

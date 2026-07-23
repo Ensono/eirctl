@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -164,7 +165,7 @@ func (gs *GitSource) File() (io.ReadCloser, error) {
 	return contents, nil
 }
 
-func (gs *GitSource) Config() (*ConfigDefinition, error) {
+func (gs *GitSource) Config(writeImport func(entry schema.ImportEntry, content io.ReadCloser) error, cacheStore func(fullPath string, content io.Reader) error) (*ConfigDefinition, error) {
 
 	contents, err := gs.File()
 	if err != nil {
@@ -172,9 +173,25 @@ func (gs *GitSource) Config() (*ConfigDefinition, error) {
 	}
 	defer contents.Close()
 
+	// store in cache irrespective of entry type
+	// create an entry for both import and config files
+	contentBuffer := &bytes.Buffer{}
+	cacheBuffer := io.TeeReader(contents, contentBuffer)
+	if err := cacheStore(gs.entry.Src, cacheBuffer); err != nil {
+		logrus.Debugf("failed to store (%s) in cache", gs.entry.Src)
+	}
+
+	if gs.entry.IsFileImport() {
+
+		if err := writeImport(gs.entry, io.NopCloser(contentBuffer)); err != nil {
+			return nil, err
+		}
+		return &ConfigDefinition{}, nil
+	}
+
 	cm := &ConfigDefinition{}
 
-	if err := yaml.NewDecoder(contents).Decode(&cm); err != nil {
+	if err := yaml.NewDecoder(contentBuffer).Decode(&cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
