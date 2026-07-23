@@ -114,7 +114,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/huh v1.0.0
 	github.com/coryb/templatecolor v0.0.0-20230911044230-5d137a83f1e3
-	github.com/docker/cli v29.6.1+incompatible
+	github.com/docker/cli v29.6.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/emicklei/dot v1.11.0
 	github.com/fatih/color v1.19.0 // indirect
