@@ -502,17 +502,25 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		return errors.New("trusted SonarCloud analyzer must download and validate only the exact verified passive report artifact")
 	}
 
-	if configure.Name != "Create trusted scanner configuration" ||
-		!strings.Contains(configure.Run, "analysis/sonar-project.properties") ||
-		!strings.Contains(configure.Run, "sonar.host.url=https://sonarcloud.io") ||
-		!strings.Contains(configure.Run, "sonar.organization=ensono") ||
-		!strings.Contains(configure.Run, "sonar.projectKey=Ensono_eirctl") ||
-		!strings.Contains(configure.Run, "sonar.sources=source") ||
-		!strings.Contains(configure.Run, "sonar.tests=source") ||
-		!strings.Contains(configure.Run, "sonar.go.coverage.reportPaths=reports/.coverage/out") ||
-		!strings.Contains(configure.Run, "sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml") ||
-		!strings.Contains(configure.Run, "sonar.qualitygate.wait=true") {
-		return errors.New("trusted SonarCloud analyzer must create the forced scanner configuration outside the passive source root")
+	expectedConfiguration := strings.TrimSpace(`
+mkdir -p analysis
+cat >analysis/sonar-project.properties <<'PROPERTIES'
+sonar.host.url=https://sonarcloud.io
+sonar.organization=ensono
+sonar.projectKey=Ensono_eirctl
+sonar.sources=source
+sonar.tests=source
+sonar.inclusions=source/**/*.go
+sonar.exclusions=source/**/*_test.go,source/**/*_windows.go,source/**/*_generated*.go,source/**/*_generated/**,source/**/vendor/**,source/**/examples/**
+sonar.test.inclusions=source/**/*_test.go
+sonar.test.exclusions=source/**/*_generated*.go,source/**/*_generated/**,source/**/vendor/**
+sonar.sourceEncoding=UTF-8
+sonar.go.coverage.reportPaths=reports/.coverage/out
+sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
+sonar.qualitygate.wait=true
+PROPERTIES`)
+	if configure.Name != "Create trusted scanner configuration" || strings.TrimSpace(configure.Run) != expectedConfiguration {
+		return errors.New("trusted SonarCloud analyzer must create only the exact forced scanner configuration outside the passive source root")
 	}
 
 	expectedMaterializer := strings.Join(strings.Fields("go run "+materializerPath+`
@@ -529,22 +537,26 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
 	}
 
-	args := scanner.With["args"]
+	expectedScannerArgs := strings.Join(strings.Fields(`
+-Dsonar.projectBaseDir=analysis
+-Dsonar.host.url=https://sonarcloud.io
+-Dsonar.organization=ensono
+-Dsonar.projectKey=Ensono_eirctl
+-Dsonar.sources=source
+-Dsonar.tests=source
+-Dsonar.go.coverage.reportPaths=reports/.coverage/out
+-Dsonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
+-Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}
+-Dsonar.pullrequest.branch=${{ steps.provenance.outputs.head-ref }}
+-Dsonar.pullrequest.base=main
+-Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}
+-Dsonar.qualitygate.wait=true`), " ")
+	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
 	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != scannerAction ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
-		scanner.With["skipSignatureVerification"] != "false" ||
-		!strings.Contains(args, "-Dsonar.projectBaseDir=analysis") || !strings.Contains(args, "-Dsonar.host.url=https://sonarcloud.io") ||
-		!strings.Contains(args, "-Dsonar.organization=ensono") || !strings.Contains(args, "-Dsonar.projectKey=Ensono_eirctl") ||
-		!strings.Contains(args, "-Dsonar.sources=source") || !strings.Contains(args, "-Dsonar.tests=source") ||
-		!strings.Contains(args, "-Dsonar.go.coverage.reportPaths=reports/.coverage/out") ||
-		!strings.Contains(args, "-Dsonar.go.tests.reportPaths=reports/.coverage/report-junit.xml") ||
-		!strings.Contains(args, "-Dsonar.pullrequest.key=${{ steps.provenance.outputs.pr-number }}") ||
-		!strings.Contains(args, "-Dsonar.pullrequest.branch=${{ steps.provenance.outputs.head-ref }}") ||
-		!strings.Contains(args, "-Dsonar.pullrequest.base=main") ||
-		!strings.Contains(args, "-Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}") ||
-		!strings.Contains(args, "-Dsonar.qualitygate.wait=true") {
-		return errors.New("trusted SonarCloud analyzer must end with the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
+		scanner.With["skipSignatureVerification"] != "false" || args != expectedScannerArgs {
+		return errors.New("trusted SonarCloud analyzer must end with only the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
 	}
 	if !onlyScannerReceivesSonarToken(workflow, job, 6) {
 		return errors.New("trusted SonarCloud analyzer must scope SONAR_TOKEN to the approved scanner step")
