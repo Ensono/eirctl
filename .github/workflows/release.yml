@@ -35,6 +35,12 @@ jobs:
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         id: gitversion
+        with:
+          configFilePath: GitVersion.yml
+      - name: Validate stable production SemVer
+        env:
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+        run: scripts/check-release-versioning.sh
 
   release:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' }}
