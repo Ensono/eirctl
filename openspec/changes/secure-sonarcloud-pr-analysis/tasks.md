@@ -61,7 +61,7 @@
 - [x] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
 - [x] 8.2 Record organization `ensono` and project key `Ensono_eirctl` as fixed, document that the current maintainer lacks SonarQube Cloud administration and token-generation rights, and record that access has been requested without changing project identity or creating a duplicate.
 
-**Access dependency:** Tasks 8.3–8.8 and 8.10–8.11 remain blocked until an authorized maintainer can inspect the canonical project and replace the analysis credential; independently completed governance task 8.9 is not blocked.
+**Access dependency:** The authorized-access dependency was resolved for tasks 8.3–8.5. Tasks 8.6–8.8 and 8.10–8.11 now depend on merging the corrected report validator to protected `main` and completing the same-repository and fork live exercises; independently completed governance task 8.9 is not blocked.
 
 - [x] 8.3 Through authenticated SonarQube Cloud access, verify the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl` with main branch `main`, determine the `ensono` organization plan, and repair or provision the binding only under the same fixed organization and project key if required.
 - [x] 8.4 Generate the plan-supported least-privilege analysis credential, replace the GitHub `SONAR_TOKEN` secret value without exposing it, and record its type, owner, and expiry in the team's secret-management process.
