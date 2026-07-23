@@ -40,3 +40,6 @@ tasks:
       env: []
       vars:
         - SetMe
+
+  task:check:default:vars:
+    command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"

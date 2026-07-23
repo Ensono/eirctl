@@ -54,8 +54,17 @@ func buildTask(def *TaskDefinition, lc *loaderContext) (*task.Task, error) {
 }
 
 func setDefaultVariables(t *task.Task) {
-	t.Variables.Set("Context.Name", t.Context)
-	t.Variables.Set("Task.Name", t.Name)
-	t.Variables.Set("Current.OS", runtime.GOOS)
-	t.Variables.Set("Current.Arch", runtime.GOARCH)
+	defaultVarsMap := map[string]any{
+		"Context": map[string]any{
+			"Name": t.Context,
+		},
+		"Task": map[string]any{
+			"Name": t.Name,
+		},
+		"Current": map[string]any{
+			"OS":   runtime.GOOS,
+			"Arch": runtime.GOARCH,
+		},
+	}
+	t.Variables = t.Variables.Merge(variables.FromVarsMap(defaultVarsMap))
 }
