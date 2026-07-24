@@ -174,3 +174,35 @@ Together, same-repository run `30087572540` and synchronized fork run `300913076
 Successful same-repository and fork analyses independently established the stable external check context `SonarCloud Code Analysis` from the SonarQubeCloud GitHub App, integration ID `12526`. Active branch ruleset `main-is-main` (ruleset ID `5842755`) now requires that exact context and integration alongside `Lint` and `Test (Linux)`, both from GitHub Actions integration ID `15368`. The update preserved one required approval, required code-owner review, and the CodeQL `high_or_higher` security-alert threshold with `errors` analysis-alert threshold.
 
 GitHub's effective rules for `main` report all three exact required-check identities. Synchronized fork PR #130 at revision `ce9e504afaac8d892bc5e57bf9597a4760627176` has aggregate check rollup `SUCCESS`: `Lint`, `Test (Linux)`, and `SonarCloud Code Analysis` all pass, so the Sonar required-check condition is satisfied. Its merge remains blocked by the independent required-review condition, confirming that adding the check did not weaken CODEOWNERS governance. Because the ruleset is active and uses GitHub's `required_status_checks` rule bound to integration `12526`, an absent, pending, cancelled, or failing Sonar quality-gate result is unsatisfied and blocks merge; only the passing external PR-head check satisfies the rule. Rollback removes this exact Sonar check from `main-is-main` before disabling the trusted PR analyzer and does not alter the retained lint, test, CodeQL, or code-owner controls.
+
+## Authenticated Critical-Smell Attribution and Remediation — 2026-07-24
+
+Authenticated SonarQube Cloud API access was loaded from the maintainer-provided local environment without printing or recording the credential. The `main` quality gate uses a previous-version new-code period beginning at version `0.11.3` on `2026-05-27T15:20:06Z`. Trusted-main run `30089934950`, including rerun attempt 2, loaded coverage and submitted revision `80d850ddc19b0ff9e65f88fc19a86a77b45bf3df`, but the gate reported `new_code_smells_severity=20` against required threshold `< 14`.
+
+Authenticated issue data returned 19 open Critical code smells in that period. Current-line Git blame attributes 12 to this change's implementation PR #114 and seven to earlier unrelated changes: one to PR #51, two to PR #99, and four to PR #102. The seven earlier findings remain open and were neither suppressed nor reclassified.
+
+| Sonar issue | Blame PR | Rule | Current location | Message |
+|---|---:|---|---|---|
+| `AZ-N-ywQ3_y5QfimGTZy` | #99 | `go:S3776` | `internal/config/cache_test.go:53` | Reduce Cognitive Complexity from 23 to 15. |
+| `AZ-N-ywQ3_y5QfimGTZz` | #99 | `go:S3776` | `internal/config/cache_test.go:126` | Reduce Cognitive Complexity from 22 to 15. |
+| `AZ-N-yrc3_y5QfimGTZv` | #114 | `go:S3776` | `internal/schema/github.go:47` | Reduce Cognitive Complexity from 19 to 15. |
+| `AZ-N-yrc3_y5QfimGTZw` | #114 | `go:S3776` | `internal/schema/github.go:224` | Reduce Cognitive Complexity from 30 to 15. |
+| `AZ-N-yuP3_y5QfimGTZx` | #114 | `go:S3776` | `internal/schema/github_test.go:9` | Reduce Cognitive Complexity from 19 to 15. |
+| `AZ-N-y0t3_y5QfimGTZ6` | #114 | `go:S1192` | `scripts/check-workflow-policy/main.go:178` | Centralize `actions/checkout`. |
+| `AZ-N-y0t3_y5QfimGTZ2` | #102 | `go:S1192` | `scripts/check-workflow-policy/main.go:330` | Centralize `validate-build`. |
+| `AZ-N-y0t3_y5QfimGTZ7` | #102 | `go:S3776` | `scripts/check-workflow-policy/main.go:351` | Reduce Cognitive Complexity from 26 to 15. |
+| `AZ-N-y0t3_y5QfimGTZ8` | #114 | `go:S3776` | `scripts/check-workflow-policy/main.go:431` | Reduce Cognitive Complexity from 21 to 15. |
+| `AZ-N-y0t3_y5QfimGTZ1` | #114 | `go:S1192` | `scripts/check-workflow-policy/main.go:473` | Centralize `persist-credentials`. |
+| `AZ-N-y0t3_y5QfimGTZ5` | #114 | `go:S1192` | `scripts/check-workflow-policy/main.go:638` | Centralize `secrets.`. |
+| `AZ-N-y0t3_y5QfimGTZ9` | #114 | `go:S3776` | `scripts/check-workflow-policy/main.go:645` | Reduce Cognitive Complexity from 23 to 15. |
+| `AZ-N-y1D3_y5QfimGTZ-` | #114 | `go:S3776` | `scripts/check-workflow-policy/main_test.go:237` | Reduce Cognitive Complexity from 30 to 15. |
+| `AZ-N-y1d3_y5QfimGTZ_` | #114 | `go:S3776` | `scripts/materialize-sonar-source/main.go:238` | Reduce Cognitive Complexity from 16 to 15. |
+| `AZ-N-y1d3_y5QfimGTaA` | #114 | `go:S3776` | `scripts/materialize-sonar-source/main.go:291` | Reduce Cognitive Complexity from 26 to 15. |
+| `AZ-N-y1d3_y5QfimGTaB` | #114 | `go:S3776` | `scripts/materialize-sonar-source/main.go:388` | Reduce Cognitive Complexity from 17 to 15. |
+| `AZ-N-yxh3_y5QfimGTZ0` | #51 | `go:S3776` | `internal/config/loader_git.go:559` | Reduce Cognitive Complexity from 19 to 15. |
+| `AZ-N-y0t3_y5QfimGTZ3` | #102 | `go:S1192` | `scripts/check-workflow-policy/main.go:272` | Centralize `actions/checkout@`. |
+| `AZ-N-y0t3_y5QfimGTZ4` | #102 | `go:S1192` | `scripts/check-workflow-policy/main.go:373` | Centralize `actions/github-script@`. |
+
+PR #132 refactors the 12 PR #114 findings by extracting focused schema decoders, trusted-topology validation phases, secret-scope predicates, immutable tree loading/classification/accounting, exclusive parent-directory handling, and test assertions while preserving fail-closed behavior and error semantics. Focused package tests, the full Go suite, workflow security validation, immutable dependency validation, CODEOWNERS validation, OpenSpec validation, and diff checks pass. `go vet ./...` retains the documented unrelated unkeyed Docker `InspectResponse` test-literal finding at `runner/executor_container_test.go:393`.
+
+Protected PR analysis run `30104143411` analyzed exact PR #132 revision `31c31f86e6bd7513b88a1d92e1686c09a5726cdd`. External check `SonarCloud Code Analysis` (`89517665288`) passed with zero new issues, zero open Critical code smells, **86.3% Coverage on New Code**, zero security hotspots, and 0.0% duplication. Task 8.10 remains open until PR #132 merges and a trusted-main analysis confirms coverage still loads and no open Critical smell remains attributable to PR #114.
