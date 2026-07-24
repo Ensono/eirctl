@@ -35,6 +35,12 @@ jobs:
       - name: Set SemVer Version
         uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
         id: gitversion
+        with:
+          configFilePath: GitVersion.yml
+      - name: Validate stable production SemVer
+        env:
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+        run: scripts/check-release-versioning.sh
 
   build-and-push:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' }}
@@ -60,7 +66,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           # GITHUB_TOKEN is automatically provided in GitHub Actions

@@ -386,6 +386,18 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 		{name: "untrusted scanner endpoint", mutate: func(content string) string {
 			return strings.Replace(content, "-Dsonar.host.url=https://sonarcloud.io", "-Dsonar.host.url=https://attacker.invalid", 1)
 		}, wantFail: true},
+		{name: "trusted configuration report path suffix drift", mutate: func(content string) string {
+			return strings.Replace(content, "sonar.go.coverage.reportPaths=reports/.coverage/out", "sonar.go.coverage.reportPaths=reports/.coverage/out-malicious", 1)
+		}, wantFail: true},
+		{name: "scanner report path suffix drift", mutate: func(content string) string {
+			return strings.Replace(content, "-Dsonar.go.coverage.reportPaths=reports/.coverage/out", "-Dsonar.go.coverage.reportPaths=reports/.coverage/out-malicious", 1)
+		}, wantFail: true},
+		{name: "duplicate conflicting trusted configuration", mutate: func(content string) string {
+			return strings.Replace(content, "          sonar.go.coverage.reportPaths=reports/.coverage/out", "          sonar.go.coverage.reportPaths=reports/.coverage/out\n          sonar.go.coverage.reportPaths=reports/attacker-out", 1)
+		}, wantFail: true},
+		{name: "duplicate conflicting scanner argument", mutate: func(content string) string {
+			return strings.Replace(content, "            -Dsonar.go.coverage.reportPaths=reports/.coverage/out", "            -Dsonar.go.coverage.reportPaths=reports/.coverage/out\n            -Dsonar.go.coverage.reportPaths=reports/attacker-out", 1)
+		}, wantFail: true},
 		{name: "mutable scanner version", mutate: func(content string) string {
 			return strings.Replace(content, "scannerVersion: 8.1.0.6389", "scannerVersion: latest", 1)
 		}, wantFail: true},

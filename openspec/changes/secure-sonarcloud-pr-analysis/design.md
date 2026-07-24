@@ -1,6 +1,6 @@
 ## Context
 
-The `Lint and Test` workflow serves both `pull_request` and trusted `push` events. Its original SonarCloud job was restricted to a push on `main`, received `SONAR_TOKEN`, and invoked the repository's container-backed `sonar:scanner:cli` task. Trusted runs reached the scanner but failed because the image's non-root UID could not create `.scannerwork` in the bind-mounted GitHub workspace. Pull-request runs skipped the job to avoid exposing the secret.
+The `Lint and Test` workflow serves both `pull_request` and trusted `push` events. Its original SonarCloud job was restricted to a push on `main`, received `SONAR_TOKEN`, and invoked the repository's container-backed `sonar:scanner:cli` task. Trusted runs reached the scanner but failed because the image's non-root UID could not create `.scannerwork` in the bind-mounted GitHub workspace. Pull-request runs skipped the job to avoid exposing the secret. After the official scanner action removed the workspace blocker, live run `29914871551` reached SonarQube Cloud but failed to load settings for `Ensono_eirctl`, reported `NOT_FOUND` and a `NONEXISTENT` binding, and ended with “Not authorized or project not found.” Organization `ensono` and project key `Ensono_eirctl` are confirmed fixed identifiers. The unauthenticated public API exposes the organization and legacy `Ensono_taskctl` project but returns `404` for `Ensono_eirctl`; that public result cannot distinguish an inaccessible private project from missing configuration. The existing secret's owner, expiry, validity, and project authorization are not established, and the current maintainer has requested but not yet received SonarQube Cloud administration and token-generation access.
 
 This repository already separates untrusted execution from privileged publication, pins actions by full commit SHA, restricts actions to a selected allow list, and structurally validates privileged workflow topologies. GitHub treats `workflow_run` as privileged because it executes default-branch workflow code and can access repository secrets.
 
@@ -15,6 +15,8 @@ At the proposal baseline, the repository had no `CODEOWNERS` file and code-owner
 **Goals:**
 
 - Restore successful SonarCloud analysis and quality-gate waiting for trusted `main` pushes.
+- Establish one canonical SonarQube Cloud project bound to `Ensono/eirctl` with organization `ensono`, project key `Ensono_eirctl`, and main branch `main` before live analysis proceeds.
+- Replace the existing repository secret value with a current, least-privilege analysis credential whose owner, scope, and expiry are operationally maintained.
 - Analyze every pull-request revision, including fork-originated revisions, without giving pull-request code direct access to `SONAR_TOKEN`.
 - Preserve Go coverage and JUnit report ingestion.
 - Run trusted scanner orchestration only from the protected default branch.
@@ -64,12 +66,14 @@ Before any step receives `SONAR_TOKEN`, protected code verifies:
 - the head SHA is a full immutable commit SHA and still matches the current PR revision;
 - the run ID and run attempt match the event and report artifact;
 - exactly one unexpired report artifact has the deterministic expected name;
-- the report artifact contains only the bounded regular coverage and JUnit files;
+- the report artifact contains only the bounded regular coverage and JUnit files, and every coverage record uses a canonical repository-relative Go path that protected code maps into the fixed `source/` scanner namespace;
 - the Git commit API in the verified head repository resolves the exact full SHA;
 - the commit's tree identity matches a complete, non-truncated recursive Git tree response;
 - each selected source blob response matches the tree-recorded blob SHA and size.
 
 Per-PR/revision concurrency cancels stale analysis. The source materializer performs a final current-head check before it exits so a revision changed during API retrieval fails closed. A later race is handled by concurrency cancellation; artifacts and source identities are never mixed across revisions.
+
+The untrusted Go coverage report names files relative to the repository root, while the protected analyzer deliberately materializes those same paths beneath `analysis/source`. Before source materialization and before any secret is exposed, the protected report validator requires UTF-8 reports, a supported Go coverage mode, and canonical relative `.go` records; rejects malformed or unsafe paths; and prefixes each record with the fixed `source/` namespace. This deterministic normalization aligns scanner file keys without moving source out of its isolated root, adding `.git`, or executing report-controlled content.
 
 ### 3. Materialize source through the Git Data API, never through checkout or a generic archive
 
@@ -112,9 +116,13 @@ Trusted configuration or highest-precedence arguments force:
 - `sonar.scm.revision` set to the verified immutable SHA;
 - `sonar.qualitygate.wait=true`.
 
+Organization `ensono` and project key `Ensono_eirctl` are fixed inputs and are not migration choices. Before live scanning, an authorized `ensono` administrator verifies through authenticated SonarQube Cloud access that the existing canonical project is bound to `Ensono/eirctl` and uses `main` as its main branch, repairing or provisioning that binding under the same fixed identity if required. The public `Ensono_taskctl` project is recorded only as historical public evidence; it is not a substitute key or an assumed migration source. No implementation step renames the fixed project key, selects an alternate key, or creates a blind duplicate.
+
 The official `SonarSource/sonarqube-scan-action` is pinned by full action commit SHA. The workflow explicitly fixes the scanner CLI version and approved Sonar binaries URL exposed by that action and keeps signature verification enabled. The policy rejects an omitted or mutable scanner version, an alternate binaries URL, or disabled signature verification.
 
-`SONAR_TOKEN` exists only in the scanner step environment. No provenance, API retrieval, report validation, or source-materialization step receives it. The scanner receives no write-capable GitHub token. The trusted `main` job uses the same reviewed scanner selection but continues to analyze its trusted checkout with full report and revision metadata.
+The repository secret remains named `SONAR_TOKEN`, but its value is rotated before live validation after an authorized maintainer can generate the supported credential and update the repository secret. On Team or higher plans, the credential is a project-scoped Scoped Organization Token granting only **Execute analysis**. On the Free plan, it is a personal access token from a maintained identity with only the authorization required to analyze the canonical project. The credential owner and expiry are recorded in the team's secret-management process rather than in the repository. While access is pending, no token value is retrieved, copied into diagnostics, or replaced through an unauthorized workaround.
+
+`SONAR_TOKEN` exists only in the scanner step environment. No provenance, API retrieval, report validation, source-materialization, or token-bearing diagnostic step receives it, and logs never print its value. A successful project-settings load and analysis against the exact canonical key is the credential authorization check. The scanner receives no write-capable GitHub token. The trusted `main` job uses the same reviewed scanner selection but continues to analyze its trusted checkout with full report and revision metadata. The superseded credential is revoked after the replacement succeeds, or immediately if compromise is suspected.
 
 ### 5. Permit only the exact passive analyzer topology
 
@@ -153,6 +161,8 @@ The analyzer supplies explicit PR metadata and revision so SonarCloud associates
 
 ## Risks / Trade-offs
 
+- **[Unauthenticated public metadata is mistaken for authoritative project state]** → Treat `ensono` and `Ensono_eirctl` as fixed, require an authorized administrator to verify the canonical project's binding and `main` branch through authenticated access, and prohibit alternate keys or blind duplicates.
+- **[The stored credential is expired, unauthorized, owner-dependent, or broader than analysis requires]** → Rotate it before live validation, use a project-scoped Scoped Organization Token granting only **Execute analysis** where the plan supports one, otherwise use a minimally authorized maintained-identity token, record owner and expiry out of band, validate through a real scan, and revoke the superseded credential.
 - **[The scanner parses attacker-controlled Go source and reports while holding a token]** → Minimize inputs to bounded regular Go files and two bounded reports, use the latest reviewed pinned scanner/action, verify the scanner distribution, force trusted settings, expose the token only to the final step, and document this as the sole parser trust boundary.
 - **[A scanner vulnerability turns passive input into execution]** → Use an ephemeral runner, no Git metadata or repository execution surface, no caches or credentials, non-executable files, minimal token scope, current dependencies, and CODEOWNERS review.
 - **[The source helper mishandles malicious Git paths or modes]** → Avoid archive extraction, use standard-library API parsing, canonicalize and bound paths, reject symlinks/submodules/special modes and duplicates, use exclusive non-link-following writes, and add hostile table-driven tests.
@@ -173,14 +183,18 @@ The analyzer supplies explicit PR metadata and revision so SonarCloud associates
 5. Require explicit scanner CLI version, approved binaries URL, and signature verification.
 6. Run hostile helper fixtures, policy unit tests, immutable-dependency checks, workflow/YAML validation, full relevant Go tests, CodeQL, and OpenSpec validation.
 7. Push a new PR revision and confirm that the previous high-severity CodeQL finding is absent before seeking merge.
-8. After the workflow exists on `main`, exercise a trusted `main` push, a same-repository PR, and an adversarial fork PR. Verify exact revision, coverage, PR decoration, new-code behavior, token isolation, and no source execution.
-9. Confirm code-owner enforcement and add the observed external SonarCloud check identity to `main-is-main`.
-10. Record final workflow URLs, ruleset state, release/SHA evidence, API bounds, and residual parser risk.
+8. Record organization `ensono` and project key `Ensono_eirctl` as fixed, preserve the unauthenticated public evidence, and wait for the requested SonarQube Cloud administration and token-generation access rather than changing identity or creating a duplicate.
+9. After access is granted, verify the canonical project's binding to `Ensono/eirctl` and main branch `main`, determine the organization plan, generate the supported least-privilege analysis credential, update the repository `SONAR_TOKEN` secret without exposing its value, and record its owner and expiry in the team's secret-management process.
+10. Exercise a trusted `main` push first. Require successful project-settings loading, analysis submission, coverage ingestion, quality-gate waiting, and absence of both the former `.scannerwork` failure and the `NOT_FOUND`/`NONEXISTENT` failure before revoking the superseded credential.
+11. Exercise a same-repository PR and an adversarial fork PR. Verify exact revision, coverage, PR decoration, new-code behavior, token isolation, and no source execution.
+12. Confirm code-owner enforcement and add the observed external SonarCloud check identity to `main-is-main`.
+13. Record final workflow URLs, canonical project and binding state, credential type/owner/expiry without its value, ruleset state, release/SHA evidence, API bounds, and residual parser risk.
 
-Rollback removes the external SonarCloud required check first, disables the trusted PR analyzer, and preserves CODEOWNERS plus the stricter no-privileged-checkout policy. The rejected checkout design is not a rollback target.
+Rollback removes the external SonarCloud required check first, disables the trusted PR analyzer, and preserves CODEOWNERS plus the stricter no-privileged-checkout policy. It does not restore a project identity or credential already shown to be invalid; administrators either correct the canonical binding and secret or leave analysis disabled. The rejected checkout design is not a rollback target.
 
 ## Open Questions
 
-- Confirm the smallest practical Git tree, selected-file, path-length, per-file, and aggregate-size limits from the current repository baseline before implementation.
+- Confirm through authorized SonarQube Cloud access that the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl`, uses `main` as its main branch, and is analyzable by the replacement credential.
+- Confirm the `ensono` organization plan so operations select a project-scoped Scoped Organization Token on Team or higher, or a minimally authorized personal access token on Free.
 - Confirm through live same-repository and fork PRs that an allowlisted source tree without `.git` provides acceptable SonarCloud PR decoration and new-code behavior.
 - Confirm the exact SonarCloud external quality-gate context and integration ID before changing required checks.

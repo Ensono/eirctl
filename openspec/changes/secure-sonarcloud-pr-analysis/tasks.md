@@ -14,9 +14,9 @@
 
 ## 3. Produce Bounded Untrusted Sonar Reports
 
-- [x] 3.1 Update the Linux pull-request test path to upload a dedicated Sonar reports artifact containing only the expected Go coverage and JUnit report files, with a bounded retention period and deterministic name.
+- [x] 3.1 Update the Linux pull-request test path to upload a dedicated Sonar reports artifact containing only the expected Go coverage and JUnit report files, with a bounded retention period, deterministic name, and documented root-level downloaded layout after `upload-artifact` strips their common `.coverage` parent.
 - [x] 3.2 Ensure the pull-request workflow retains read-only permissions, never references `SONAR_TOKEN`, and does not gain a protected environment or other privileged credential.
-- [x] 3.3 Define and test the artifact contract for expected paths, regular-file types, maximum sizes, missing coverage, and rejection of symlinks, special files, traversal paths, or unexpected content.
+- [x] 3.3 Define and test the downloaded artifact contract for root-level `out` and `report-junit.xml` paths, regular-file types, maximum sizes, missing coverage, and rejection of symlinks, special files, traversal paths, directories, or unexpected content.
 
 ## 4. Enforce the No-Checkout Trusted Analyzer Policy
 
@@ -52,15 +52,24 @@
 - [x] 7.1 Update `docs/ci-security.md` with the no-checkout Git Data API flow, source and report provenance invariants, materialization bounds, scanner parser risk, forced runtime/settings, secret scope, CodeQL acceptance rule, and rollback procedure.
 - [x] 7.2 Document why ordinary secret-bearing PR jobs, privileged PR builds, privileged immutable checkout, untrusted or generic source archives, same-repository-only scanning, and automatic analysis were rejected.
 - [x] 7.3 Run hostile source-helper tests, focused policy unit tests, immutable-dependency validation, workflow security/YAML validation, and the repository's relevant Go tests; resolve every failure.
-- [ ] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
+- [x] 7.4 Push the revised workflow and confirm CodeQL reports no new untrusted-checkout or equivalent high-severity alert without dismissal, suppression, threshold reduction, or ruleset bypass.
 - [x] 7.5 Run `openspec validate secure-sonarcloud-pr-analysis` and confirm the revised implementation satisfies every modified and added scenario.
+- [x] 7.6 Reproduce the live `upload-artifact` path layout from PR run `29918022977`, align the trusted report validator, protected path normalization, exact structural-policy assertions, tests, and documentation to exactly two root-level downloaded report files while preserving the established scanner paths, and prove the corrected validator accepts the downloaded live artifact while retaining fail-closed negative fixtures.
+- [x] 7.7 Reproduce same-repository run `30002506806` coverage-key rejection, validate canonical repository-relative Go coverage records, normalize them into the fixed `source/` scanner namespace before materialization, add malformed and unsafe-path fixtures, and prove the exact live report maps to API-materialized source keys.
 
 ## 8. Exercise Live Workflows and Enforce Repository Rules
 
-- [ ] 8.1 Exercise a trusted `main` push and confirm reports upload, scanner completion, quality-gate waiting, correct project association, and absence of the `.scannerwork` permission failure.
-- [ ] 8.2 Exercise a same-repository PR and confirm the exact head SHA, coverage, SonarCloud PR decoration, quality-gate result, acceptable no-`.git` new-code behavior, and no secret exposure in the untrusted workflow.
-- [ ] 8.3 Exercise a fork-originated PR with adversarial Git tree entries, `sonar-project.properties`, scripts, workflows, local actions, dependency hooks, container definitions, and inert executable-looking files; confirm forbidden entries fail closed or remain unmaterialized, trusted settings win, no fork content executes, and SonarCloud decorates the exact fork revision.
-- [ ] 8.4 Use the same-repository and fork exercises to confirm and document the API-materialized source tree's SonarCloud SCM/new-code fidelity and passive-only boundary without `.git`, then rerun static policy and CodeQL validation for the selected form.
-- [x] 8.5 Confirm `main-is-main` requires code-owner review and verify workflow, CODEOWNERS, and Sonar property changes request `@Ensono/digital-tools-maintainers` approval.
-- [ ] 8.6 Observe the stable external SonarCloud check context and integration ID from a successful live PR analysis, add that exact check to `main-is-main`, and verify a missing or failing quality gate blocks merge while a passing gate satisfies the rule.
-- [ ] 8.7 Record final workflow URLs, ruleset state, action and scanner release/SHA/version evidence, source bounds, residual scanner-parser risk, and rollback information in the change verification notes without recording secret values.
+- [x] 8.1 Record run `29914871551` diagnostics, the public `Ensono_eirctl` and `Ensono_taskctl` project metadata, and repository `SONAR_TOKEN` secret metadata in the change verification notes without recording any credential value.
+- [x] 8.2 Record organization `ensono` and project key `Ensono_eirctl` as fixed, document that the current maintainer lacks SonarQube Cloud administration and token-generation rights, and record that access has been requested without changing project identity or creating a duplicate.
+
+**Access dependency:** The authorized-access dependency was resolved for tasks 8.3–8.5. The root-level report validator is now on protected `main`; task 8.6 exposed a coverage namespace mismatch that must be corrected by task 7.7 before repeating the same-repository exercise. Tasks 8.7–8.8 and 8.10–8.11 remain sequenced after successful same-repository and fork live exercises; independently completed governance task 8.9 is not blocked.
+
+- [x] 8.3 Through authenticated SonarQube Cloud access, verify the fixed `Ensono_eirctl` project is bound to `Ensono/eirctl` with main branch `main`, determine the `ensono` organization plan, and repair or provision the binding only under the same fixed organization and project key if required.
+- [x] 8.4 Generate the plan-supported least-privilege analysis credential, replace the GitHub `SONAR_TOKEN` secret value without exposing it, and record its type, owner, and expiry in the team's secret-management process.
+- [x] 8.5 Exercise a trusted `main` push and confirm project settings load, reports upload, analysis submission, coverage ingestion, scanner completion, and quality-gate waiting; verify the absence of `.scannerwork`, `NOT_FOUND`, `NONEXISTENT`, and authorization failures, then revoke the superseded credential.
+- [ ] 8.6 Exercise a same-repository PR and confirm the exact head SHA, coverage, SonarCloud PR decoration, quality-gate result, acceptable no-`.git` new-code behavior, and no secret exposure in the untrusted workflow.
+- [ ] 8.7 Exercise a fork-originated PR with adversarial Git tree entries, `sonar-project.properties`, scripts, workflows, local actions, dependency hooks, container definitions, and inert executable-looking files; confirm forbidden entries fail closed or remain unmaterialized, trusted settings win, no fork content executes, and SonarCloud decorates the exact fork revision.
+- [ ] 8.8 Use the same-repository and fork exercises to confirm and document the API-materialized source tree's SonarCloud SCM/new-code fidelity and passive-only boundary without `.git`, then rerun static policy and CodeQL validation for the selected form.
+- [x] 8.9 Confirm `main-is-main` requires code-owner review and verify workflow, CODEOWNERS, and Sonar property changes request `@Ensono/digital-tools-maintainers` approval.
+- [ ] 8.10 Observe the stable external SonarCloud check context and integration ID from a successful live PR analysis, add that exact check to `main-is-main`, and verify a missing or failing quality gate blocks merge while a passing gate satisfies the rule.
+- [ ] 8.11 Record final workflow URLs, canonical project and binding state, credential type/owner/expiry without its value, ruleset state, action and scanner release/SHA/version evidence, source bounds, residual scanner-parser risk, and rollback information in the change verification notes.
