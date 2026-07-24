@@ -430,10 +430,11 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 
 func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 	const (
-		path             = ".github/workflows/trusted-sonarcloud-pr.yml"
-		scannerAction    = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
-		reviewedBounds   = "tree=384,go=160,path=160,file=131072,total=1048576"
-		materializerPath = "trusted/scripts/materialize-sonar-source/main.go"
+		path                = ".github/workflows/trusted-sonarcloud-pr.yml"
+		scannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+		reviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
+		materializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
+		expectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
 	)
 	workflow, err := requiredWorkflow(workflows, path)
 	if err != nil {
@@ -449,8 +450,8 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||
-		concurrencyGroup(job) != "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}" {
-		return errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling per-PR concurrency")
+		concurrencyGroup(job) != expectedConcurrency {
+		return errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling same-repository or fork concurrency")
 	}
 	if containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
 		return errors.New("trusted SonarCloud analyzer must not use caches, local actions, or workflow/job-scoped secrets")
@@ -481,9 +482,23 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		!strings.Contains(provenance.Run, "expected_branch='main'") ||
 		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}") ||
 		!strings.Contains(provenance.Run, ".head_repository.full_name") ||
+		!strings.Contains(provenance.Run, ".head_repository.owner.login") ||
+		!strings.Contains(provenance.Run, ".head_branch") ||
+		!strings.Contains(provenance.Run, "(length == 0 or length == 1)") ||
+		!strings.Contains(provenance.Run, "associated_pr_count == 1") ||
+		!strings.Contains(provenance.Run, "gh api --method GET \"repos/${repository}/pulls\"") ||
+		!strings.Contains(provenance.Run, "-f state=open") ||
+		!strings.Contains(provenance.Run, "-f base=\"$expected_branch\"") ||
+		!strings.Contains(provenance.Run, "-f head=\"${head_owner}:${head_ref}\"") ||
+		!strings.Contains(provenance.Run, "-f per_page=2") ||
+		!strings.Contains(provenance.Run, "if length != 1 then") ||
+		!strings.Contains(provenance.Run, "expected exactly one open pull request for verified workflow run head") ||
+		!strings.Contains(provenance.Run, "pull request candidate does not match verified workflow run head") ||
+		!strings.Contains(provenance.Run, ".state == \"open\"") ||
 		!strings.Contains(provenance.Run, ".base.repo.full_name == $repository") ||
 		!strings.Contains(provenance.Run, ".base.ref == $branch") ||
 		!strings.Contains(provenance.Run, ".head.repo.full_name == $head_repository") ||
+		!strings.Contains(provenance.Run, ".head.ref == $head_ref") ||
 		!strings.Contains(provenance.Run, ".head.sha == $sha") ||
 		!strings.Contains(provenance.Run, "actions/runs/${RUN_ID}/artifacts") ||
 		!strings.Contains(provenance.Run, ".workflow_run.id == $run_id") ||
