@@ -50,17 +50,23 @@ func TestGithubWorkflowUnmarshalTriggerForms(t *testing.T) {
 			if err := yaml.Unmarshal([]byte(contents), &workflow); err != nil {
 				t.Fatal(err)
 			}
-			for _, trigger := range tt.triggers {
-				if !workflow.On.Has(trigger) {
-					t.Errorf("On.Has(%q) = false", trigger)
-				}
-			}
-			if workflow.On.Has("workflow_run") {
-				if got := workflow.On.WorkflowRun.Workflows; len(got) != 1 || got[0] != "Lint and Test" {
-					t.Fatalf("WorkflowRun.Workflows = %#v", got)
-				}
-			}
+			assertGithubTriggers(t, workflow.On, tt.triggers)
 		})
+	}
+}
+
+func assertGithubTriggers(t *testing.T, events *GithubTriggerEvents, triggers []string) {
+	t.Helper()
+	for _, trigger := range triggers {
+		if !events.Has(trigger) {
+			t.Errorf("On.Has(%q) = false", trigger)
+		}
+	}
+	if !events.Has("workflow_run") {
+		return
+	}
+	if got := events.WorkflowRun.Workflows; len(got) != 1 || got[0] != "Lint and Test" {
+		t.Fatalf("WorkflowRun.Workflows = %#v", got)
 	}
 }
 
