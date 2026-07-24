@@ -1,0 +1,10 @@
+name: Adversarial fork local action — must not run
+description: Inert acceptance fixture for the trusted SonarCloud boundary.
+runs:
+  using: composite
+  steps:
+    - name: Fail if this fork-controlled local action executes
+      shell: bash
+      run: |
+        echo "ERROR: fork-controlled local action executed" >&2
+        exit 97

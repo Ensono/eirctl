@@ -1,0 +1,4 @@
+FROM scratch
+
+# This fixture must never be built by trusted pull-request analysis.
+ADD adversarial-fork-container-must-not-run /

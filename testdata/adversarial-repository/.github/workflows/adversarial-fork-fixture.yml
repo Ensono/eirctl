@@ -1,0 +1,16 @@
+name: Adversarial fork fixture — must not run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  must-not-run:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail if this fork-controlled workflow executes
+        run: |
+          echo "ERROR: fork-controlled workflow executed" >&2
+          exit 97

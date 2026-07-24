@@ -1,0 +1,5 @@
+services:
+  must-not-run:
+    build:
+      context: .
+      dockerfile: Dockerfile.adversarial

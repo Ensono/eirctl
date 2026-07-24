@@ -1,0 +1,9 @@
+{
+  "name": "eirctl-adversarial-fork-fixture",
+  "private": true,
+  "description": "Inert dependency-hook fixture; trusted analysis must not materialize or execute it.",
+  "scripts": {
+    "preinstall": "echo 'ERROR: fork-controlled dependency hook executed' >&2; exit 97",
+    "postinstall": "echo 'ERROR: fork-controlled dependency hook executed' >&2; exit 97"
+  }
+}
