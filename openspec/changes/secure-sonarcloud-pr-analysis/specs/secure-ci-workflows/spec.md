@@ -49,8 +49,8 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 - **THEN** the workflow loads settings for organization `ensono` and the bound `Ensono_eirctl` project whose main branch is `main`, generates the configured Go reports, runs the approved SonarCloud scanner successfully, and waits for the quality-gate result
 
 #### Scenario: Same-repository pull request is analyzed
-- **WHEN** the untrusted pull-request workflow completes for a branch in `Ensono/eirctl`
-- **THEN** the default-branch analyzer submits analysis for the exact pull-request head SHA and SonarCloud decorates that pull request
+- **WHEN** the untrusted pull-request workflow completes for a branch in `Ensono/eirctl` after the protected report-layout and coverage-namespace corrections are active on `main`
+- **THEN** the default-branch analyzer submits analysis for the exact current pull-request head SHA, imports the expected Go coverage with no unresolved report paths, and SonarCloud decorates that pull request
 
 #### Scenario: Fork pull request is analyzed
 - **WHEN** the untrusted pull-request workflow completes for a fork-originated revision targeting `main`
@@ -59,6 +59,10 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 #### Scenario: Pull-request tests do not produce coverage
 - **WHEN** the upstream pull-request run completes without the expected coverage report
 - **THEN** the analyzer produces the explicitly configured source-only or failed-preparation outcome and does not silently skip SonarCloud reporting
+
+#### Scenario: Coverage imports but another quality-gate condition fails
+- **WHEN** the scanner loads the expected Go coverage report, resolves its file paths, and submits analysis, but SonarCloud fails the quality gate on a different condition such as a code smell
+- **THEN** the workflow fails visibly on the reported condition, retains the verified report path and `source/` namespace, and requires remediation without issue suppression, threshold reduction, or ruleset bypass
 
 ### Requirement: SonarCloud project identity and analysis credential are operationally valid
 Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with the fixed key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
@@ -79,8 +83,8 @@ Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHAL
 - **WHEN** the `ensono` organization uses the Team plan or higher
 - **THEN** operations generate a project-scoped Scoped Organization Token granting only **Execute analysis**, store its value as the repository `SONAR_TOKEN` secret, and record its owner and expiry outside the repository
 
-#### Scenario: Free plan supplies the analysis credential
-- **WHEN** the `ensono` organization uses the Free plan
+#### Scenario: Base plan supplies the analysis credential
+- **WHEN** the `ensono` organization uses the Base plan and does not provide project-scoped Scoped Organization Tokens
 - **THEN** operations generate a personal access token from a maintained identity with only the authorization required to analyze `Ensono_eirctl`, store its value as the repository `SONAR_TOKEN` secret, and record its owner and expiry outside the repository
 
 #### Scenario: Project settings or authorization is invalid
@@ -98,9 +102,17 @@ The trusted analyzer SHALL verify the upstream workflow identity, event, base re
 - **WHEN** the expected `Lint and Test` pull-request run, report artifact, verified head repository, full head SHA, complete Git tree, and selected source blobs resolve to the same current pull-request revision
 - **THEN** the analyzer materializes the bounded passive inputs in an isolated analysis directory and proceeds to the scanner step
 
+#### Scenario: Fork run omits its pull-request association
+- **WHEN** a valid fork-originated `Lint and Test` run has an empty pull-request association array
+- **THEN** protected code uses the run's verified fork owner and exact head branch to query open pull requests targeting `Ensono/eirctl:main`, requires exactly one candidate, and revalidates that candidate's base repository, base ref, head repository, head ref, and current full head SHA against the run before accepting its number
+
+#### Scenario: Fork pull-request resolution is absent or ambiguous
+- **WHEN** the fork run lacks a valid head owner or branch, the protected lookup returns zero or multiple candidates, the candidate is not open against `Ensono/eirctl:main`, or any candidate repository, ref, or SHA differs from the verified run
+- **THEN** the analyzer fails closed before artifact download and before any step receives `SONAR_TOKEN`
+
 #### Scenario: Pull request revision is superseded
-- **WHEN** a newer revision of the same pull request starts analysis
-- **THEN** per-pull-request concurrency prevents the stale revision from being reported as the current result and never mixes artifacts or source blobs between revisions
+- **WHEN** a newer revision of the same pull request starts analysis, including a fork run whose event payload omitted the pull-request number
+- **THEN** concurrency keyed by the pull-request number or the verified fork repository identity and head branch prevents the stale revision from being reported as the current result, does not collide with unrelated fork runs, and never mixes artifacts or source blobs between revisions
 
 #### Scenario: Provenance does not match
 - **WHEN** any base or head repository, event, workflow, pull request, base branch, SHA, run-attempt, artifact, tree, blob, path, file-type, or size validation fails
@@ -112,7 +124,7 @@ The trusted analyzer SHALL verify the upstream workflow identity, event, base re
 
 #### Scenario: Coverage paths match isolated source
 - **WHEN** a valid bounded Go coverage report names files relative to the verified repository root and the same Go files are materialized beneath `analysis/source`
-- **THEN** protected pre-materialization code prefixes each canonical coverage record with the fixed `source/` namespace so the scanner imports coverage against the corresponding isolated source file
+- **THEN** protected pre-materialization code prefixes each canonical coverage record with the fixed `source/` namespace, every normalized report key resolves to the corresponding isolated source file, and the scanner imports coverage without unresolved paths
 
 #### Scenario: Git tree cannot be proven complete
 - **WHEN** GitHub returns a truncated tree, an unresolved commit, a changed head revision, a missing blob, or a blob whose identity or size differs from the verified tree entry
@@ -176,5 +188,5 @@ The active `main` ruleset SHALL require the stable external SonarCloud quality-g
 - **THEN** the `main` ruleset blocks merge
 
 #### Scenario: Required check is configured
-- **WHEN** the first live trusted PR analysis establishes the exact external check context and integration ID
-- **THEN** repository maintainers add that observed identity to `main-is-main` without substituting the default-branch `workflow_run` job context
+- **WHEN** the first successful live trusted PR analysis after report-layout and coverage-namespace normalization establishes the exact external check context and integration ID
+- **THEN** repository maintainers add that observed identity to `main-is-main` without substituting a stale pre-fix result or the default-branch `workflow_run` job context

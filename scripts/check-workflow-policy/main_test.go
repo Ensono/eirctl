@@ -315,6 +315,7 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 	const (
 		trigger      = "on:\n  workflow_run:\n    workflows: [Lint and Test]\n    types: [completed]"
 		materializer = "go run trusted/scripts/materialize-sonar-source/main.go"
+		concurrency  = "group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
 	)
 	insertBefore := func(marker, step string) func(string) string {
 		return func(content string) string { return strings.Replace(content, marker, step+"\n\n"+marker, 1) }
@@ -328,6 +329,33 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 		// Fork provenance changes only the verified API values; the protected
 		// workflow topology and bounded helper remain identical.
 		{name: "valid fork analyzer"},
+		{name: "empty fork association unsupported", mutate: func(content string) string {
+			return strings.Replace(content, "(length == 0 or length == 1)", "length == 1", 1)
+		}, wantFail: true},
+		{name: "fork fallback concurrency missing", mutate: func(content string) string {
+			return strings.Replace(content, concurrency, "group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}", 1)
+		}, wantFail: true},
+		{name: "fork lookup includes closed candidates", mutate: func(content string) string {
+			return strings.Replace(content, "-f state=open", "-f state=all", 1)
+		}, wantFail: true},
+		{name: "fork lookup uses alternate base", mutate: func(content string) string {
+			return strings.Replace(content, `-f base="$expected_branch"`, "-f base=develop", 1)
+		}, wantFail: true},
+		{name: "fork lookup uses unverified head", mutate: func(content string) string {
+			return strings.Replace(content, `-f head="${head_owner}:${head_ref}"`, "-f head=attacker:branch", 1)
+		}, wantFail: true},
+		{name: "fork lookup cannot detect ambiguity", mutate: func(content string) string {
+			return strings.Replace(content, "-f per_page=2", "-f per_page=1", 1)
+		}, wantFail: true},
+		{name: "absent or ambiguous candidate count accepted", mutate: func(content string) string {
+			return strings.Replace(content, "if length != 1 then", "if length == 0 then", 1)
+		}, wantFail: true},
+		{name: "closed pull request accepted", mutate: func(content string) string {
+			return strings.Replace(content, `.state == "open"`, "true", 1)
+		}, wantFail: true},
+		{name: "mismatched pull request head ref accepted", mutate: func(content string) string {
+			return strings.Replace(content, ".head.ref == $head_ref", ".head.ref != $head_ref", 1)
+		}, wantFail: true},
 		{name: "checkout action alias", mutate: insertBefore("      - name: Materialize bounded verified Go source through the Git Data API", "      - name: Alias checkout\n        uses: Actions/Checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.workflow_run.head_sha }}"), wantFail: true},
 		{name: "mutable source ref", mutate: func(content string) string {
 			return strings.Replace(content, `--head-sha "${{ steps.provenance.outputs.head-sha }}"`, `--head-sha "${{ github.event.workflow_run.head_branch }}"`, 1)
@@ -375,7 +403,7 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 			return strings.Replace(content, "artifact-ids: ${{ steps.provenance.outputs.artifact-id }}", "artifact-ids: ${{ steps.provenance.outputs.run-id }}", 1)
 		}, wantFail: true},
 		{name: "revision-specific concurrency cannot cancel stale run", mutate: func(content string) string {
-			return strings.Replace(content, "group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}", "group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}", 1)
+			return strings.Replace(content, concurrency, "group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}", 1)
 		}, wantFail: true},
 		{name: "job scoped Sonar secret", mutate: func(content string) string {
 			return strings.Replace(content, "    steps:\n", "    env:\n      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}\n    steps:\n", 1)
