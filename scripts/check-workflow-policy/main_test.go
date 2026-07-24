@@ -268,36 +268,52 @@ func TestReleaseWorkflowsRequireVerifiedStaticMainCheckout(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			workflowDir := filepath.Join(root, ".github", "workflows")
-			if err := os.MkdirAll(workflowDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			baseWorkflowDir := filepath.Join("..", "..", ".github", "workflows")
-			entries, err := os.ReadDir(baseWorkflowDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, entry := range entries {
-				if entry.IsDir() || filepath.Ext(entry.Name()) != ".yml" {
-					continue
-				}
-				contents, err := os.ReadFile(filepath.Join(baseWorkflowDir, entry.Name()))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if entry.Name() == tc.file {
-					contents = []byte(strings.Replace(string(contents), tc.oldValue, tc.newValue, 1))
-				}
-				if err := os.WriteFile(filepath.Join(workflowDir, entry.Name()), contents, 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := Validate(root); err == nil {
-				t.Fatal("Validate() unexpectedly accepted a dangerous release checkout")
-			}
+			assertReleaseWorkflowMutationRejected(t, tc.file, tc.oldValue, tc.newValue)
 		})
 	}
+}
+
+func assertReleaseWorkflowMutationRejected(t *testing.T, target, oldValue, newValue string) {
+	t.Helper()
+	root := copyWorkflowFiles(t, func(name string, contents []byte) []byte {
+		if name != target {
+			return contents
+		}
+		return []byte(strings.Replace(string(contents), oldValue, newValue, 1))
+	})
+	if err := Validate(root); err == nil {
+		t.Fatal("Validate() unexpectedly accepted a dangerous release checkout")
+	}
+}
+
+func copyWorkflowFiles(t *testing.T, mutate func(string, []byte) []byte) string {
+	t.Helper()
+	root := t.TempDir()
+	workflowDir := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(workflowDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseWorkflowDir := filepath.Join("..", "..", ".github", "workflows")
+	entries, err := os.ReadDir(baseWorkflowDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yml" {
+			continue
+		}
+		contents, err := os.ReadFile(filepath.Join(baseWorkflowDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mutate != nil {
+			contents = mutate(entry.Name(), contents)
+		}
+		if err := os.WriteFile(filepath.Join(workflowDir, entry.Name()), contents, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }
 
 func TestMaterializerArchivesOnlyConfigurationData(t *testing.T) {
