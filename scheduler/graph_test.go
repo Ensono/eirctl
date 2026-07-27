@@ -58,53 +58,61 @@ func TestExecutionGraph_AddStagesAtOnce(t *testing.T) {
 }
 
 func TestExecutionGraph_Nodes(t *testing.T) {
-	ttests := map[string]struct {
-		stages     []*scheduler.Stage
-		checkNodes []string
-		errTyp     error
-	}{
-		"all nodes exist": {
-			stages: []*scheduler.Stage{
-				scheduler.NewStage("stage1"),
-				scheduler.NewStage("stage2"),
-				scheduler.NewStage("stage3"),
-				scheduler.NewStage("stage4"),
-			},
-			checkNodes: []string{"stage1", "stage2", "stage3", "stage4"},
-			errTyp:     nil,
-		},
-		"node not found error": {
-			stages: []*scheduler.Stage{
-				scheduler.NewStage("stage1"),
-				scheduler.NewStage("stage2"),
-				scheduler.NewStage("stage3"),
-				scheduler.NewStage("stage4"),
-			},
-			checkNodes: []string{"stage7"},
-			errTyp:     scheduler.ErrNodeNotFound,
-		},
+	t.Run("all nodes exist", func(t *testing.T) {
+		graph, stages := newNodeTestGraph(t, "all-nodes")
+
+		assertGraphNodesFound(t, graph, "stage1", "stage2", "stage3", "stage4")
+		assertRootChildren(t, graph, stages)
+	})
+
+	t.Run("node not found error", func(t *testing.T) {
+		graph, stages := newNodeTestGraph(t, "missing-node")
+
+		_, err := graph.Node("stage7")
+		if !errors.Is(err, scheduler.ErrNodeNotFound) {
+			t.Fatalf("Node(stage7) error = %v, want %v", err, scheduler.ErrNodeNotFound)
+		}
+		assertRootChildren(t, graph, stages)
+	})
+}
+
+func newNodeTestGraph(t *testing.T, name string) (*scheduler.ExecutionGraph, []*scheduler.Stage) {
+	t.Helper()
+
+	stages := []*scheduler.Stage{
+		scheduler.NewStage("stage1"),
+		scheduler.NewStage("stage2"),
+		scheduler.NewStage("stage3"),
+		scheduler.NewStage("stage4"),
 	}
-	for name, tt := range ttests {
-		t.Run(name, func(t *testing.T) {
-			g, err := scheduler.NewExecutionGraph(name, tt.stages...)
-			if err != nil {
-				if !errors.Is(err, tt.errTyp) {
-					t.Fatalf("different error expected, %q, want: %q", err.Error(), tt.errTyp)
-				}
-			}
-			for _, v := range tt.checkNodes {
-				if _, err := g.Node(v); err != nil {
-					if !errors.Is(err, tt.errTyp) {
-						t.Fatalf("different error expected, %q, want: %q", err.Error(), tt.errTyp)
-					}
-				}
-			}
-			for _, v := range g.Children(scheduler.RootNodeName) {
-				if !slices.Contains(tt.stages, v) {
-					t.Fatal("children not contain expected node")
-				}
-			}
-		})
+	graph, err := scheduler.NewExecutionGraph(name, stages...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return graph, stages
+}
+
+func assertGraphNodesFound(t *testing.T, graph *scheduler.ExecutionGraph, names ...string) {
+	t.Helper()
+
+	for _, name := range names {
+		if _, err := graph.Node(name); err != nil {
+			t.Fatalf("Node(%q) error = %v", name, err)
+		}
+	}
+}
+
+func assertRootChildren(t *testing.T, graph *scheduler.ExecutionGraph, stages []*scheduler.Stage) {
+	t.Helper()
+
+	children := graph.Children(scheduler.RootNodeName)
+	if len(children) != len(stages) {
+		t.Fatalf("root has %d children, want %d", len(children), len(stages))
+	}
+	for _, stage := range stages {
+		if child, ok := children[stage.Name]; !ok || child != stage {
+			t.Errorf("root children do not contain stage %q", stage.Name)
+		}
 	}
 }
 
