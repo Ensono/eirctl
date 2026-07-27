@@ -33,34 +33,35 @@ multiline stuff
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-			b := &bytes.Buffer{}
-
-			dec := output.NewPrefixedOutputWriter(task.NewTask("task1"), b)
-			err := dec.WriteHeader()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if !strings.Contains(b.String(), "Running task task1...") {
-				t.Fatal()
-			}
-
-			n, err := dec.Write(tt.input)
-			if err != nil && n == 0 {
-				t.Fatal()
-			}
-			if !strings.Contains(b.String(), tt.expect) {
-				t.Fatalf("got: %s\nwanted: %s\n", b.String(), tt.expect)
-			}
-
-			err = dec.WriteFooter()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if !strings.Contains(b.String(), "task1 finished") {
-				t.Fatal()
-			}
+			runPrefixedOutputTest(t, tt.input, tt.expect)
 		})
+	}
+}
+
+func runPrefixedOutputTest(t *testing.T, input []byte, expectedOutput string) {
+	t.Helper()
+	buffer := &bytes.Buffer{}
+	decorator := output.NewPrefixedOutputWriter(task.NewTask("task1"), buffer)
+
+	if err := decorator.WriteHeader(); err != nil {
+		t.Fatal(err)
+	}
+	assertOutputContains(t, buffer.String(), "Running task task1...")
+
+	if written, err := decorator.Write(input); err != nil && written == 0 {
+		t.Fatal(err)
+	}
+	assertOutputContains(t, buffer.String(), expectedOutput)
+
+	if err := decorator.WriteFooter(); err != nil {
+		t.Fatal(err)
+	}
+	assertOutputContains(t, buffer.String(), "task1 finished")
+}
+
+func assertOutputContains(t *testing.T, got string, expected string) {
+	t.Helper()
+	if !strings.Contains(got, expected) {
+		t.Fatalf("got: %s\nwanted: %s\n", got, expected)
 	}
 }
