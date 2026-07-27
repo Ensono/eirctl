@@ -78,16 +78,11 @@ func (e *DefaultExecutor) Execute(ctx context.Context, job *Job) ([]byte, error)
 	e.interp.Dir = job.Dir
 	e.interp.Env = expand.ListEnviron(env...)
 
-	var timeoutCancelFn context.CancelFunc
 	if job.Timeout != nil {
+		var timeoutCancelFn context.CancelFunc
 		ctx, timeoutCancelFn = context.WithTimeout(ctx, *job.Timeout)
+		defer timeoutCancelFn()
 	}
-
-	defer func() {
-		if timeoutCancelFn != nil {
-			timeoutCancelFn()
-		}
-	}()
 
 	// Reset needs to be called before Run
 	// even the first time around else the vars won't be cleared correctly
