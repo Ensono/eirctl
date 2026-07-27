@@ -64,7 +64,15 @@ func PrintSummary(g *scheduler.ExecutionGraph, chanOut io.Writer, detailedSummar
 	stages := g.BFSNodesFlattened(scheduler.RootNodeName)
 
 	fmt.Fprintf(chanOut, BOLD_TERMINAL, "Summary: \n")
+	sortStagesByStart(stages)
+	for _, stage := range stages {
+		stage.Name = stageNameHelper(g.Name(), stage.Name)
+		printStageSummary(chanOut, stage)
+	}
+	fmt.Fprintf(chanOut, "%s: %s\n", fmt.Sprintf(BOLD_TERMINAL, "Total duration"), fmt.Sprintf(GREEN_TERMINAL, g.Duration()))
+}
 
+func sortStagesByStart(stages []*scheduler.Stage) {
 	slices.SortFunc(stages, func(i, j *scheduler.Stage) int {
 		if i.Start().After(j.Start()) {
 			return 1
@@ -74,34 +82,35 @@ func PrintSummary(g *scheduler.ExecutionGraph, chanOut io.Writer, detailedSummar
 		}
 		return 0
 	})
+}
 
-	for _, stage := range stages {
-		stage.Name = stageNameHelper(g.Name(), stage.Name)
-		switch stage.ReadStatus() {
-		case scheduler.StatusDone:
-			fmt.Fprintf(chanOut, GREEN_TERMINAL, fmt.Sprintf("- Stage %s was completed in %s\n", stage.Name, stage.Duration()))
-		case scheduler.StatusSkipped:
-			fmt.Fprintf(chanOut, CYAN_TERMINAL, fmt.Sprintf("- Stage %s was skipped\n", stage.Name))
-		case scheduler.StatusError:
-			log := ""
-			if stage.Task != nil {
-				log = strings.TrimSpace(stage.Task.ErrorMessage())
-			}
-			if stage.Pipeline != nil && stage.Pipeline.Error() != nil && log == "" {
-				log = stage.Pipeline.Error().Error()
-			}
-			fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("- Stage %s failed in %s\n", stage.Name, stage.Duration()))
-			if log != "" {
-				fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("  > %s\n", log))
-			}
-		case scheduler.StatusCanceled:
-			fmt.Fprintf(chanOut, GREY_TERMINAL, fmt.Sprintf("- Stage %s was cancelled\n", stage.Name))
-		default:
-			fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("- Unexpected status %d for stage %s\n", stage.ReadStatus(), stage.Name))
-		}
+func printStageSummary(chanOut io.Writer, stage *scheduler.Stage) {
+	switch stage.ReadStatus() {
+	case scheduler.StatusDone:
+		fmt.Fprintf(chanOut, GREEN_TERMINAL, fmt.Sprintf("- Stage %s was completed in %s\n", stage.Name, stage.Duration()))
+	case scheduler.StatusSkipped:
+		fmt.Fprintf(chanOut, CYAN_TERMINAL, fmt.Sprintf("- Stage %s was skipped\n", stage.Name))
+	case scheduler.StatusError:
+		printErrorStageSummary(chanOut, stage)
+	case scheduler.StatusCanceled:
+		fmt.Fprintf(chanOut, GREY_TERMINAL, fmt.Sprintf("- Stage %s was cancelled\n", stage.Name))
+	default:
+		fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("- Unexpected status %d for stage %s\n", stage.ReadStatus(), stage.Name))
 	}
+}
 
-	fmt.Fprintf(chanOut, "%s: %s\n", fmt.Sprintf(BOLD_TERMINAL, "Total duration"), fmt.Sprintf(GREEN_TERMINAL, g.Duration()))
+func printErrorStageSummary(chanOut io.Writer, stage *scheduler.Stage) {
+	log := ""
+	if stage.Task != nil {
+		log = strings.TrimSpace(stage.Task.ErrorMessage())
+	}
+	if stage.Pipeline != nil && stage.Pipeline.Error() != nil && log == "" {
+		log = stage.Pipeline.Error().Error()
+	}
+	fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("- Stage %s failed in %s\n", stage.Name, stage.Duration()))
+	if log != "" {
+		fmt.Fprintf(chanOut, RED_TERMINAL, fmt.Sprintf("  > %s\n", log))
+	}
 }
 
 // stageNameHelper strips out the root pipeline name
