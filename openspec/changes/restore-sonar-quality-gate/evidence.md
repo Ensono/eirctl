@@ -116,3 +116,7 @@ The authenticated snapshot above is the precondition for every row. “Stop” a
 | `AZWKA6je03lIpGBL3rEi` | 2 | `runner/compiler.go`; private input struct replaces ten arguments without ownership/default changes. | focused compiler tests; `go test ./runner` | Caller needs positional omission/mutation not represented by struct. |
 
 Independent review is mandatory before marking the Git SSH and workflow-policy review tasks complete. Final issue closure and gate acceptance remain contingent on authenticated PR and trusted-main analysis.
+
+## Implementation results
+
+- `AZ-N-y0t3_y5QfimGTZ2` (Tier 0): verified the three uses are the expected-permission map, the debug-publication job lookup, and its dependency check. Replaced only those literals with private `debugReleaseValidateJob`; YAML key, lookup behavior, predicate order, and error text are unchanged. `gofmt`, `go test ./scripts/check-workflow-policy`, `go vet ./scripts/check-workflow-policy`, and `bash scripts/check-workflow-security.sh` passed on 2026-07-27. Local structural remediation is not a claim of Sonar closure.

@@ -22,6 +22,7 @@ const (
 	sonarTokenName                  = "SONAR_TOKEN"
 	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
 	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
+	debugReleaseValidateJob         = "validate-build"
 	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
 	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
@@ -341,8 +342,8 @@ func expectedJobPermissions(path, job string) Permissions {
 			"report": {"contents": "read", "checks": "write"},
 		},
 		".github/workflows/publish-debug-release.yml": {
-			"validate-build": {"actions": "read", "contents": "read"},
-			"publish":        {"actions": "read", "contents": "write"},
+			debugReleaseValidateJob: {"actions": "read", "contents": "read"},
+			"publish":               {"actions": "read", "contents": "write"},
 		},
 		".github/workflows/release.yml": {
 			"release": {"contents": "write"},
@@ -407,13 +408,13 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err != nil {
 		return err
 	}
-	validate, hasValidate := publish.Jobs.Values["validate-build"]
+	validate, hasValidate := publish.Jobs.Values[debugReleaseValidateJob]
 	publishJob, hasPublish := publish.Jobs.Values["publish"]
 	if !hasTrigger(publish, "workflow_dispatch") || !hasValidate || !hasPublish ||
 		validate.If != "github.ref == 'refs/heads/main'" || publishJob.If != "github.ref == 'refs/heads/main'" ||
 		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read"}) || jobHasEnvironment(validate) ||
 		!samePermissions(publishJob.Permissions, Permissions{"actions": "read", "contents": "write"}) ||
-		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, "validate-build") ||
+		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, debugReleaseValidateJob) ||
 		!stepWithContains(validate, "actions/github-script@", "script", "run.event !== 'workflow_dispatch'") ||
 		hasCheckout(validate) || hasCheckout(publishJob) {
 		return errors.New("debug publication must validate read-only data before its isolated debug-release contents-write job")
