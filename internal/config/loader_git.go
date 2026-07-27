@@ -649,11 +649,7 @@ func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string)
 
 func splitIncludedSSHConfigPaths(value string) ([]string, error) {
 	if strings.Contains(value, `"`) {
-		quotedValue := value
-		if !strings.HasPrefix(value, `"`) && !strings.HasSuffix(value, `"`) {
-			quotedValue = `"` + value + `"`
-		}
-		paths, ok := splitSSHConfigPaths(quotedValue)
+		paths, ok := splitSSHConfigPaths(restoreStrippedSSHConfigQuotes(value))
 		if ok {
 			return paths, nil
 		}
@@ -678,6 +674,19 @@ func splitIncludedSSHConfigPaths(value string) ([]string, error) {
 		return fields, nil
 	}
 	return []string{value}, nil
+}
+
+func restoreStrippedSSHConfigQuotes(value string) string {
+	firstQuote := strings.IndexByte(value, '"')
+	lastQuote := strings.LastIndexByte(value, '"')
+	if firstQuote > 0 && lastQuote > firstQuote && lastQuote+1 < len(value) && !isSSHConfigWhitespace(value[firstQuote-1]) && !isSSHConfigWhitespace(value[lastQuote+1]) {
+		return `"` + value + `"`
+	}
+	return value
+}
+
+func isSSHConfigWhitespace(character byte) bool {
+	return character == ' ' || character == '\t' || character == '\r' || character == '\n'
 }
 
 func allSSHConfigPathsExist(paths []string) bool {

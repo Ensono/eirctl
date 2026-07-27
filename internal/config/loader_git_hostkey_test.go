@@ -247,6 +247,9 @@ func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
 		filepath.Join(directory, "user-four"),
 		filepath.Join(directory, "mixed quoted user"),
 		filepath.Join(directory, "user-six"),
+		filepath.Join(directory, "user-seven"),
+		filepath.Join(directory, "middle quoted user"),
+		filepath.Join(directory, "user-nine"),
 	}
 	globalPaths := []string{
 		filepath.Join(directory, "quoted global"),
@@ -266,10 +269,11 @@ func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
   UserKnownHostsFile %s
   UserKnownHostsFile %s %s
   UserKnownHostsFile %q %s
+  UserKnownHostsFile %s %q %s
   GlobalKnownHostsFile %q
   GlobalKnownHostsFile %s
   GlobalKnownHostsFile %s %s
-`, userPaths[0], strings.ReplaceAll(userPaths[1], " ", `\ `), userPaths[2], userPaths[3], userPaths[4], userPaths[5], globalPaths[0], strings.ReplaceAll(globalPaths[1], " ", `\ `), globalPaths[2], globalPaths[3])
+`, userPaths[0], strings.ReplaceAll(userPaths[1], " ", `\ `), userPaths[2], userPaths[3], userPaths[4], userPaths[5], userPaths[6], userPaths[7], userPaths[8], globalPaths[0], strings.ReplaceAll(globalPaths[1], " ", `\ `), globalPaths[2], globalPaths[3])
 	if err := os.WriteFile(includedPath, []byte(includedConfig), 0600); err != nil {
 		t.Fatalf("write included SSH config: %v", err)
 	}
@@ -287,6 +291,37 @@ func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
 	}
 	if !reflect.DeepEqual(config.SystemKnownHostsFiles, globalPaths) || config.SystemKnownHostsFile != globalPaths[0] {
 		t.Fatalf("unexpected included global known-hosts config: %+v", config)
+	}
+}
+
+func TestSplitIncludedSSHConfigPathsPreservesPlatformPaths(t *testing.T) {
+	tests := map[string]struct {
+		value string
+		want  []string
+	}{
+		"Windows drive path": {
+			value: `C:\ProgramData\ssh\known_hosts`,
+			want:  []string{`C:\ProgramData\ssh\known_hosts`},
+		},
+		"UNC path": {
+			value: `\\server\share\known_hosts`,
+			want:  []string{`\\server\share\known_hosts`},
+		},
+		"quoted Windows and UNC paths": {
+			value: `"C:\ProgramData\ssh\known hosts" \\server\share\known_hosts`,
+			want:  []string{`C:\ProgramData\ssh\known hosts`, `\\server\share\known_hosts`},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := splitIncludedSSHConfigPaths(test.value)
+			if err != nil {
+				t.Fatalf("split included SSH paths: %v", err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("splitIncludedSSHConfigPaths(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
 	}
 }
 
