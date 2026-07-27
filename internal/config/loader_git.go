@@ -623,26 +623,51 @@ func mergeSSHKnownHostsFile(fileSSHCfg *ssh_config.Config, hostname, option stri
 func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string) ([]string, error) {
 	var paths []string
 	for _, host := range fileSSHCfg.Hosts {
-		if !host.Matches(hostname) {
-			continue
+		hostPaths, err := sshConfigHostPathValues(host, hostname, option)
+		if err != nil {
+			return nil, err
 		}
-		for _, node := range host.Nodes {
-			switch value := node.(type) {
-			case *ssh_config.KV:
-				if strings.EqualFold(value.Key, option) {
-					paths = append(paths, splitSSHConfigPathDirective(value)...)
-				}
-			case *ssh_config.Include:
-				included, _ := value.GetAll(hostname, option)
-				for _, includedValue := range included {
-					includedPaths, err := splitIncludedSSHConfigPaths(includedValue)
-					if err != nil {
-						return nil, err
-					}
-					paths = append(paths, includedPaths...)
-				}
-			}
+		paths = append(paths, hostPaths...)
+	}
+	return paths, nil
+}
+
+func sshConfigHostPathValues(host *ssh_config.Host, hostname, option string) ([]string, error) {
+	if !host.Matches(hostname) {
+		return nil, nil
+	}
+	var paths []string
+	for _, node := range host.Nodes {
+		nodePaths, err := sshConfigNodePathValues(node, hostname, option)
+		if err != nil {
+			return nil, err
 		}
+		paths = append(paths, nodePaths...)
+	}
+	return paths, nil
+}
+
+func sshConfigNodePathValues(node ssh_config.Node, hostname, option string) ([]string, error) {
+	switch value := node.(type) {
+	case *ssh_config.KV:
+		if strings.EqualFold(value.Key, option) {
+			return splitSSHConfigPathDirective(value), nil
+		}
+	case *ssh_config.Include:
+		return includedSSHConfigPathValues(value, hostname, option)
+	}
+	return nil, nil
+}
+
+func includedSSHConfigPathValues(include *ssh_config.Include, hostname, option string) ([]string, error) {
+	included, _ := include.GetAll(hostname, option)
+	var paths []string
+	for _, value := range included {
+		includedPaths, err := splitIncludedSSHConfigPaths(value)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, includedPaths...)
 	}
 	return paths, nil
 }
