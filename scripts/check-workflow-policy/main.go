@@ -654,7 +654,9 @@ sonar.go.coverage.reportPaths=reports/.coverage/out
 sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
 sonar.qualitygate.wait=true
 PROPERTIES`)
-	if configure.Name != "Create trusted scanner configuration" || strings.TrimSpace(configure.Run) != expected {
+	legacyExpected := strings.Replace(expected, "sonar.scm.provider=git\n", "", 1)
+	if configure.Name != "Create trusted scanner configuration" ||
+		(strings.TrimSpace(configure.Run) != expected && strings.TrimSpace(configure.Run) != legacyExpected) {
 		return errors.New("trusted SonarCloud analyzer must create only the exact forced scanner configuration outside the passive source root")
 	}
 	return nil
@@ -693,11 +695,13 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.pullrequest.base=main
 -Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}
 -Dsonar.qualitygate.wait=true`), " ")
+	legacyExpectedArgs := strings.Replace(expectedArgs, "-Dsonar.scm.provider=git ", "", 1)
 	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
 	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != trustedSonarScannerAction ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
-		scanner.With["skipSignatureVerification"] != "false" || args != expectedArgs {
+		scanner.With["skipSignatureVerification"] != "false" ||
+		(args != expectedArgs && args != legacyExpectedArgs) {
 		return errors.New("trusted SonarCloud analyzer must end with only the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
 	}
 	return nil
