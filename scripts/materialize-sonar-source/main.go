@@ -239,28 +239,10 @@ func materialize(ctx context.Context, client *apiClient, fs fileSystem, cfg conf
 	if cfg.Bounds != reviewedBounds {
 		return materializeResult{}, errors.New("unreviewed source bounds")
 	}
-
-	var commit commitResponse
-	if err := client.get(ctx, repoEndpoint(cfg.HeadRepository, "git/commits/"+cfg.HeadSHA), &commit); err != nil {
-		return materializeResult{}, err
-	}
-	if commit.SHA != cfg.HeadSHA || !fullSHA.MatchString(commit.Tree.SHA) {
-		return materializeResult{}, errors.New("commit response does not match the verified head and root tree")
-	}
-
-	var tree treeResponse
-	endpoint := repoEndpoint(cfg.HeadRepository, "git/trees/"+commit.Tree.SHA) + "?recursive=1"
-	if err := client.get(ctx, endpoint, &tree); err != nil {
-		return materializeResult{}, err
-	}
-	if tree.SHA != commit.Tree.SHA {
-		return materializeResult{}, errors.New("recursive tree identity does not match the commit")
-	}
-	selected, totalSize, err := validateTree(tree)
+	validated, err := loadValidatedTree(ctx, client, cfg)
 	if err != nil {
 		return materializeResult{}, err
 	}
-
 	if err := fs.Mkdir(cfg.Output, 0o755); err != nil {
 		return materializeResult{}, fmt.Errorf("create fresh source root: %w", err)
 	}
@@ -270,22 +252,56 @@ func materialize(ctx context.Context, client *apiClient, fs fileSystem, cfg conf
 			_ = fs.RemoveAll(cfg.Output)
 		}
 	}()
-
-	for _, entry := range selected {
-		data, err := fetchBlob(ctx, client, cfg.HeadRepository, entry)
-		if err != nil {
-			return materializeResult{}, err
-		}
-		if err := writeExclusive(fs, cfg.Output, entry.Path, data); err != nil {
-			return materializeResult{}, err
-		}
+	if err := materializeSelectedFiles(ctx, client, fs, cfg, validated.selected); err != nil {
+		return materializeResult{}, err
 	}
-
 	if err := verifyCurrentHead(ctx, client, cfg); err != nil {
 		return materializeResult{}, err
 	}
 	complete = true
-	return materializeResult{TreeSHA: tree.SHA, FileCount: len(selected), TotalSize: totalSize}, nil
+	return materializeResult{TreeSHA: validated.sha, FileCount: len(validated.selected), TotalSize: validated.totalSize}, nil
+}
+
+type validatedTree struct {
+	sha       string
+	selected  []treeEntry
+	totalSize int64
+}
+
+func loadValidatedTree(ctx context.Context, client *apiClient, cfg config) (validatedTree, error) {
+	var commit commitResponse
+	if err := client.get(ctx, repoEndpoint(cfg.HeadRepository, "git/commits/"+cfg.HeadSHA), &commit); err != nil {
+		return validatedTree{}, err
+	}
+	if commit.SHA != cfg.HeadSHA || !fullSHA.MatchString(commit.Tree.SHA) {
+		return validatedTree{}, errors.New("commit response does not match the verified head and root tree")
+	}
+	var tree treeResponse
+	endpoint := repoEndpoint(cfg.HeadRepository, "git/trees/"+commit.Tree.SHA) + "?recursive=1"
+	if err := client.get(ctx, endpoint, &tree); err != nil {
+		return validatedTree{}, err
+	}
+	if tree.SHA != commit.Tree.SHA {
+		return validatedTree{}, errors.New("recursive tree identity does not match the commit")
+	}
+	selected, totalSize, err := validateTree(tree)
+	if err != nil {
+		return validatedTree{}, err
+	}
+	return validatedTree{sha: tree.SHA, selected: selected, totalSize: totalSize}, nil
+}
+
+func materializeSelectedFiles(ctx context.Context, client *apiClient, fs fileSystem, cfg config, selected []treeEntry) error {
+	for _, entry := range selected {
+		data, err := fetchBlob(ctx, client, cfg.HeadRepository, entry)
+		if err != nil {
+			return err
+		}
+		if err := writeExclusive(fs, cfg.Output, entry.Path, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateTree(tree treeResponse) ([]treeEntry, int64, error) {
@@ -299,44 +315,59 @@ func validateTree(tree treeResponse) ([]treeEntry, int64, error) {
 	selected := make([]treeEntry, 0)
 	var total int64
 	for _, entry := range tree.Tree {
-		if err := validateTreePath(entry.Path); err != nil {
-			return nil, 0, fmt.Errorf("unsafe tree path %q: %w", entry.Path, err)
+		eligible, err := classifyTreeEntry(entry, seen)
+		if err != nil {
+			return nil, 0, err
 		}
-		if _, exists := seen[entry.Path]; exists {
-			return nil, 0, fmt.Errorf("duplicate normalized tree path %q", entry.Path)
-		}
-		seen[entry.Path] = struct{}{}
-		if !fullSHA.MatchString(entry.SHA) {
-			return nil, 0, fmt.Errorf("entry %q has an invalid object identity", entry.Path)
-		}
-		switch {
-		case entry.Type == "tree" && entry.Mode == "040000":
-			continue
-		case entry.Type == "blob" && (entry.Mode == "100644" || entry.Mode == "100755"):
-			// Executable and non-Go blobs are inspected but never materialized.
-		default:
-			return nil, 0, fmt.Errorf("entry %q has forbidden type/mode %s/%s", entry.Path, entry.Type, entry.Mode)
-		}
-		if entry.Mode != "100644" || !strings.HasSuffix(entry.Path, ".go") {
+		if !eligible {
 			continue
 		}
-		if entry.Size == nil || *entry.Size < 0 || *entry.Size > maxFileBytes {
-			return nil, 0, fmt.Errorf("go blob %q has invalid or excessive size", entry.Path)
-		}
-		total += *entry.Size
-		if total > maxTotalBytes {
-			return nil, 0, errors.New("aggregate Go source size exceeds the reviewed bound")
+		total, err = accountGoEntry(entry, total, len(selected))
+		if err != nil {
+			return nil, 0, err
 		}
 		selected = append(selected, entry)
-		if len(selected) > maxGoFiles {
-			return nil, 0, errors.New("selected Go file count exceeds the reviewed bound")
-		}
 	}
 	if len(selected) == 0 {
 		return nil, 0, errors.New("recursive tree contains no eligible Go source")
 	}
 	sort.Slice(selected, func(i, j int) bool { return selected[i].Path < selected[j].Path })
 	return selected, total, nil
+}
+
+func classifyTreeEntry(entry treeEntry, seen map[string]struct{}) (bool, error) {
+	if err := validateTreePath(entry.Path); err != nil {
+		return false, fmt.Errorf("unsafe tree path %q: %w", entry.Path, err)
+	}
+	if _, exists := seen[entry.Path]; exists {
+		return false, fmt.Errorf("duplicate normalized tree path %q", entry.Path)
+	}
+	seen[entry.Path] = struct{}{}
+	if !fullSHA.MatchString(entry.SHA) {
+		return false, fmt.Errorf("entry %q has an invalid object identity", entry.Path)
+	}
+	if entry.Type == "tree" && entry.Mode == "040000" {
+		return false, nil
+	}
+	if entry.Type != "blob" || (entry.Mode != "100644" && entry.Mode != "100755") {
+		return false, fmt.Errorf("entry %q has forbidden type/mode %s/%s", entry.Path, entry.Type, entry.Mode)
+	}
+	// Executable and non-Go blobs are inspected but never materialized.
+	return entry.Mode == "100644" && strings.HasSuffix(entry.Path, ".go"), nil
+}
+
+func accountGoEntry(entry treeEntry, total int64, selectedCount int) (int64, error) {
+	if entry.Size == nil || *entry.Size < 0 || *entry.Size > maxFileBytes {
+		return 0, fmt.Errorf("go blob %q has invalid or excessive size", entry.Path)
+	}
+	total += *entry.Size
+	if total > maxTotalBytes {
+		return 0, errors.New("aggregate Go source size exceeds the reviewed bound")
+	}
+	if selectedCount+1 > maxGoFiles {
+		return 0, errors.New("selected Go file count exceeds the reviewed bound")
+	}
+	return total, nil
 }
 
 func validateTreePath(value string) error {
@@ -386,10 +417,33 @@ func fetchBlob(ctx context.Context, client *apiClient, headRepository string, en
 }
 
 func writeExclusive(fs fileSystem, root, relative string, data []byte) error {
+	if err := ensureParentDirectories(fs, root, relative); err != nil {
+		return err
+	}
+	destination := filepath.Join(root, filepath.FromSlash(relative))
+	file, err := fs.OpenExclusive(destination, 0o600)
+	if err != nil {
+		return fmt.Errorf("create exclusive source file %q: %w", relative, err)
+	}
+	if err := writeOnce(file, data); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write source file %q: %w", relative, err)
+	}
+	if err := file.Chmod(0o644); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("set source file mode %q: %w", relative, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close source file %q: %w", relative, err)
+	}
+	return nil
+}
+
+func ensureParentDirectories(fs fileSystem, root, relative string) error {
 	directory := root
 	parts := strings.Split(path.Dir(relative), "/")
 	if len(parts) == 1 && parts[0] == "." {
-		parts = nil
+		return nil
 	}
 	for _, part := range parts {
 		directory = filepath.Join(directory, part)
@@ -406,23 +460,6 @@ func writeExclusive(fs fileSystem, root, relative string, data []byte) error {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("source directory %q is not a real directory", directory)
 		}
-	}
-
-	destination := filepath.Join(root, filepath.FromSlash(relative))
-	file, err := fs.OpenExclusive(destination, 0o600)
-	if err != nil {
-		return fmt.Errorf("create exclusive source file %q: %w", relative, err)
-	}
-	if err := writeOnce(file, data); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write source file %q: %w", relative, err)
-	}
-	if err := file.Chmod(0o644); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("set source file mode %q: %w", relative, err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close source file %q: %w", relative, err)
 	}
 	return nil
 }

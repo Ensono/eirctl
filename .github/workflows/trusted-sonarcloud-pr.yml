@@ -17,9 +17,10 @@ jobs:
       github.event.workflow_run.repository.full_name == github.repository
     runs-on: ubuntu-24.04
     concurrency:
-      # One group per PR lets a newer revision cancel stale analysis. The helper
-      # still binds every materialized object to this run's verified head SHA.
-      group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number }}
+      # GitHub can omit pull_requests for fork runs. Use the PR number when it is
+      # present and a stable fork-repository/branch identity otherwise so newer
+      # revisions cancel stale analysis without colliding with unrelated forks.
+      group: sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}
       cancel-in-progress: true
     steps:
       # These helpers come only from protected main. Pull-request source is never
@@ -61,22 +62,54 @@ jobs:
              .event == $event and .repository.full_name == $repository and
              (.head_sha | test("^[0-9a-f]{40}$")) and
              (.head_repository.full_name | type == "string" and length > 0) and
-             (.pull_requests | type == "array" and length == 1)' <<<"$run" >/dev/null
+             (.head_repository.owner.login | type == "string" and length > 0) and
+             (.head_branch | type == "string" and length > 0) and
+             (.pull_requests | type == "array" and (length == 0 or length == 1))' <<<"$run" >/dev/null
 
-          pr_number="$(jq -er '.pull_requests[0].number | select(type == "number" and . > 0)' <<<"$run")"
           head_sha="$(jq -er '.head_sha' <<<"$run")"
           run_head_repository="$(jq -er '.head_repository.full_name' <<<"$run")"
+          head_owner="$(jq -er '.head_repository.owner.login' <<<"$run")"
+          head_ref="$(jq -er '.head_branch' <<<"$run")"
+          associated_pr_count="$(jq -er '.pull_requests | length' <<<"$run")"
+
+          if (( associated_pr_count == 1 )); then
+            pr_number="$(jq -er '.pull_requests[0].number | select(type == "number" and . > 0)' <<<"$run")"
+          else
+            candidates="$(gh api --method GET "repos/${repository}/pulls" \
+              -f state=open \
+              -f base="$expected_branch" \
+              -f head="${head_owner}:${head_ref}" \
+              -f per_page=2)"
+            pr_number="$(jq -er \
+              --arg repository "$repository" \
+              --arg branch "$expected_branch" \
+              --arg head_repository "$run_head_repository" \
+              --arg head_ref "$head_ref" \
+              --arg sha "$head_sha" \
+              'if length != 1 then
+                 error("expected exactly one open pull request for verified workflow run head")
+               elif (.[0].state != "open" or
+                     .[0].base.repo.full_name != $repository or .[0].base.ref != $branch or
+                     .[0].head.repo.full_name != $head_repository or .[0].head.ref != $head_ref or
+                     .[0].head.sha != $sha) then
+                 error("pull request candidate does not match verified workflow run head")
+               else
+                 .[0].number | select(type == "number" and . > 0)
+               end' <<<"$candidates")"
+          fi
+
           pull_request="$(gh api "repos/${repository}/pulls/${pr_number}")"
           jq -e \
             --arg repository "$repository" \
             --arg branch "$expected_branch" \
             --arg head_repository "$run_head_repository" \
+            --arg head_ref "$head_ref" \
             --arg sha "$head_sha" \
             --argjson pr_number "$pr_number" \
-            '.number == $pr_number and .base.repo.full_name == $repository and
-             .base.ref == $branch and .head.repo.full_name == $head_repository and
+            '.number == $pr_number and .state == "open" and
+             .base.repo.full_name == $repository and .base.ref == $branch and
+             .head.repo.full_name == $head_repository and .head.ref == $head_ref and
              .head.sha == $sha' <<<"$pull_request" >/dev/null
-          head_ref="$(jq -er '.head.ref | select(type == "string" and length > 0)' <<<"$pull_request")"
 
           artifacts="$(gh api "repos/${repository}/actions/runs/${RUN_ID}/artifacts?per_page=100")"
           artifact_id="$(jq -er --arg name "$expected_artifact" --arg sha "$head_sha" --argjson run_id "$RUN_ID" \
