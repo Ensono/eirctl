@@ -556,49 +556,54 @@ func parseDefaultSshConfigFilePaths() *SSHConfigAuth {
 }
 
 // processSSHConfig extracts the relevant info from a config file, merging with
+// values supplied through GIT_SSH_COMMAND, which take precedence.
 func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
+	mergeSSHScalarDefaults(fileSSHCfg, sshConfig, hostname)
+	mergeSSHIdentityFile(fileSSHCfg, sshConfig, hostname)
+	mergeSSHKnownHostsFiles(fileSSHCfg, sshConfig, hostname)
+	mergeSSHStrictHostKeyChecking(fileSSHCfg, sshConfig, hostname)
+	return nil
+}
 
-	if sshConfig.Port == "" {
-		filePort, _ := fileSSHCfg.Get(hostname, "Port")
-		sshConfig.Port = filePort
-		if sshConfig.Port == "" {
-			sshConfig.Port = "22"
-		}
-	}
-	if sshConfig.User == "" {
-		fileUser, _ := fileSSHCfg.Get(hostname, "User")
-		sshConfig.User = fileUser
-		if sshConfig.User == "" {
-			sshConfig.User = "git"
-		}
-	}
+func mergeSSHScalarDefaults(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
+	setSSHConfigValue(fileSSHCfg, hostname, "Port", "22", &sshConfig.Port)
+	setSSHConfigValue(fileSSHCfg, hostname, "User", "git", &sshConfig.User)
+	setSSHConfigValue(fileSSHCfg, hostname, "Hostname", hostname, &sshConfig.Hostname)
+}
 
-	if sshConfig.Hostname == "" {
-		fileHostname, _ := fileSSHCfg.Get(hostname, "Hostname")
-		sshConfig.Hostname = fileHostname
-		if sshConfig.Hostname == "" {
-			sshConfig.Hostname = hostname
-		}
+func setSSHConfigValue(fileSSHCfg *ssh_config.Config, hostname, option, defaultValue string, value *string) {
+	if *value != "" {
+		return
 	}
+	*value, _ = fileSSHCfg.Get(hostname, option)
+	if *value == "" {
+		*value = defaultValue
+	}
+}
 
+func mergeSSHIdentityFile(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
 	if sshConfig.IdentityFile == "" {
-		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
-		sshConfig.IdentityFile = fileIdentityFile
+		sshConfig.IdentityFile, _ = fileSSHCfg.Get(hostname, "IdentityFile")
 	}
-	if len(sshConfig.UserKnownHostsFiles) == 0 && sshConfig.UserKnownHostsFile == "" {
-		sshConfig.UserKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "UserKnownHostsFile")
-		if len(sshConfig.UserKnownHostsFiles) > 0 {
-			sshConfig.UserKnownHostsFile = sshConfig.UserKnownHostsFiles[0]
-		}
+}
+
+func mergeSSHKnownHostsFiles(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
+	mergeSSHKnownHostsFile(fileSSHCfg, hostname, "UserKnownHostsFile", &sshConfig.UserKnownHostsFiles, &sshConfig.UserKnownHostsFile)
+	mergeSSHKnownHostsFile(fileSSHCfg, hostname, "GlobalKnownHostsFile", &sshConfig.SystemKnownHostsFiles, &sshConfig.SystemKnownHostsFile)
+}
+
+func mergeSSHKnownHostsFile(fileSSHCfg *ssh_config.Config, hostname, option string, paths *[]string, legacyPath *string) {
+	if len(*paths) > 0 || *legacyPath != "" {
+		return
 	}
-	if len(sshConfig.SystemKnownHostsFiles) == 0 && sshConfig.SystemKnownHostsFile == "" {
-		sshConfig.SystemKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "GlobalKnownHostsFile")
-		if len(sshConfig.SystemKnownHostsFiles) > 0 {
-			sshConfig.SystemKnownHostsFile = sshConfig.SystemKnownHostsFiles[0]
-		}
+	*paths, _ = fileSSHCfg.GetAll(hostname, option)
+	if len(*paths) > 0 {
+		*legacyPath = (*paths)[0]
 	}
+}
+
+func mergeSSHStrictHostKeyChecking(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
 	if sshConfig.StrictHostKeyChecking == "" {
 		sshConfig.StrictHostKeyChecking, _ = fileSSHCfg.Get(hostname, "StrictHostKeyChecking")
 	}
-	return nil
 }
