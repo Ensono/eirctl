@@ -13,7 +13,8 @@ The implementation is intended to be taskable to a smaller coding model. Each ta
 - Close the six Critical findings expected to block the current trusted-main quality gate.
 - Resolve all remaining Richard-assigned or `scripts/` findings in the investigated set.
 - Resolve a bounded set of other Critical/Major findings whose clean fix is private, behavior-preserving, and supported by focused tests.
-- Preserve workflow trust boundaries, Git SSH precedence and host-key behavior, test coverage, public APIs, scanner configuration, coverage mapping, and quality-gate policy.
+- Preserve workflow trust boundaries, Git SSH precedence and fail-closed host-key behavior, test coverage, public APIs, scanner configuration, coverage mapping, and quality-gate policy.
+- Correct independently reviewed Git SSH trust-source drift so command-side `GlobalKnownHostsFile` and SSH-file quoted, escaped, repeated, and multi-path directives follow the existing verified-SSH contract.
 - Provide issue-by-issue tasks that a smaller model can execute safely by confirming preconditions and postconditions.
 - Produce authenticated post-change evidence from the exact analyzed revision and restore a green trusted-main build.
 
@@ -22,7 +23,7 @@ The implementation is intended to be taskable to a smaller coding model. Each ta
 - Clearing all 82 open Sonar findings.
 - Suppressing, accepting, reclassifying, dismissing, excluding, or lowering the severity of findings.
 - Changing the quality gate, new-code definition, previous-version boundary, required checks, Sonar project identity, token model, scanner pin, report paths, or `source/` coverage namespace.
-- Altering public APIs, recursive import semantics, environment inheritance, pipeline/graph semantics, scheduler or watcher concurrency, container privilege policy, or service lifecycle behavior.
+- Altering public APIs, recursive import semantics, environment inheritance, pipeline/graph semantics, scheduler or watcher concurrency, container privilege policy, or service lifecycle behavior. Git SSH parsing changes remain limited to the two reviewed known-host selection/path-boundary defects.
 - Adding dependencies or combining unrelated security/correctness findings discovered during reconnaissance.
 
 ## Decisions
@@ -79,11 +80,13 @@ This protocol is preferred over broad instructions such as “clean up the funct
 
 ### 3. Preserve behavior at the two security-sensitive boundaries
 
-For `processSSHConfig`, extraction may separate scalar defaults, identity-file handling, known-host-list handling, and strict-host-key handling, but MUST preserve explicit-command-over-file precedence, defaults (`22`, `git`, requested host), repeated known-host entries, and fail-closed host-key verification. It must not remove the current error signature or broaden SSH parsing.
+For `processSSHConfig`, extraction may separate scalar defaults, identity-file handling, known-host-list handling, and strict-host-key handling, but MUST preserve explicit-command-over-file precedence, defaults (`22`, `git`, requested host), repeated known-host entries, and fail-closed host-key verification. The approved review follow-up MUST additionally recognize OpenSSH `GlobalKnownHostsFile` in supported `GIT_SSH_COMMAND -o` forms and parse known-host path lists from SSH configuration without losing quoting, escaping, repetition, order, or legacy first-entry compatibility. It must not remove the current error signature or broaden SSH parsing beyond these two defects.
 
 For `validateRepositoryTopology`, extraction must preserve check order, fail-fast behavior, exact predicates, error semantics, trusted/untrusted boundaries, static-main checkout checks, action-prefix matching, and independent immutable-action validation. Constants may centralize identifiers but must not change their values or matching semantics.
 
 **Alternative considered:** generic table-driven validators. Rejected because explicit phases are easier to audit and less likely to conceal an omitted security predicate.
+
+**Alternative considered:** record the independent Git SSH findings as unrelated pre-existing debt. Rejected because silently ignoring an explicit global trust source or misreading configured path boundaries can select the wrong host-key trust material. The correction is therefore mandatory within this security-sensitive slice and must receive renewed independent approval.
 
 ### 4. Preserve test strength while reducing test complexity
 
@@ -106,7 +109,7 @@ Recommended implementation order:
 3. Materializer named response types.
 4. Cache and selected non-security test decomposition.
 5. Private compiler and summary refactors.
-6. Git SSH refactor with focused security tests and review.
+6. Git SSH refactor, mandatory trust-source/path-boundary corrections, focused security tests, and independent re-review.
 7. Workflow-policy complexity refactor with mutation/security checks and independent review.
 8. Full validation, PR analysis, exact-main analysis, and issue/gate re-query.
 
@@ -116,7 +119,7 @@ The Git SSH and workflow-policy refactors must not share an implementation commi
 
 - **[Risk] Closing the six keys may not lower the aggregate severity if Sonar attributes a replacement issue to moved code.** → Re-query scoped keys and the quality-gate condition after a fresh exact-revision analysis; do not weaken the gate if it remains red.
 - **[Risk] Workflow-policy extraction could omit or reorder a trust check.** → Preserve explicit ordered phases, run the full mutation matrix and workflow-security checks, and require independent review.
-- **[Risk] SSH extraction could change precedence or known-host behavior.** → Add/retain focused scalar, identity, repeated known-host, strict-checking, unknown-host, changed-key, and opt-out tests.
+- **[Risk] SSH extraction or parser correction could change precedence or known-host behavior.** → Add/retain focused scalar, identity, command-side user/global trust-source, quoted/escaped/multi-path/repeated known-host, strict-checking, unknown-host, changed-key, and opt-out tests; require renewed independent approval.
 - **[Risk] Test refactors could make tests pass by weakening them.** → Compare case/assertion inventory before and after and require diff review.
 - **[Risk] Smaller models may treat task wording as permission to broaden scope.** → Each task has named files, invariants, stop conditions, and postconditions; any mismatch escalates.
 - **[Trade-off] Tier 2 leaves substantial Sonar debt open.** → This is intentional; medium/high-risk or behavior-changing debt needs separate proposals rather than jeopardizing the green-build recovery.

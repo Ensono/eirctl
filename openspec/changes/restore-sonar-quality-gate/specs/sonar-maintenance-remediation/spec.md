@@ -40,6 +40,14 @@ Refactors in Git SSH configuration and trusted workflow-policy validation SHALL 
 - **WHEN** `processSSHConfig` is split into focused helpers
 - **THEN** explicit command values still take precedence over file values, documented defaults and repeated known-host entries are preserved, and strict host-key verification remains fail-closed except for the existing explicit opt-out
 
+#### Scenario: Command selects a global known-host file
+- **WHEN** `GIT_SSH_COMMAND` supplies OpenSSH `GlobalKnownHostsFile` through a supported `-o` form
+- **THEN** the selected global trust files retain command precedence, ordered repetition, quoting, and path boundaries instead of being discarded or replaced by file/default trust sources
+
+#### Scenario: SSH configuration supplies complex known-host paths
+- **WHEN** `UserKnownHostsFile` or `GlobalKnownHostsFile` contains quoted or escaped spaces, multiple paths on one directive, or repeated directives
+- **THEN** each intended path is preserved exactly and in order before validation and host-key loading, including legacy first-entry compatibility fields
+
 #### Scenario: Workflow policy is decomposed
 - **WHEN** repository-topology validation is split into focused phases
 - **THEN** every existing predicate executes in the same fail-fast order with unchanged action-prefix, immutable-pin, provenance, permission, checkout, and trusted/untrusted boundary semantics

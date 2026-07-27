@@ -5,6 +5,7 @@ The latest trusted `main` analysis (`bb3d10dc2360a50752e2c73fe507c427bf14af92`) 
 ## What Changes
 
 - Remediate the six authenticated Critical findings expected to keep `new_code_smells_severity` above the permitted threshold: two cache-test complexity findings, one Git SSH configuration complexity finding, and three trusted workflow-policy findings.
+- Correct two security-significant Git SSH trust-source defects exposed by independent review: honor OpenSSH `GlobalKnownHostsFile` command overrides and preserve escaped, quoted, and multiple known-host paths from SSH configuration before validating or loading them.
 - Remediate the two additional Richard-assigned findings under `scripts/materialize-sonar-source` even though they are Minor and do not currently block the gate.
 - Resolve the evidence-ledger Tier 2 Critical/Major findings only where refreshed issue data and repository inspection establish a behavior-preserving, low-risk change; a drifted or riskier Tier 2 item is explicitly deferred to a separate proposal and cannot delay Tier 0/Tier 1 recovery.
 - Require every issue task to be executable by a smaller implementation model: confirm named preconditions, make one bounded change, run named focused checks, confirm postconditions, and stop for escalation if repository evidence differs from the task.
@@ -23,6 +24,6 @@ The latest trusted `main` analysis (`bb3d10dc2360a50752e2c73fe507c427bf14af92`) 
 
 - Primary code areas: `scripts/check-workflow-policy`, `scripts/materialize-sonar-source`, `internal/config`, selected command/output/runner/scheduler utilities, and their tests. `evidence.md` is the token-free issue and acceptance ledger.
 - CI impact: trusted `main` SonarCloud analysis is expected to change from failed to passing while retaining the same project key, quality gate, previous-version policy, coverage paths, scanner pinning, and required-check identity.
-- Security impact: workflow-policy and Git SSH changes are behavior-preserving refactors at trust boundaries and require focused security regression checks and independent review.
+- Security impact: workflow-policy and Git SSH complexity changes remain behavior-preserving refactors, while the approved Git SSH follow-up deliberately corrects trust-source selection and path-boundary handling to match the existing verified-SSH contract. Both trust-boundary slices require focused security regression checks and independent review.
 - API and dependency impact: no breaking API changes and no new dependencies are intended.
 - Deferred areas remain outside this change: recursive import and pipeline semantics, environment inheritance decisions, public context APIs, watcher/scheduler lifecycle changes, Docker privilege policy, and large concurrency-sensitive test refactors.
