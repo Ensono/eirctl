@@ -46,55 +46,55 @@ func (events *GithubTriggerEvents) Has(name string) bool {
 // scalar event, a sequence of events, or a mapping containing event options.
 func (events *GithubTriggerEvents) UnmarshalYAML(node *yaml.Node) error {
 	*events = GithubTriggerEvents{configured: map[string]struct{}{}}
-	configure := func(name string, value *yaml.Node) error {
-		events.configured[name] = struct{}{}
-		if value == nil || value.Tag == "!!null" {
-			return nil
-		}
-		switch name {
-		case "push":
-			return value.Decode(&events.Push)
-		case "pull_request":
-			return value.Decode(&events.PullRequest)
-		case "pull_request_target":
-			return value.Decode(&events.PullRequestTarget)
-		case "issue_comment":
-			return value.Decode(&events.IssueComment)
-		case "repository_dispatch":
-			return value.Decode(&events.RepositoryDispatch)
-		case "schedule":
-			return value.Decode(&events.Schedule)
-		case "workflow_dispatch":
-			return value.Decode(&events.WorkflowDispatch)
-		case "workflow_run":
-			return value.Decode(&events.WorkflowRun)
-		default:
-			return nil
-		}
-	}
-
 	switch node.Kind {
 	case yaml.ScalarNode:
-		return configure(node.Value, nil)
+		return events.configure(node.Value, nil)
 	case yaml.SequenceNode:
 		for _, value := range node.Content {
 			if value.Kind != yaml.ScalarNode {
 				return fmt.Errorf("github trigger: expected an event name but got %v", value.Kind)
 			}
-			if err := configure(value.Value, nil); err != nil {
+			if err := events.configure(value.Value, nil); err != nil {
 				return err
 			}
 		}
 		return nil
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			if err := configure(node.Content[i].Value, node.Content[i+1]); err != nil {
+			if err := events.configure(node.Content[i].Value, node.Content[i+1]); err != nil {
 				return fmt.Errorf("github trigger %s: %w", node.Content[i].Value, err)
 			}
 		}
 		return nil
 	default:
 		return fmt.Errorf("github trigger: expected a scalar, sequence, or mapping but got %v", node.Kind)
+	}
+}
+
+func (events *GithubTriggerEvents) configure(name string, value *yaml.Node) error {
+	events.configured[name] = struct{}{}
+	if value == nil || value.Tag == "!!null" {
+		return nil
+	}
+	switch name {
+	case "push":
+		return value.Decode(&events.Push)
+	case "pull_request":
+		return value.Decode(&events.PullRequest)
+	case "pull_request_target":
+		return value.Decode(&events.PullRequestTarget)
+	case "issue_comment":
+		return value.Decode(&events.IssueComment)
+	case "repository_dispatch":
+		return value.Decode(&events.RepositoryDispatch)
+	case "schedule":
+		return value.Decode(&events.Schedule)
+	case "workflow_dispatch":
+		return value.Decode(&events.WorkflowDispatch)
+	case "workflow_run":
+		return value.Decode(&events.WorkflowRun)
+	default:
+		return nil
 	}
 }
 
@@ -226,21 +226,26 @@ func (job *GithubJob) UnmarshalYAML(node *yaml.Node) error {
 		return fmt.Errorf("github job: expected a mapping node but got %v", node.Kind)
 	}
 	values := yamlMapping(node)
-	decode := func(name string, target any) error {
-		value := values[name]
-		if value == nil {
-			return nil
-		}
-		if err := value.Decode(target); err != nil {
-			return fmt.Errorf("github job field %s: %w", name, err)
-		}
-		return nil
-	}
-
 	*job = GithubJob{configured: make(map[string]struct{}, len(values))}
 	for name := range values {
 		job.configured[name] = struct{}{}
 	}
+	if err := decodeGithubJobFields(values, job); err != nil {
+		return err
+	}
+	if err := decodeGithubJobNeeds(values["needs"], job); err != nil {
+		return err
+	}
+	if err := decodeGithubJobEnvironment(values["environment"], job); err != nil {
+		return err
+	}
+	if err := decodeGithubJobContainer(values["container"], job); err != nil {
+		return err
+	}
+	return validateGithubJobSteps(job.Steps)
+}
+
+func decodeGithubJobFields(values map[string]*yaml.Node, job *GithubJob) error {
 	for name, target := range map[string]any{
 		"name":            &job.Name,
 		"runs-on":         &job.RunsOn,
@@ -253,47 +258,70 @@ func (job *GithubJob) UnmarshalYAML(node *yaml.Node) error {
 		"services":        &job.Services,
 		"concurrency":     &job.Concurrency,
 	} {
-		if err := decode(name, target); err != nil {
-			return err
+		value := values[name]
+		if value == nil {
+			continue
+		}
+		if err := value.Decode(target); err != nil {
+			return fmt.Errorf("github job field %s: %w", name, err)
 		}
 	}
+	return nil
+}
 
-	if needs := values["needs"]; needs != nil {
-		switch needs.Kind {
-		case yaml.ScalarNode:
-			job.Needs = []string{needs.Value}
-		case yaml.SequenceNode:
-			if err := needs.Decode(&job.Needs); err != nil {
-				return fmt.Errorf("github job field needs: %w", err)
-			}
-		default:
-			return fmt.Errorf("github job field needs: expected a scalar or sequence but got %v", needs.Kind)
-		}
+func decodeGithubJobNeeds(needs *yaml.Node, job *GithubJob) error {
+	if needs == nil {
+		return nil
 	}
+	switch needs.Kind {
+	case yaml.ScalarNode:
+		job.Needs = []string{needs.Value}
+		return nil
+	case yaml.SequenceNode:
+		if err := needs.Decode(&job.Needs); err != nil {
+			return fmt.Errorf("github job field needs: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("github job field needs: expected a scalar or sequence but got %v", needs.Kind)
+	}
+}
 
-	if environment := values["environment"]; environment != nil {
-		if environment.Kind == yaml.ScalarNode {
-			job.Environment = environment.Value
-		} else {
-			var configured struct {
-				Name string `yaml:"name"`
-			}
-			if err := environment.Decode(&configured); err != nil {
-				return fmt.Errorf("github job field environment: %w", err)
-			}
-			job.Environment = configured.Name
-		}
+func decodeGithubJobEnvironment(environment *yaml.Node, job *GithubJob) error {
+	if environment == nil {
+		return nil
 	}
+	if environment.Kind == yaml.ScalarNode {
+		job.Environment = environment.Value
+		return nil
+	}
+	var configured struct {
+		Name string `yaml:"name"`
+	}
+	if err := environment.Decode(&configured); err != nil {
+		return fmt.Errorf("github job field environment: %w", err)
+	}
+	job.Environment = configured.Name
+	return nil
+}
 
-	if container := values["container"]; container != nil && container.Tag != "!!null" {
-		job.Container = &GithubContainer{}
-		if container.Kind == yaml.ScalarNode {
-			job.Container.Image = container.Value
-		} else if err := container.Decode(job.Container); err != nil {
-			return fmt.Errorf("github job field container: %w", err)
-		}
+func decodeGithubJobContainer(container *yaml.Node, job *GithubJob) error {
+	if container == nil || container.Tag == "!!null" {
+		return nil
 	}
-	for index, step := range job.Steps {
+	job.Container = &GithubContainer{}
+	if container.Kind == yaml.ScalarNode {
+		job.Container.Image = container.Value
+		return nil
+	}
+	if err := container.Decode(job.Container); err != nil {
+		return fmt.Errorf("github job field container: %w", err)
+	}
+	return nil
+}
+
+func validateGithubJobSteps(steps []*GithubStep) error {
+	for index, step := range steps {
 		if step == nil {
 			return fmt.Errorf("github job step %d must be a mapping", index)
 		}

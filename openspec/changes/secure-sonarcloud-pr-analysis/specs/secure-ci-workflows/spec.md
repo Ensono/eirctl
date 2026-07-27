@@ -64,6 +64,10 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 - **WHEN** the scanner loads the expected Go coverage report, resolves its file paths, and submits analysis, but SonarCloud fails the quality gate on a different condition such as a code smell
 - **THEN** the workflow fails visibly on the reported condition, retains the verified report path and `source/` namespace, and requires remediation without issue suppression, threshold reduction, or ruleset bypass
 
+#### Scenario: Previous-version period contains mixed quality debt
+- **WHEN** authenticated Sonar issue data for a broad previous-version new-code period contains Critical smells introduced by this change and findings whose current lines are blamed to earlier unrelated pull requests
+- **THEN** implementation remediates every Critical smell attributed by current-line Git blame to this change, leaves earlier findings open without suppression or acceptance-state changes, records their issue and blame evidence as pre-existing debt, and proves in a new trusted-main analysis that coverage still loads and no change-attributable Critical smell remains
+
 ### Requirement: SonarCloud project identity and analysis credential are operationally valid
 Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with the fixed key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
 

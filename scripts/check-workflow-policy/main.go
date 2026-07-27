@@ -14,6 +14,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	checkoutAction                  = "actions/checkout"
+	checkoutActionPrefix            = checkoutAction + "@"
+	persistCredentialsField         = "persist-credentials"
+	secretExpressionMarker          = "secrets."
+	sonarTokenName                  = "SONAR_TOKEN"
+	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
+	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
+	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
+	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
+	trustedSonarExpectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
+)
+
 var (
 	pinnedAction  = regexp.MustCompile(`@[0-9a-f]{40}$`)
 	shaExpression = regexp.MustCompile(`(?i)^\$\{\{\s*github\.event\.pull_request\.(head|merge)_sha\s*}}$`)
@@ -175,7 +189,7 @@ func rejectScorecardDangerousCheckouts(workflow Workflow) error {
 	}
 	for jobID, job := range workflow.Jobs.Values {
 		for _, step := range job.Steps {
-			if !actionUses(step.Uses, "actions/checkout") {
+			if !actionUses(step.Uses, checkoutAction) {
 				continue
 			}
 			ref := step.With["ref"]
@@ -223,7 +237,7 @@ func isPrivilegedTrigger(workflow Workflow) bool {
 
 func checkoutStep(steps []*schema.GithubStep) (int, int) {
 	for index, step := range steps {
-		if actionUses(step.Uses, "actions/checkout") {
+		if actionUses(step.Uses, checkoutAction) {
 			return index, index + 1
 		}
 	}
@@ -269,7 +283,7 @@ func executesWorkspace(step *schema.GithubStep) bool {
 	if step.Run != "" || strings.HasPrefix(step.Uses, "./") {
 		return true
 	}
-	if step.Uses == "" || strings.HasPrefix(step.Uses, "actions/checkout@") {
+	if step.Uses == "" || strings.HasPrefix(step.Uses, checkoutActionPrefix) {
 		return false
 	}
 	// Actions after an untrusted checkout are fail-closed unless they are known to
@@ -429,53 +443,100 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 }
 
 func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
-	const (
-		path                = ".github/workflows/trusted-sonarcloud-pr.yml"
-		scannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
-		reviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
-		materializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
-		expectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
-	)
-	workflow, err := requiredWorkflow(workflows, path)
+	workflow, err := requiredWorkflow(workflows, trustedSonarWorkflowPath)
 	if err != nil {
 		return err
 	}
+	if err := validateTrustedSonarWorkflowEnvelope(workflow); err != nil {
+		return err
+	}
+	job, err := validateTrustedSonarJob(workflow)
+	if err != nil {
+		return err
+	}
+	steps, err := parseTrustedSonarSteps(job)
+	if err != nil {
+		return err
+	}
+	if err := validateTrustedSonarCheckout(job, steps.checkout); err != nil {
+		return err
+	}
+	if err := validateTrustedSonarProvenance(steps.provenance); err != nil {
+		return err
+	}
+	if err := validateTrustedSonarReports(steps.download, steps.validateReports); err != nil {
+		return err
+	}
+	if err := validateTrustedSonarConfiguration(steps.configure); err != nil {
+		return err
+	}
+	if err := validateTrustedSonarMaterializer(steps.materialize); err != nil {
+		return err
+	}
+	if err := validateTrustedSonarScanner(steps.scanner); err != nil {
+		return err
+	}
+	if !onlyScannerReceivesSonarToken(workflow, job, 6) {
+		return errors.New("trusted SonarCloud analyzer must scope SONAR_TOKEN to the approved scanner step")
+	}
+	return nil
+}
+
+type trustedSonarSteps struct {
+	checkout        *schema.GithubStep
+	provenance      *schema.GithubStep
+	download        *schema.GithubStep
+	validateReports *schema.GithubStep
+	configure       *schema.GithubStep
+	materialize     *schema.GithubStep
+	scanner         *schema.GithubStep
+}
+
+func validateTrustedSonarWorkflowEnvelope(workflow Workflow) error {
 	if len(workflow.Jobs.Values) != 1 || !hasTrigger(workflow, "workflow_run") || len(workflow.On.WorkflowRun.Workflows) != 1 || workflow.On.WorkflowRun.Workflows[0] != "Lint and Test" ||
 		!samePermissions(workflow.Permissions, Permissions{"contents": "read"}) {
 		return errors.New("trusted SonarCloud analyzer must use only the expected read-only workflow_run topology")
 	}
+	return nil
+}
 
+func validateTrustedSonarJob(workflow Workflow) (schema.GithubJob, error) {
 	job, ok := workflow.Jobs.Values["analyze"]
 	if !ok || job.Environment != "" || job.Has("permissions") || job.Has("container") || job.Has("services") ||
 		!strings.Contains(job.If, "github.event.workflow_run.conclusion == 'success'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.event == 'pull_request'") ||
 		!strings.Contains(job.If, "github.event.workflow_run.repository.full_name == github.repository") ||
-		concurrencyGroup(job) != expectedConcurrency {
-		return errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling same-repository or fork concurrency")
+		concurrencyGroup(job) != trustedSonarExpectedConcurrency {
+		return schema.GithubJob{}, errors.New("trusted SonarCloud analyzer must require a successful PR run, no container or services, and stale-revision-cancelling same-repository or fork concurrency")
 	}
 	if containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) {
-		return errors.New("trusted SonarCloud analyzer must not use caches, local actions, or workflow/job-scoped secrets")
+		return schema.GithubJob{}, errors.New("trusted SonarCloud analyzer must not use caches, local actions, or workflow/job-scoped secrets")
 	}
+	return job, nil
+}
+
+func parseTrustedSonarSteps(job schema.GithubJob) (trustedSonarSteps, error) {
 	if len(job.Steps) != 7 {
-		return errors.New("trusted SonarCloud analyzer must use only the seven reviewed helper, provenance, report, materializer, and scanner steps")
+		return trustedSonarSteps{}, errors.New("trusted SonarCloud analyzer must use only the seven reviewed helper, provenance, report, materializer, and scanner steps")
 	}
+	return trustedSonarSteps{
+		checkout: job.Steps[0], provenance: job.Steps[1], download: job.Steps[2],
+		validateReports: job.Steps[3], configure: job.Steps[4], materialize: job.Steps[5], scanner: job.Steps[6],
+	}, nil
+}
 
-	trustedCheckout := job.Steps[0]
-	provenance := job.Steps[1]
-	download := job.Steps[2]
-	validateReports := job.Steps[3]
-	configure := job.Steps[4]
-	materialize := job.Steps[5]
-	scanner := job.Steps[6]
-
-	if trustedCheckout.Name != "Check out trusted analyzer helpers" || !actionUses(trustedCheckout.Uses, "actions/checkout") ||
-		trustedCheckout.With["ref"] != "main" || trustedCheckout.With["fetch-depth"] != "1" ||
-		trustedCheckout.With["persist-credentials"] != "false" || trustedCheckout.With["path"] != "trusted" ||
-		!strings.Contains(trustedCheckout.With["sparse-checkout"], "scripts/materialize-sonar-source/main.go") ||
-		!strings.Contains(trustedCheckout.With["sparse-checkout"], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
+func validateTrustedSonarCheckout(job schema.GithubJob, checkout *schema.GithubStep) error {
+	if checkout.Name != "Check out trusted analyzer helpers" || !actionUses(checkout.Uses, checkoutAction) ||
+		checkout.With["ref"] != "main" || checkout.With["fetch-depth"] != "1" ||
+		checkout.With[persistCredentialsField] != "false" || checkout.With["path"] != "trusted" ||
+		!strings.Contains(checkout.With["sparse-checkout"], "scripts/materialize-sonar-source/main.go") ||
+		!strings.Contains(checkout.With["sparse-checkout"], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
 		return errors.New("trusted SonarCloud analyzer may check out only the protected main helper and report validator")
 	}
+	return nil
+}
 
+func validateTrustedSonarProvenance(provenance *schema.GithubStep) error {
 	if provenance.ID != "provenance" || provenance.Name != "Resolve immutable upstream provenance" ||
 		!strings.Contains(provenance.Run, "expected_workflow='Lint and Test'") ||
 		!strings.Contains(provenance.Run, "expected_event='pull_request'") ||
@@ -507,7 +568,10 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		!strings.Contains(provenance.Run, "head-repository=%s") {
 		return errors.New("trusted SonarCloud analyzer must bind workflow, run, attempt, PR, base/head repositories, revision, and report artifact provenance")
 	}
+	return nil
+}
 
+func validateTrustedSonarReports(download, validateReports *schema.GithubStep) error {
 	if download.Name != "Download only the verified Sonar report artifact" || !actionUses(download.Uses, "actions/download-artifact") ||
 		len(download.With) != 5 || download.With["repository"] != "${{ github.repository }}" ||
 		download.With["artifact-ids"] != "${{ steps.provenance.outputs.artifact-id }}" ||
@@ -516,8 +580,11 @@ func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
 		validateReports.Name != "Validate bounded passive report artifact" || strings.TrimSpace(validateReports.Run) != "trusted/scripts/validate-sonar-reports.sh analysis/reports" {
 		return errors.New("trusted SonarCloud analyzer must download and validate only the exact verified passive report artifact")
 	}
+	return nil
+}
 
-	expectedConfiguration := strings.TrimSpace(`
+func validateTrustedSonarConfiguration(configure *schema.GithubStep) error {
+	expected := strings.TrimSpace(`
 mkdir -p analysis
 cat >analysis/sonar-project.properties <<'PROPERTIES'
 sonar.host.url=https://sonarcloud.io
@@ -534,25 +601,31 @@ sonar.go.coverage.reportPaths=reports/.coverage/out
 sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
 sonar.qualitygate.wait=true
 PROPERTIES`)
-	if configure.Name != "Create trusted scanner configuration" || strings.TrimSpace(configure.Run) != expectedConfiguration {
+	if configure.Name != "Create trusted scanner configuration" || strings.TrimSpace(configure.Run) != expected {
 		return errors.New("trusted SonarCloud analyzer must create only the exact forced scanner configuration outside the passive source root")
 	}
+	return nil
+}
 
-	expectedMaterializer := strings.Join(strings.Fields("go run "+materializerPath+`
+func validateTrustedSonarMaterializer(materialize *schema.GithubStep) error {
+	expected := strings.Join(strings.Fields("go run "+trustedSonarMaterializerPath+`
 		--base-repository "${GITHUB_REPOSITORY}"
 		--base-branch main
 		--head-repository "${{ steps.provenance.outputs.head-repository }}"
 		--head-sha "${{ steps.provenance.outputs.head-sha }}"
 		--pull-request "${{ steps.provenance.outputs.pr-number }}"
 		--output analysis/source
-		--bounds `+reviewedBounds), " ")
+		--bounds `+trustedSonarReviewedBounds), " ")
 	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
-		strings.Join(strings.Fields(materialize.Run), " ") != expectedMaterializer ||
+		strings.Join(strings.Fields(materialize.Run), " ") != expected ||
 		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != "${{ github.token }}" {
 		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
 	}
+	return nil
+}
 
-	expectedScannerArgs := strings.Join(strings.Fields(`
+func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
+	expectedArgs := strings.Join(strings.Fields(`
 -Dsonar.projectBaseDir=analysis
 -Dsonar.host.url=https://sonarcloud.io
 -Dsonar.organization=ensono
@@ -567,14 +640,11 @@ PROPERTIES`)
 -Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}
 -Dsonar.qualitygate.wait=true`), " ")
 	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
-	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != scannerAction ||
+	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != trustedSonarScannerAction ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
-		scanner.With["skipSignatureVerification"] != "false" || args != expectedScannerArgs {
+		scanner.With["skipSignatureVerification"] != "false" || args != expectedArgs {
 		return errors.New("trusted SonarCloud analyzer must end with only the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
-	}
-	if !onlyScannerReceivesSonarToken(workflow, job, 6) {
-		return errors.New("trusted SonarCloud analyzer must scope SONAR_TOKEN to the approved scanner step")
 	}
 	return nil
 }
@@ -582,7 +652,7 @@ PROPERTIES`)
 func checkoutCount(job schema.GithubJob) int {
 	count := 0
 	for _, step := range job.Steps {
-		if actionUses(step.Uses, "actions/checkout") {
+		if actionUses(step.Uses, checkoutAction) {
 			count++
 		}
 	}
@@ -590,8 +660,8 @@ func checkoutCount(job schema.GithubJob) int {
 }
 
 func isProtectedBaseCheckout(step *schema.GithubStep) bool {
-	return actionUses(step.Uses, "actions/checkout") && step.With["ref"] == "" &&
-		step.With["fetch-depth"] == "1" && step.With["persist-credentials"] == "false"
+	return actionUses(step.Uses, checkoutAction) && step.With["ref"] == "" &&
+		step.With["fetch-depth"] == "1" && step.With[persistCredentialsField] == "false"
 }
 
 func hasVerifiedStaticMainCheckout(job schema.GithubJob) bool {
@@ -600,8 +670,8 @@ func hasVerifiedStaticMainCheckout(job schema.GithubJob) bool {
 	}
 	checkout := job.Steps[0]
 	verify := job.Steps[1]
-	return actionUses(checkout.Uses, "actions/checkout") && checkout.With["ref"] == "main" &&
-		checkout.With["persist-credentials"] == "false" &&
+	return actionUses(checkout.Uses, checkoutAction) && checkout.With["ref"] == "main" &&
+		checkout.With[persistCredentialsField] == "false" &&
 		verify.Name == "Verify the validated workflow-run revision" && len(verify.Env) == 1 &&
 		scalarValue(verify.Env["VALIDATED_HEAD_SHA"]) == "${{ github.event.workflow_run.head_sha }}" &&
 		strings.TrimSpace(verify.Run) == `test "$(git rev-parse HEAD)" = "$VALIDATED_HEAD_SHA"`
@@ -635,7 +705,7 @@ func hasLocalAction(job schema.GithubJob) bool {
 
 func hasSecretInMap(values map[string]any) bool {
 	for _, value := range values {
-		if strings.Contains(scalarValue(value), "secrets.") {
+		if strings.Contains(scalarValue(value), secretExpressionMarker) {
 			return true
 		}
 	}
@@ -647,24 +717,36 @@ func onlyScannerReceivesSonarToken(workflow Workflow, job schema.GithubJob, scan
 		return false
 	}
 	for index, step := range job.Steps {
-		for _, value := range step.Env {
-			text := scalarValue(value)
-			if strings.Contains(text, "SONAR_TOKEN") || strings.Contains(text, "secrets.") {
-				if index != scannerIndex || scalarValue(step.Env["SONAR_TOKEN"]) != "${{ secrets.SONAR_TOKEN }}" || len(step.Env) != 1 {
-					return false
-				}
-			}
-		}
-		if strings.Contains(step.Run, "SONAR_TOKEN") || strings.Contains(step.Uses, "SONAR_TOKEN") {
+		if !scannerStepSecretScopeValid(step, index, scannerIndex) {
 			return false
-		}
-		for _, value := range step.With {
-			if strings.Contains(value, "SONAR_TOKEN") || strings.Contains(value, "secrets.") {
-				return false
-			}
 		}
 	}
 	return true
+}
+
+func scannerStepSecretScopeValid(step *schema.GithubStep, index, scannerIndex int) bool {
+	for _, value := range step.Env {
+		text := scalarValue(value)
+		if !strings.Contains(text, sonarTokenName) && !strings.Contains(text, secretExpressionMarker) {
+			continue
+		}
+		if index != scannerIndex || scalarValue(step.Env[sonarTokenName]) != sonarTokenExpression || len(step.Env) != 1 {
+			return false
+		}
+	}
+	return !stepContainsForbiddenSonarReference(step)
+}
+
+func stepContainsForbiddenSonarReference(step *schema.GithubStep) bool {
+	if strings.Contains(step.Run, sonarTokenName) || strings.Contains(step.Uses, sonarTokenName) {
+		return true
+	}
+	for _, value := range step.With {
+		if strings.Contains(value, sonarTokenName) || strings.Contains(value, secretExpressionMarker) {
+			return true
+		}
+	}
+	return false
 }
 
 func jobUses(job schema.GithubJob, prefix string) bool {
@@ -689,7 +771,7 @@ func stepWithContains(job schema.GithubJob, usesPrefix, key, expected string) bo
 
 func hasCheckoutRef(job schema.GithubJob, ref string) bool {
 	for _, step := range job.Steps {
-		if strings.HasPrefix(step.Uses, "actions/checkout@") && step.With["ref"] == ref {
+		if strings.HasPrefix(step.Uses, checkoutActionPrefix) && step.With["ref"] == ref {
 			return true
 		}
 	}
@@ -700,11 +782,11 @@ func jobHasEnvironment(job schema.GithubJob) bool { return job.Environment != ""
 
 func hasSecretReference(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
-		if strings.Contains(step.Run, "secrets.") || strings.Contains(step.Uses, "secrets.") {
+		if strings.Contains(step.Run, secretExpressionMarker) || strings.Contains(step.Uses, secretExpressionMarker) {
 			return true
 		}
 		for _, value := range step.With {
-			if strings.Contains(value, "secrets.") {
+			if strings.Contains(value, secretExpressionMarker) {
 				return true
 			}
 		}
@@ -723,7 +805,7 @@ func containsNeed(needs []string, expected string) bool {
 
 func hasCheckoutWithoutCredentials(job schema.GithubJob) bool {
 	for _, step := range job.Steps {
-		if strings.HasPrefix(step.Uses, "actions/checkout@") && step.With["persist-credentials"] == "false" {
+		if strings.HasPrefix(step.Uses, checkoutActionPrefix) && step.With[persistCredentialsField] == "false" {
 			return true
 		}
 	}
