@@ -19,8 +19,8 @@ Every issue checkbox in sections 2–8 is incomplete unless all five clauses are
 
 ## 3. Materializer Response Types
 
-- [ ] 3.1 For `AZ-N-y1d3_y5QfimGTaC`, confirm the finding targets the anonymous pull-request base repository response beneath `pullResponse` in `scripts/materialize-sonar-source/main.go`; introduce a private named response type while preserving every JSON tag, field name, and zero-value behavior. Run `gofmt`, `go test ./scripts/materialize-sonar-source`, and `go vet ./scripts/materialize-sonar-source`; compare fixture decoding before and after.
-- [ ] 3.2 For `AZ-N-y1d3_y5QfimGTaD`, confirm the finding targets the anonymous pull-request head repository response and reuse or add the smallest private named type consistent with task 3.1. Preserve the API response shape and all provenance, identity, path, blob, and head-recheck logic; run `gofmt`, `go test ./scripts/materialize-sonar-source`, `go vet ./scripts/materialize-sonar-source`, and `bash scripts/check-workflow-security.sh`.
+- [x] 3.1 For `AZ-N-y1d3_y5QfimGTaC`, confirm the finding targets the anonymous pull-request base repository response beneath `pullResponse` in `scripts/materialize-sonar-source/main.go`; introduce a private named response type while preserving every JSON tag, field name, and zero-value behavior. Run `gofmt`, `go test ./scripts/materialize-sonar-source`, and `go vet ./scripts/materialize-sonar-source`; compare fixture decoding before and after.
+- [x] 3.2 For `AZ-N-y1d3_y5QfimGTaD`, confirm the finding targets the anonymous pull-request head repository response and reuse or add the smallest private named type consistent with task 3.1. Preserve the API response shape and all provenance, identity, path, blob, and head-recheck logic; run `gofmt`, `go test ./scripts/materialize-sonar-source`, `go vet ./scripts/materialize-sonar-source`, and `bash scripts/check-workflow-security.sh`.
 
 ## 4. Gate-Blocking Cache Tests
 
