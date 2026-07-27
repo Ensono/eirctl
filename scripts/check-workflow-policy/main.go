@@ -23,6 +23,7 @@ const (
 	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
 	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
 	debugReleaseValidateJob         = "validate-build"
+	githubScriptActionPrefix        = "actions/github-script@"
 	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
 	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
@@ -385,10 +386,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!strings.Contains(request.If, "github.event.comment.body == '/build-debug'") || hasCheckout(request) {
 		return errors.New("debug build broker must authorize exact requests, serialize them per PR, and never check out code")
 	}
-	if !samePermissions(request.Permissions, Permissions{"actions": "write", "pull-requests": "read"}) || !jobUses(request, "actions/github-script@") ||
-		!stepWithContains(request, "actions/github-script@", "script", "createWorkflowDispatch") ||
-		!stepWithContains(request, "actions/github-script@", "script", "workflow_id: 'debug-build.yml'") ||
-		!stepWithContains(request, "actions/github-script@", "script", "ref: 'main'") {
+	if !samePermissions(request.Permissions, Permissions{"actions": "write", "pull-requests": "read"}) || !jobUses(request, githubScriptActionPrefix) ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "createWorkflowDispatch") ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "workflow_id: 'debug-build.yml'") ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "ref: 'main'") {
 		return errors.New("debug build broker must have only pull-request read and workflow-dispatch authority")
 	}
 
@@ -398,8 +399,8 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	}
 	buildJob, ok := build.Jobs.Values["build"]
 	if !ok || !hasTrigger(build, "workflow_dispatch") ||
-		!hasCheckoutRef(buildJob, "${{ inputs.commit_sha }}") || !stepWithContains(buildJob, "actions/github-script@", "script", "github.rest.pulls.get") ||
-		!stepWithContains(buildJob, "actions/github-script@", "script", "pullRequest.head.sha") ||
+		!hasCheckoutRef(buildJob, "${{ inputs.commit_sha }}") || !stepWithContains(buildJob, githubScriptActionPrefix, "script", "github.rest.pulls.get") ||
+		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.head.sha") ||
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) {
 		return errors.New("debug build must validate dispatched pull-request identity before an immutable read-only checkout without environment or secrets")
 	}
@@ -415,7 +416,7 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read"}) || jobHasEnvironment(validate) ||
 		!samePermissions(publishJob.Permissions, Permissions{"actions": "read", "contents": "write"}) ||
 		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, debugReleaseValidateJob) ||
-		!stepWithContains(validate, "actions/github-script@", "script", "run.event !== 'workflow_dispatch'") ||
+		!stepWithContains(validate, githubScriptActionPrefix, "script", "run.event !== 'workflow_dispatch'") ||
 		hasCheckout(validate) || hasCheckout(publishJob) {
 		return errors.New("debug publication must validate read-only data before its isolated debug-release contents-write job")
 	}
