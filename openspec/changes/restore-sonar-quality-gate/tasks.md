@@ -24,7 +24,7 @@ Every issue checkbox in sections 2–8 is incomplete unless all five clauses are
 
 ## 4. Gate-Blocking Cache Tests
 
-- [ ] 4.1 For `AZ-N-ywQ3_y5QfimGTZy`, confirm `Test_StoreInCache` in `internal/config/cache_test.go` still has complexity 23 and inventory its success, directory-creation, stream-copy, and mock-error assertions; extract fixture/setup or focused subtests without changing production cache code or deleting cases. Run `gofmt`, the focused test by name, and `go test ./internal/config`; compare case and assertion inventories before and after.
+- [x] 4.1 For `AZ-N-ywQ3_y5QfimGTZy`, confirm `Test_StoreInCache` in `internal/config/cache_test.go` still has complexity 23 and inventory its success, directory-creation, stream-copy, and mock-error assertions; extract fixture/setup or focused subtests without changing production cache code or deleting cases. Run `gofmt`, the focused test by name, and `go test ./internal/config`; compare case and assertion inventories before and after.
 - [ ] 4.2 For `AZ-N-ywQ3_y5QfimGTZz`, confirm `Test_Get_fromCache` still has complexity 22 and inventory missing-file, unexpected-error, YAML/import, copy, and successful read assertions; split setup/execution/assertion helpers or focused tests while preserving all failure paths. Run `gofmt`, the focused test by name, and `go test ./internal/config`; stop if simplification would require changing cache ownership or close semantics.
 
 ## 5. Selected Assertion-Preserving Test Debt

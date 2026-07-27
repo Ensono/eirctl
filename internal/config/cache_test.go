@@ -50,11 +50,13 @@ func (w errWriter) Write([]byte) (int, error) {
 	return 0, w.err
 }
 
+type storeInCacheTestCase struct {
+	mockFsOp func(t *testing.T, mw io.Writer) mockfo
+	wantErr  error
+}
+
 func Test_StoreInCache(t *testing.T) {
-	testCases := map[string]struct {
-		mockFsOp func(t *testing.T, mw io.Writer) mockfo
-		wantErr  error
-	}{
+	testCases := map[string]storeInCacheTestCase{
 		"successfully stores in path": {
 			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
 				m := mockfo{}
@@ -99,27 +101,30 @@ func Test_StoreInCache(t *testing.T) {
 
 	for name, tt := range testCases {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("HOME", "/foo")
-			t.Setenv("USERPROFILE", "/foo")
-
-			mw := &bytes.Buffer{}
-
-			c := config.NewCache().WithFsOps(tt.mockFsOp(t, mw))
-
-			w := bytes.NewBuffer([]byte(`context: {}`))
-			if err := c.Store("some-path", w); err != nil {
-				if tt.wantErr == nil {
-					t.Fatal(err)
-				}
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("wrong error type got: %v, want: %v", err, tt.wantErr)
-				}
-			} else {
-				if mw.String() != "context: {}" {
-					t.Errorf("got %s, want: 'context: {}'", mw.String())
-				}
-			}
+			runStoreInCacheTest(t, tt)
 		})
+	}
+}
+
+func runStoreInCacheTest(t *testing.T, tt storeInCacheTestCase) {
+	t.Helper()
+	t.Setenv("HOME", "/foo")
+	t.Setenv("USERPROFILE", "/foo")
+
+	output := &bytes.Buffer{}
+	cache := config.NewCache().WithFsOps(tt.mockFsOp(t, output))
+	err := cache.Store("some-path", bytes.NewBuffer([]byte(`context: {}`)))
+	if tt.wantErr != nil {
+		if !errors.Is(err, tt.wantErr) {
+			t.Fatalf("wrong error type got: %v, want: %v", err, tt.wantErr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "context: {}" {
+		t.Errorf("got %s, want: 'context: {}'", output.String())
 	}
 }
 
