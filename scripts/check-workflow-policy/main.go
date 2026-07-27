@@ -296,20 +296,35 @@ func hasPrivilegedPRExecution(content string) bool {
 		return err != nil
 	}
 	for _, job := range workflow.Jobs.Values {
-		for checkout, step := range job.Steps {
-			if !isUntrustedCheckout(step, workflow, job) {
-				continue
-			}
-			for _, subsequent := range job.Steps[checkout+1:] {
-				if executesWorkspace(subsequent) {
-					return true
-				}
-			}
+		if jobHasPrivilegedPRExecution(workflow, job) {
+			return true
 		}
-		for _, step := range job.Steps {
-			if hasUntrustedShellCheckout(step.Run) {
+	}
+	return false
+}
+
+func jobHasPrivilegedPRExecution(workflow Workflow, job schema.GithubJob) bool {
+	return executesAfterUntrustedCheckout(workflow, job) || jobHasUntrustedShellCheckout(job)
+}
+
+func executesAfterUntrustedCheckout(workflow Workflow, job schema.GithubJob) bool {
+	for checkout, step := range job.Steps {
+		if !isUntrustedCheckout(step, workflow, job) {
+			continue
+		}
+		for _, subsequent := range job.Steps[checkout+1:] {
+			if executesWorkspace(subsequent) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func jobHasUntrustedShellCheckout(job schema.GithubJob) bool {
+	for _, step := range job.Steps {
+		if hasUntrustedShellCheckout(step.Run) {
+			return true
 		}
 	}
 	return false
