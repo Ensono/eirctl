@@ -26,20 +26,11 @@ func NewTaskCompiler() *TaskCompiler {
 // CompileTask compiles task into Job (linked list of commands) executed by Executor
 func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionContext, stdin io.Reader, stdout, stderr io.Writer, env, vars *variables.Variables) (*Job, error) {
 	vars = t.Variables.Merge(vars)
+	if err := renderTaskVariables(vars, t); err != nil {
+		return nil, err
+	}
 
 	var job, prev *Job
-
-	for k, v := range vars.Map() {
-		if reflect.ValueOf(v).Kind() != reflect.String {
-			continue
-		}
-
-		renderedStr, err := utils.ParseTemplate(v.(string), vars.Map(), t.Env.Map())
-		if err != nil {
-			return nil, err
-		}
-		vars.Set(k, renderedStr)
-	}
 
 	// creating multiple versions of the same task with different env input
 	for _, variant := range t.GetVariations() {
@@ -61,16 +52,7 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 				return nil, err
 			}
 
-			if job == nil {
-				job = j
-			}
-
-			if prev == nil {
-				prev = j
-			} else {
-				prev.Next = j
-				prev = prev.Next
-			}
+			job, prev = appendJob(job, prev, j)
 		}
 	}
 	if t.Interactive {
@@ -78,6 +60,29 @@ func (tc *TaskCompiler) CompileTask(t *task.Task, executionContext *ExecutionCon
 	}
 
 	return job, nil
+}
+
+func renderTaskVariables(vars *variables.Variables, t *task.Task) error {
+	for key, value := range vars.Map() {
+		if reflect.ValueOf(value).Kind() != reflect.String {
+			continue
+		}
+
+		rendered, err := utils.ParseTemplate(value.(string), vars.Map(), t.Env.Map())
+		if err != nil {
+			return err
+		}
+		vars.Set(key, rendered)
+	}
+	return nil
+}
+
+func appendJob(head, tail, job *Job) (*Job, *Job) {
+	if head == nil {
+		return job, job
+	}
+	tail.Next = job
+	return head, job
 }
 
 // CompileCommand compiles command into Job
