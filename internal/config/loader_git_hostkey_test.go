@@ -238,6 +238,58 @@ func TestConfiguredKnownHostsFailureDoesNotFallBackToDefaults(t *testing.T) {
 	}
 }
 
+func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
+	directory := t.TempDir()
+	userPaths := []string{
+		filepath.Join(directory, "quoted user"),
+		filepath.Join(directory, "escaped user"),
+		filepath.Join(directory, "user-three"),
+		filepath.Join(directory, "user-four"),
+		filepath.Join(directory, "mixed quoted user"),
+		filepath.Join(directory, "user-six"),
+	}
+	globalPaths := []string{
+		filepath.Join(directory, "quoted global"),
+		filepath.Join(directory, "escaped global"),
+		filepath.Join(directory, "global-three"),
+		filepath.Join(directory, "global-four"),
+	}
+	for _, path := range append(append([]string{}, userPaths...), globalPaths...) {
+		if err := os.WriteFile(path, []byte("# test\n"), 0600); err != nil {
+			t.Fatalf("write known-hosts fixture: %v", err)
+		}
+	}
+
+	includedPath := filepath.Join(directory, "included-ssh-config")
+	includedConfig := fmt.Sprintf(`Host alias
+  UserKnownHostsFile %q
+  UserKnownHostsFile %s
+  UserKnownHostsFile %s %s
+  UserKnownHostsFile %q %s
+  GlobalKnownHostsFile %q
+  GlobalKnownHostsFile %s
+  GlobalKnownHostsFile %s %s
+`, userPaths[0], strings.ReplaceAll(userPaths[1], " ", `\ `), userPaths[2], userPaths[3], userPaths[4], userPaths[5], globalPaths[0], strings.ReplaceAll(globalPaths[1], " ", `\ `), globalPaths[2], globalPaths[3])
+	if err := os.WriteFile(includedPath, []byte(includedConfig), 0600); err != nil {
+		t.Fatalf("write included SSH config: %v", err)
+	}
+	fileConfig, err := ssh_config.Decode(strings.NewReader("Include " + includedPath + "\n"))
+	if err != nil {
+		t.Fatalf("decode SSH config: %v", err)
+	}
+
+	config := &SSHConfigAuth{}
+	if err := processSSHConfig(fileConfig, config, "alias"); err != nil {
+		t.Fatalf("process SSH config: %v", err)
+	}
+	if !reflect.DeepEqual(config.UserKnownHostsFiles, userPaths) || config.UserKnownHostsFile != userPaths[0] {
+		t.Fatalf("unexpected included user known-hosts config: %+v", config)
+	}
+	if !reflect.DeepEqual(config.SystemKnownHostsFiles, globalPaths) || config.SystemKnownHostsFile != globalPaths[0] {
+		t.Fatalf("unexpected included global known-hosts config: %+v", config)
+	}
+}
+
 func TestProcessSSHConfigMergesFileValuesAndPreservesCommandPrecedence(t *testing.T) {
 	fileConfig, err := ssh_config.Decode(strings.NewReader(`Host alias
   Hostname file.example.test

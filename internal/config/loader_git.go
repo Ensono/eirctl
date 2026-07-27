@@ -569,7 +569,9 @@ func parseDefaultSshConfigFilePaths() *SSHConfigAuth {
 func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
 	mergeSSHScalarDefaults(fileSSHCfg, sshConfig, hostname)
 	mergeSSHIdentityFile(fileSSHCfg, sshConfig, hostname)
-	mergeSSHKnownHostsFiles(fileSSHCfg, sshConfig, hostname)
+	if err := mergeSSHKnownHostsFiles(fileSSHCfg, sshConfig, hostname); err != nil {
+		return err
+	}
 	mergeSSHStrictHostKeyChecking(fileSSHCfg, sshConfig, hostname)
 	return nil
 }
@@ -596,22 +598,29 @@ func mergeSSHIdentityFile(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAut
 	}
 }
 
-func mergeSSHKnownHostsFiles(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
-	mergeSSHKnownHostsFile(fileSSHCfg, hostname, "UserKnownHostsFile", &sshConfig.UserKnownHostsFiles, &sshConfig.UserKnownHostsFile)
-	mergeSSHKnownHostsFile(fileSSHCfg, hostname, "GlobalKnownHostsFile", &sshConfig.SystemKnownHostsFiles, &sshConfig.SystemKnownHostsFile)
+func mergeSSHKnownHostsFiles(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
+	if err := mergeSSHKnownHostsFile(fileSSHCfg, hostname, "UserKnownHostsFile", &sshConfig.UserKnownHostsFiles, &sshConfig.UserKnownHostsFile); err != nil {
+		return err
+	}
+	return mergeSSHKnownHostsFile(fileSSHCfg, hostname, "GlobalKnownHostsFile", &sshConfig.SystemKnownHostsFiles, &sshConfig.SystemKnownHostsFile)
 }
 
-func mergeSSHKnownHostsFile(fileSSHCfg *ssh_config.Config, hostname, option string, paths *[]string, legacyPath *string) {
+func mergeSSHKnownHostsFile(fileSSHCfg *ssh_config.Config, hostname, option string, paths *[]string, legacyPath *string) error {
 	if len(*paths) > 0 || *legacyPath != "" {
-		return
+		return nil
 	}
-	*paths = sshConfigPathValues(fileSSHCfg, hostname, option)
+	var err error
+	*paths, err = sshConfigPathValues(fileSSHCfg, hostname, option)
+	if err != nil {
+		return err
+	}
 	if len(*paths) > 0 {
 		*legacyPath = (*paths)[0]
 	}
+	return nil
 }
 
-func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string) []string {
+func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string) ([]string, error) {
 	var paths []string
 	for _, host := range fileSSHCfg.Hosts {
 		if !host.Matches(hostname) {
@@ -625,11 +634,64 @@ func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string)
 				}
 			case *ssh_config.Include:
 				included, _ := value.GetAll(hostname, option)
-				paths = append(paths, included...)
+				for _, includedValue := range included {
+					includedPaths, err := splitIncludedSSHConfigPaths(includedValue)
+					if err != nil {
+						return nil, err
+					}
+					paths = append(paths, includedPaths...)
+				}
 			}
 		}
 	}
-	return paths
+	return paths, nil
+}
+
+func splitIncludedSSHConfigPaths(value string) ([]string, error) {
+	if strings.Contains(value, `"`) {
+		quotedValue := value
+		if !strings.HasPrefix(value, `"`) && !strings.HasSuffix(value, `"`) {
+			quotedValue = `"` + value + `"`
+		}
+		paths, ok := splitSSHConfigPaths(quotedValue)
+		if ok {
+			return paths, nil
+		}
+	}
+	if strings.Contains(value, `\`) {
+		paths, ok := splitSSHConfigPaths(value)
+		if ok {
+			return paths, nil
+		}
+	}
+
+	fields := strings.Fields(value)
+	if len(fields) < 2 {
+		return []string{value}, nil
+	}
+	literalExists := sshConfigPathExists(value)
+	fieldsExist := allSSHConfigPathsExist(fields)
+	if literalExists && fieldsExist {
+		return nil, fmt.Errorf("%w\nambiguous known-host path boundaries in included SSH configuration", ErrGitOperation)
+	}
+	if fieldsExist {
+		return fields, nil
+	}
+	return []string{value}, nil
+}
+
+func allSSHConfigPathsExist(paths []string) bool {
+	for _, path := range paths {
+		if !sshConfigPathExists(path) {
+			return false
+		}
+	}
+	return true
+}
+
+func sshConfigPathExists(path string) bool {
+	info, err := os.Stat(filepath.Clean(utils.NormalizeHome(path)))
+	return err == nil && !info.IsDir()
 }
 
 func splitSSHConfigPathDirective(value *ssh_config.KV) []string {
