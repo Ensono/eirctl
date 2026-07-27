@@ -84,3 +84,35 @@ During `/opsx-apply`, update this file with:
 - residual deferred findings and rollback commits.
 
 No credentials, private token metadata, or secret values belong in this ledger.
+
+## Per-key execution ledger
+
+The authenticated snapshot above is the precondition for every row. “Stop” always includes an issue that is closed/moved, a mismatched rule/component, unrelated scoped-file edits, missing characterization, or a required behavior/API/security change. Each focused check must pass and be recorded before its task can be checked.
+
+| Key | Tier | Intended files and bounded invariant | Focused check | Stop condition |
+|---|---:|---|---|---|
+| `AZ-N-ywQ3_y5QfimGTZy` | 0 | `internal/config/cache_test.go`; split only setup/assertion complexity and retain success, mkdir, copy, and mock-error cases. | `go test ./internal/config -run Test_StoreInCache`; `go test ./internal/config` | Production cache behavior or any assertion would change. |
+| `AZ-N-ywQ3_y5QfimGTZz` | 0 | `internal/config/cache_test.go`; retain missing-file, error, YAML/import, copy, and successful-read paths. | `go test ./internal/config -run Test_Get_fromCache`; `go test ./internal/config` | Cache ownership or close semantics must change. |
+| `AZ-N-yxh3_y5QfimGTZ0` | 0 | `internal/config/loader_git.go` and tests; preserve command precedence, defaults, repeated trust paths, explicit opt-out warning, and fail-closed trust. | `go test ./internal/config`; `go test -race ./internal/config` | SSH parsing or error contract would broaden/change. |
+| `AZ-N-y0t3_y5QfimGTZ2` | 0 | `scripts/check-workflow-policy/main.go`; one private `validate-build` identifier constant only. | `go test ./scripts/check-workflow-policy`; `go vet ./scripts/check-workflow-policy`; `bash scripts/check-workflow-security.sh` | Any literal has different semantics. |
+| `AZ-N-y0t3_y5QfimGTZ7` | 0 | `scripts/check-workflow-policy/main.go`; explicit ordered topology phases with one-to-one predicates/errors. | policy tests, vet, workflow-security, immutable-dependencies, and CODEOWNERS checks | Any predicate/order/trust boundary cannot be mapped. |
+| `AZ-N-y0t3_y5QfimGTZ4` | 0 | `scripts/check-workflow-policy/main.go`; centralize only `actions/github-script@`; retain prefix and independent SHA validation. | policy tests, vet, and workflow-security check | Prefix becomes exact matching or any pin/predicate changes. |
+| `AZ-N-y1d3_y5QfimGTaC` | 1 | `scripts/materialize-sonar-source/main.go`; private named base-repository response preserves all JSON names/tags/zeros. | `go test ./scripts/materialize-sonar-source`; `go vet ./scripts/materialize-sonar-source` | Fixture decoding changes. |
+| `AZ-N-y1d3_y5QfimGTaD` | 1 | Same file; smallest named head-repository response type preserves provenance/path/blob/head-recheck behavior. | materializer tests, vet, workflow-security check | API response shape or provenance logic changes. |
+| `AZWKA6kX03lIpGBL3rEn` | 2 | `cmd/eirctl/eirctl.go`; private `no-summary` key constant preserves flag/default/binding/lookup. | `go test ./cmd/eirctl` | Flag/config precedence changes. |
+| `AZWKA6j703lIpGBL3rEk` | 2 | `cmd/eirctl/init.go`; private `no-prompt` key constant preserves prompt behavior/binding errors. | `go test ./cmd/eirctl` | Occurrences are distinct external names. |
+| `AZZ8glSK1wqWcqTip8XF` | 2 | `runner/executor_container.go`; explanatory no-op comment only. | `go test ./runner` | Interface or execution isolation would change. |
+| `AZxSHQDOhNFpWUf3zR1y` | 2 | `runner/executor_default.go`; defer timeout cancel in its creation branch with unchanged timing. | `go test ./runner` | A timeout path cannot guarantee cancellation. |
+| `AZ1t2WyVtvGp9fbwa0Kx` | 2 | `cmd/eirctl/eirctl_test.go`; named helpers retain callers, errors, output, and cancellation. | `go test ./cmd/eirctl` | Helper coverage/assertions weaken. |
+| `AZ1t2Wy_tvGp9fbwa0K3` | 2 | `cmd/main_test.go`; isolate cases without leaking args/log state; retain 0/1/125 assertions. | `go test ./cmd -run Test_main`; `go test ./cmd` | Case inventory changes. |
+| `AZ1t2WvrtvGp9fbwa0Km` | 2 | `output/prefixed_test.go`; helpers retain byte-exact header/body/blank/newline/footer checks. | `go test ./output -run TestOutput_prefixedOutputDecorator`; `go test ./output` | Exact output assertions weaken. |
+| `AZ1t2WzPtvGp9fbwa0K4` | 2 | `variables/variables_test.go`; exact map/value assertion helper only. | `go test ./variables -run TestVariables_MergeV2`; `go test ./variables` | Production merge behavior changes. |
+| `AZ1t2WjltvGp9fbwa0IF` | 2 | `internal/genci/githubimpl_test.go`; preserve graph/YAML/job/step ordering. | `go test ./internal/genci -run TestGenCi_GithubImpl_ordering`; `go test ./internal/genci` | Any exact order check weakens. |
+| `AZ1t2WqptvGp9fbwa0Ir` | 2 | `internal/utils/utils_test.go`; exact key set must reject extras and retain non-map case. | `go test ./internal/utils -run TestMapKeys`; `go test ./internal/utils` | Non-map behavior changes. |
+| `AZ1t2W1PtvGp9fbwa0LE` | 2 | `scheduler/graph_test.go`; preserve lookup, root-child, and `ErrNodeNotFound`. | focused test; `go test ./scheduler`; `go test -race ./scheduler` | Any graph assertion is lost. |
+| `AZ1t2W0ytvGp9fbwa0K8` | 2 | `scheduler/scheduler_test.go`; remove only a proven duplicate or add genuine required-input coverage. | both focused tests; scheduler and race tests | Coverage is distinct. |
+| `AZbPupl0Qf_52EOIHgtb` | 2 | `internal/cmdutils`; characterize byte-exact statuses/errors before status renderer extraction. | `go test ./internal/cmdutils` | Output compatibility cannot be proven. |
+| `AZWKA6je03lIpGBL3rEh` | 2 | `runner/compiler.go`; helpers preserve ordering, templates, timeout/environment, interactive mutation. | focused compiler tests; `go test ./runner` | Any compile contract changes. |
+| `AZWKA6je03lIpGBL3rEi` | 2 | `runner/compiler.go`; private input struct replaces ten arguments without ownership/default changes. | focused compiler tests; `go test ./runner` | Caller needs positional omission/mutation not represented by struct. |
+
+Independent review is mandatory before marking the Git SSH and workflow-policy review tasks complete. Final issue closure and gate acceptance remain contingent on authenticated PR and trusted-main analysis.
