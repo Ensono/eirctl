@@ -21,9 +21,10 @@ The artifact must contain exactly these regular files at its root:
   report-junit.xml  (at most 10 MiB)
 
 Symlinks, special files, traversal-derived paths, and any other content are
-rejected. After validation, the files are normalized under `.coverage/` for the
-trusted scanner. Missing coverage is a failed preparation result, never a silent
-skip.
+rejected. Coverage records must use canonical repository-relative Go paths;
+protected code prefixes those paths with `source/` to match the isolated scanner
+namespace. The files are then normalized under `.coverage/`. Missing or malformed
+coverage is a failed preparation result, never a silent skip.
 USAGE
 }
 
@@ -62,6 +63,40 @@ coverage_size=$(wc -c <"$coverage")
 junit_size=$(wc -c <"$junit")
 (( coverage_size <= max_coverage_bytes )) || fail "out exceeds ${max_coverage_bytes} bytes"
 (( junit_size <= max_junit_bytes )) || fail "report-junit.xml exceeds ${max_junit_bytes} bytes"
+iconv -f UTF-8 -t UTF-8 "$coverage" >/dev/null 2>&1 || fail "out must be valid UTF-8"
+iconv -f UTF-8 -t UTF-8 "$junit" >/dev/null 2>&1 || fail "report-junit.xml must be valid UTF-8"
+
+# The scanner project base is `analysis`, while API materialization deliberately
+# places repository paths beneath `analysis/source`. Go's coverage report names
+# files relative to the repository root, so normalize each validated record into
+# that isolated scanner namespace before any source is materialized or secret is
+# exposed. The fixed-string output cannot execute report-controlled content.
+normalized_coverage=$(mktemp "$root/.normalized-coverage.XXXXXX")
+trap 'rm -f -- "$normalized_coverage"' EXIT
+if ! LC_ALL=C awk '
+  NR == 1 {
+    if ($0 !~ /^mode: (set|count|atomic)$/) exit 10
+    print
+    next
+  }
+  {
+    record = $0
+    if (match(record, /:[0-9]+\.[0-9]+,[0-9]+\.[0-9]+ [0-9]+ [0-9]+$/) == 0) exit 11
+    path = substr(record, 1, RSTART - 1)
+    if (path !~ /\.go$/ || length(path) > 160 || path ~ /^\// ||
+        path ~ /\\/ || path ~ /\/\// || path ~ /(^|\/)\.\.?($|\/)/ ||
+        path ~ /[[:cntrl:]]/) exit 12
+    print "source/" record
+  }
+  END {
+    if (NR < 2) exit 13
+  }
+' "$coverage" >"$normalized_coverage"; then
+  fail "out must contain a valid Go coverage mode and canonical repository-relative .go records"
+fi
+normalized_coverage_size=$(wc -c <"$normalized_coverage")
+(( normalized_coverage_size <= max_coverage_bytes )) || fail "normalized out exceeds ${max_coverage_bytes} bytes"
+mv -- "$normalized_coverage" "$coverage"
 
 # Preserve the protected scanner's established report paths without broadening
 # the accepted artifact contract. Any pre-existing directory was rejected above.
@@ -71,4 +106,4 @@ mv -- "$coverage" "$normalized_root/out"
 mv -- "$junit" "$normalized_root/report-junit.xml"
 chmod 0644 -- "$normalized_root/out" "$normalized_root/report-junit.xml"
 
-printf 'Sonar report artifact contract checks passed and paths normalized\n'
+printf 'Sonar report artifact contract checks passed; coverage namespace and paths normalized\n'
