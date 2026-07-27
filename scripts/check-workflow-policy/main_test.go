@@ -55,6 +55,13 @@ func TestStructuralPrivilegedFlowAnalysisRejectsDynamicExecution(t *testing.T) {
 	}
 }
 
+func TestPrivilegedFlowRejectsShellCheckout(t *testing.T) {
+	content := "on: [workflow_dispatch]\njobs:\n  build:\n    steps:\n      - run: git fetch origin ${{ inputs.ref }} && git checkout FETCH_HEAD\n"
+	if !hasPrivilegedPRExecution(content) {
+		t.Fatal("hasPrivilegedPRExecution() accepted a dynamic shell checkout")
+	}
+}
+
 func TestParseWorkflowCapturesTrustedTopologyFields(t *testing.T) {
 	content := `name: Analyzer
 on: [workflow_run]
@@ -138,6 +145,36 @@ func TestTrustedWorkflowRunRequiresAllGuards(t *testing.T) {
 		if trustedWorkflowRun(missing) {
 			t.Fatalf("trustedWorkflowRun accepted incomplete guard %q", missing)
 		}
+	}
+}
+
+func TestPolicyRejectsDebugBuilderBeforeValidationAndStepSecret(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(string) string
+	}{
+		{
+			name: "checkout before validation",
+			mutate: func(content string) string {
+				validationStart := strings.Index(content, "      - name: Validate dispatched")
+				checkoutStart := strings.Index(content, "      - name: Check out validated")
+				installStart := strings.Index(content, "      - name: Install GitVersion")
+				return content[:validationStart] + content[checkoutStart:installStart] + content[validationStart:checkoutStart] + content[installStart:]
+			},
+		},
+		{
+			name: "step scoped secret",
+			mutate: func(content string) string {
+				return strings.Replace(content, "        env:\n          PULL_REQUEST:", "        env:\n          REVIEW_PROBE_SECRET: ${{ secrets.REVIEW_PROBE_SECRET }}\n          PULL_REQUEST:", 1)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := Validate(copyWorkflowRootFile(t, "debug-build.yml", test.mutate)); err == nil {
+				t.Fatal("Validate() accepted unsafe debug builder mutation")
+			}
+		})
 	}
 }
 
@@ -478,6 +515,10 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 }
 
 func copyWorkflowRoot(t *testing.T, mutate func(string) string) string {
+	return copyWorkflowRootFile(t, "trusted-sonarcloud-pr.yml", mutate)
+}
+
+func copyWorkflowRootFile(t *testing.T, fileName string, mutate func(string) string) string {
 	t.Helper()
 	root := t.TempDir()
 	workflowDir := filepath.Join(root, ".github", "workflows")
@@ -497,7 +538,7 @@ func copyWorkflowRoot(t *testing.T, mutate func(string) string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if entry.Name() == "trusted-sonarcloud-pr.yml" && mutate != nil {
+		if entry.Name() == fileName && mutate != nil {
 			contents = []byte(mutate(string(contents)))
 		}
 		if err := os.WriteFile(filepath.Join(workflowDir, entry.Name()), contents, 0o644); err != nil {

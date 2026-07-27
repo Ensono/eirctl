@@ -39,7 +39,7 @@ func (o mockOsFsOps) Create(name string) (io.Writer, error) {
 
 func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 	t.Helper()
-	err, logOutput, errOutputLength := executeCommandTest(t, testInput)
+	logOutput, errOutputLength, err := executeCommandTest(t, testInput)
 	if err != nil {
 		assertCommandError(t, testInput, err)
 		return
@@ -48,7 +48,7 @@ func cmdRunTestHelper(t *testing.T, testInput *cmdRunTestInput) {
 	assertCommandOutput(t, testInput, logOutput, errOutputLength)
 }
 
-func executeCommandTest(t *testing.T, testInput *cmdRunTestInput) (error, string, int) {
+func executeCommandTest(t *testing.T, testInput *cmdRunTestInput) (string, int, error) {
 	t.Helper()
 	ctx := testInput.ctx
 	if ctx == nil {
@@ -69,7 +69,8 @@ func executeCommandTest(t *testing.T, testInput *cmdRunTestInput) (error, string
 		t.Fatal(err)
 	}
 
-	return cmd.Execute(), logOut.String(), errOut.Len()
+	err := cmd.Execute()
+	return logOut.String(), errOut.Len(), err
 }
 
 func assertCommandError(t *testing.T, testInput *cmdRunTestInput, err error) {

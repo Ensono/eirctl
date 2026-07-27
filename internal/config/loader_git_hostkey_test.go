@@ -294,6 +294,36 @@ func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
 	}
 }
 
+func TestProcessSSHConfigPreservesIncludedQuotedWindowsPath(t *testing.T) {
+	includedPath := filepath.Join(t.TempDir(), "included-ssh-config")
+	if err := os.WriteFile(includedPath, []byte("Host alias\n  GlobalKnownHostsFile \"C:\\ProgramData\\ssh\\known hosts\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fileConfig, err := ssh_config.Decode(strings.NewReader("Include " + includedPath + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &SSHConfigAuth{}
+	if err := processSSHConfig(fileConfig, config, "alias"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{`C:\ProgramData\ssh\known hosts`}; !reflect.DeepEqual(config.SystemKnownHostsFiles, want) {
+		t.Fatalf("SystemKnownHostsFiles = %q, want %q", config.SystemKnownHostsFiles, want)
+	}
+}
+
+func TestSplitSSHConfigPathsPreservesDollarExpressions(t *testing.T) {
+	t.Setenv("EIRCTL_REVIEW_PROBE", "expanded")
+	paths, ok := splitSSHConfigPaths(`/tmp/$EIRCTL_REVIEW_PROBE/known_hosts`)
+	if !ok {
+		t.Fatal("splitSSHConfigPaths returned false")
+	}
+	if want := []string{`/tmp/$EIRCTL_REVIEW_PROBE/known_hosts`}; !reflect.DeepEqual(paths, want) {
+		t.Fatalf("splitSSHConfigPaths() = %q, want %q", paths, want)
+	}
+}
+
 func TestSplitIncludedSSHConfigPathsPreservesPlatformPaths(t *testing.T) {
 	tests := map[string]struct {
 		value string

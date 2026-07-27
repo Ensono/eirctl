@@ -673,14 +673,8 @@ func includedSSHConfigPathValues(include *ssh_config.Include, hostname, option s
 }
 
 func splitIncludedSSHConfigPaths(value string) ([]string, error) {
-	if strings.Contains(value, `"`) {
+	if strings.Contains(value, `"`) || hasEscapedSSHPathSeparator(value) {
 		paths, ok := splitSSHConfigPaths(restoreStrippedSSHConfigQuotes(value))
-		if ok {
-			return paths, nil
-		}
-	}
-	if strings.Contains(value, `\`) {
-		paths, ok := splitSSHConfigPaths(value)
 		if ok {
 			return paths, nil
 		}
@@ -742,9 +736,29 @@ func splitSSHConfigPathDirective(value *ssh_config.KV) []string {
 	return paths
 }
 
+func hasEscapedSSHPathSeparator(value string) bool {
+	for index, character := range value {
+		if character == '\\' && index+1 < len(value) && isSSHPathEscape(rune(value[index+1])) {
+			return true
+		}
+	}
+	return false
+}
+
 func splitSSHConfigPaths(value string) ([]string, bool) {
-	paths, err := shell.Fields(preserveSSHPathBackslashes(value), nil)
+	paths, err := shell.Fields(escapeSSHPathVariables(preserveSSHPathBackslashes(value)), nil)
 	return paths, err == nil
+}
+
+func escapeSSHPathVariables(value string) string {
+	var escaped strings.Builder
+	for index, character := range value {
+		if character == '$' && (index == 0 || value[index-1] != '\\') {
+			escaped.WriteRune('\\')
+		}
+		escaped.WriteRune(character)
+	}
+	return escaped.String()
 }
 
 func preserveSSHPathBackslashes(value string) string {

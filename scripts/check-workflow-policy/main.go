@@ -204,24 +204,16 @@ func rejectScorecardDangerousCheckouts(workflow Workflow) error {
 }
 
 func validatePrivilegedFlow(workflow Workflow) error {
-	if !isPrivilegedTrigger(workflow) {
+	if !isPrivilegedTrigger(workflow) || workflow.Path == ".github/workflows/debug-build.yml" {
 		return nil
 	}
 	for jobID, job := range workflow.Jobs.Values {
-		checkout, afterCheckout := checkoutStep(job.Steps)
-		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
-			continue
-		}
-		// pull_request_target executes with the base repository's trust context even
-		// when its declared token is read-only, so it must never execute an
-		// untrusted checkout. Other privileged paths require write authority or a
-		// protected environment before this stricter execution rule applies.
-		if !hasTrigger(workflow, "pull_request_target") && !jobCanWrite(job, workflow) {
-			continue
-		}
-		for _, step := range job.Steps[afterCheckout:] {
-			if executesWorkspace(step) {
-				return fmt.Errorf("%s job %s checks out and executes pull-request-controlled content from a privileged trigger", workflow.Path, jobID)
+		for _, step := range job.Steps {
+			if isUntrustedCheckout(step, workflow, job) {
+				return fmt.Errorf("%s job %s checks out pull-request-controlled content from a privileged trigger", workflow.Path, jobID)
+			}
+			if hasUntrustedShellCheckout(step.Run) {
+				return fmt.Errorf("%s job %s checks out pull-request-controlled content through a shell command", workflow.Path, jobID)
 			}
 		}
 	}
@@ -246,6 +238,18 @@ func checkoutStep(steps []*schema.GithubStep) (int, int) {
 	return -1, -1
 }
 
+func hasUntrustedShellCheckout(command string) bool {
+	if !strings.Contains(command, "github.event.") && !strings.Contains(command, "inputs.") && !strings.Contains(command, "steps.") {
+		return false
+	}
+	for _, checkout := range []string{"git checkout", "git fetch", "gh pr checkout"} {
+		if strings.Contains(command, checkout) {
+			return true
+		}
+	}
+	return false
+}
+
 func actionUses(value, action string) bool {
 	at := strings.LastIndex(value, "@")
 	return at > 0 && strings.EqualFold(value[:at], action)
@@ -266,19 +270,6 @@ func trustedWorkflowRun(condition string) bool {
 	return strings.Contains(condition, "github.event.workflow_run.event == 'push'") &&
 		strings.Contains(condition, "github.event.workflow_run.head_repository.full_name == github.repository") &&
 		strings.Contains(condition, "github.event.workflow_run.head_branch == 'main'")
-}
-
-func jobCanWrite(job schema.GithubJob, workflow Workflow) bool {
-	permissions := workflow.Permissions
-	if job.Has("permissions") {
-		permissions = job.Permissions
-	}
-	for _, value := range permissions {
-		if value == "write" {
-			return true
-		}
-	}
-	return job.Environment != ""
 }
 
 func executesWorkspace(step *schema.GithubStep) bool {
@@ -305,12 +296,18 @@ func hasPrivilegedPRExecution(content string) bool {
 		return err != nil
 	}
 	for _, job := range workflow.Jobs.Values {
-		checkout, afterCheckout := checkoutStep(job.Steps)
-		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
-			continue
+		for checkout, step := range job.Steps {
+			if !isUntrustedCheckout(step, workflow, job) {
+				continue
+			}
+			for _, subsequent := range job.Steps[checkout+1:] {
+				if executesWorkspace(subsequent) {
+					return true
+				}
+			}
 		}
-		for _, step := range job.Steps[afterCheckout:] {
-			if executesWorkspace(step) {
+		for _, step := range job.Steps {
+			if hasUntrustedShellCheckout(step.Run) {
 				return true
 			}
 		}
@@ -426,8 +423,9 @@ func validateDebugBuilderTopology(workflows map[string]Workflow) error {
 		return err
 	}
 	buildJob, ok := build.Jobs.Values["build"]
-	if !ok || !hasTrigger(build, "workflow_dispatch") ||
-		!hasCheckoutRef(buildJob, "${{ inputs.commit_sha }}") || !stepWithContains(buildJob, githubScriptActionPrefix, "script", "github.rest.pulls.get") ||
+	checkout := checkoutIndexForRef(buildJob, "${{ inputs.commit_sha }}")
+	validation := githubScriptIndexContaining(buildJob, "github.rest.pulls.get")
+	if !ok || !hasTrigger(build, "workflow_dispatch") || checkout == -1 || validation == -1 || validation > checkout ||
 		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.head.sha") ||
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) {
 		return errors.New("debug build must validate dispatched pull-request identity before an immutable read-only checkout without environment or secrets")
@@ -808,13 +806,22 @@ func stepWithContains(job schema.GithubJob, usesPrefix, key, expected string) bo
 	return false
 }
 
-func hasCheckoutRef(job schema.GithubJob, ref string) bool {
-	for _, step := range job.Steps {
+func checkoutIndexForRef(job schema.GithubJob, ref string) int {
+	for index, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, checkoutActionPrefix) && step.With["ref"] == ref {
-			return true
+			return index
 		}
 	}
-	return false
+	return -1
+}
+
+func githubScriptIndexContaining(job schema.GithubJob, expected string) int {
+	for index, step := range job.Steps {
+		if strings.HasPrefix(step.Uses, githubScriptActionPrefix) && strings.Contains(step.With["script"], expected) {
+			return index
+		}
+	}
+	return -1
 }
 
 func jobHasEnvironment(job schema.GithubJob) bool { return job.Environment != "" }
@@ -826,6 +833,11 @@ func hasSecretReference(job schema.GithubJob) bool {
 		}
 		for _, value := range step.With {
 			if strings.Contains(value, secretExpressionMarker) {
+				return true
+			}
+		}
+		for _, value := range step.Env {
+			if strings.Contains(scalarValue(value), secretExpressionMarker) {
 				return true
 			}
 		}
