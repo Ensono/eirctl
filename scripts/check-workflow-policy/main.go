@@ -365,6 +365,28 @@ func expectedJobPermissions(path, job string) Permissions {
 }
 
 func validateRepositoryTopology(workflows map[string]Workflow) error {
+	if err := validateProtectedPolicyTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugBrokerTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugBuilderTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugPublisherTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateReleaseTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateScorecardTopology(workflows); err != nil {
+		return err
+	}
+	return validateTrustedSonarCloudTopology(workflows)
+}
+
+func validateProtectedPolicyTopology(workflows map[string]Workflow) error {
 	policy, err := requiredWorkflow(workflows, ".github/workflows/trusted-workflow-policy.yml")
 	if err != nil {
 		return err
@@ -376,7 +398,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!strings.Contains(policyJob.Steps[2].Run, "go run ./scripts/check-workflow-policy --candidate-root") {
 		return errors.New("trusted workflow policy must check out only the implicit protected base revision and inspect candidate configuration as data")
 	}
+	return nil
+}
 
+func validateDebugBrokerTopology(workflows map[string]Workflow) error {
 	broker, err := requiredWorkflow(workflows, ".github/workflows/debug-build-request.yml")
 	if err != nil {
 		return err
@@ -392,7 +417,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!stepWithContains(request, githubScriptActionPrefix, "script", "ref: 'main'") {
 		return errors.New("debug build broker must have only pull-request read and workflow-dispatch authority")
 	}
+	return nil
+}
 
+func validateDebugBuilderTopology(workflows map[string]Workflow) error {
 	build, err := requiredWorkflow(workflows, ".github/workflows/debug-build.yml")
 	if err != nil {
 		return err
@@ -404,7 +432,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) {
 		return errors.New("debug build must validate dispatched pull-request identity before an immutable read-only checkout without environment or secrets")
 	}
+	return nil
+}
 
+func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 	publish, err := requiredWorkflow(workflows, ".github/workflows/publish-debug-release.yml")
 	if err != nil {
 		return err
@@ -420,7 +451,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		hasCheckout(validate) || hasCheckout(publishJob) {
 		return errors.New("debug publication must validate read-only data before its isolated debug-release contents-write job")
 	}
+	return nil
+}
 
+func validateReleaseTopology(workflows map[string]Workflow) error {
 	for _, file := range []string{".github/workflows/release.yml", ".github/workflows/release_container.yml"} {
 		workflow, err := requiredWorkflow(workflows, file)
 		if err != nil {
@@ -432,7 +466,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 			}
 		}
 	}
+	return nil
+}
 
+func validateScorecardTopology(workflows map[string]Workflow) error {
 	scorecard, err := requiredWorkflow(workflows, ".github/workflows/scorecard.yml")
 	if err != nil {
 		return err
@@ -441,7 +478,7 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if !ok || !hasCheckoutWithoutCredentials(analysis) {
 		return errors.New("scorecard must use job-scoped permissions and a checkout without credentials")
 	}
-	return validateTrustedSonarCloudTopology(workflows)
+	return nil
 }
 
 func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
