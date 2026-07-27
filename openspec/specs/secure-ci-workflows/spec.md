@@ -130,7 +130,7 @@ The repository's workflow security policy SHALL parse workflow YAML structurally
 - **THEN** the implementation is not accepted, and the alert SHALL be resolved by design rather than dismissed, suppressed, or bypassed
 
 ## Requirement: SonarCloud analysis covers trusted main and every pull request
-The CI system SHALL submit SonarCloud analysis for every trusted push to `main` and every pull-request revision targeting `main`, including revisions originating from forks, and SHALL wait for the configured SonarCloud quality gate without exposing protected credentials to the untrusted build workflow.
+The CI system SHALL submit SonarCloud analysis for every trusted push to `main` and every pull-request revision targeting `main`, including revisions originating from forks, SHALL wait for the configured SonarCloud quality gate without exposing protected credentials to the untrusted build workflow, and SHALL require the exact protected pull-request revision to pass that gate after remediating the six Tier 0 keys normatively identified in the archived `restore-sonar-quality-gate` evidence: `AZ-N-ywQ3_y5QfimGTZy`, `AZ-N-ywQ3_y5QfimGTZz`, `AZ-N-yxh3_y5QfimGTZ0`, `AZ-N-y0t3_y5QfimGTZ2`, `AZ-N-y0t3_y5QfimGTZ7`, and `AZ-N-y0t3_y5QfimGTZ4`.
 
 ### Scenario: Trusted main push is analyzed
 - **WHEN** tests succeed for a trusted push to `main`
@@ -153,8 +153,12 @@ The CI system SHALL submit SonarCloud analysis for every trusted push to `main` 
 - **THEN** the workflow fails visibly on the reported condition, retains the verified report path and `source/` namespace, and requires remediation without issue suppression, threshold reduction, or ruleset bypass
 
 ### Scenario: Previous-version period contains mixed quality debt
-- **WHEN** authenticated Sonar issue data for a broad previous-version new-code period contains Critical smells introduced by this change and findings whose current lines are blamed to earlier unrelated pull requests
-- **THEN** implementation remediates every Critical smell attributed by current-line Git blame to this change, leaves earlier findings open without suppression or acceptance-state changes, records their issue and blame evidence as pre-existing debt, and proves in a new trusted-main analysis that coverage still loads and no change-attributable Critical smell remains
+- **WHEN** authenticated Sonar issue data for a broad previous-version new-code period contains change-attributable Critical smells and documented earlier findings that continue to fail the trusted-main quality gate
+- **THEN** implementation remediates the change-attributable findings and the explicitly selected pre-existing gate blockers through issue-scoped fixes, leaves unrelated historical debt outside the change, records authenticated issue evidence, and does not suppress, accept, reclassify, dismiss, exclude, or bypass any finding
+
+### Scenario: Remediated protected pull-request revision passes
+- **WHEN** all authenticated Critical findings selected as gate blockers are remediated and the resulting exact pull-request revision is analyzed by the protected workflow
+- **THEN** coverage still imports through the verified report path and `source/` namespace, the unchanged `new_code_smells_severity` condition is below its configured threshold for the unchanged new-code period, every other configured condition remains satisfied, and the overall SonarCloud quality gate reports passing
 
 ## Requirement: SonarCloud project identity and analysis credential are operationally valid
 Before live analysis is accepted, the `ensono` SonarQube Cloud organization SHALL contain exactly one canonical project for `Ensono/eirctl`, that project SHALL be bound to the GitHub repository with the fixed key `Ensono_eirctl` and main branch `main`, and the repository SHALL store a current, plan-supported, least-privilege analysis credential as the `SONAR_TOKEN` GitHub Actions secret.
