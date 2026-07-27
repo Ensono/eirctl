@@ -164,17 +164,11 @@ func TestMapKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotKeys := utils.MapKeys(tt.args.m)
-			for _, v := range tt.wantKeys {
-				var found bool
-				for _, vv := range gotKeys {
-					if v == vv {
-						found = true
-						break
-					}
-				}
-				if found == false {
-					t.Errorf("MapKeys() = %v, want %v", gotKeys, tt.wantKeys)
-				}
+			wantKeys := slices.Clone(tt.wantKeys)
+			slices.Sort(gotKeys)
+			slices.Sort(wantKeys)
+			if !slices.Equal(gotKeys, wantKeys) {
+				t.Errorf("MapKeys() = %v, want %v", gotKeys, wantKeys)
 			}
 		})
 	}
