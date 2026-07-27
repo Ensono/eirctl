@@ -325,7 +325,8 @@ func TestSplitIncludedSSHConfigPathsPreservesPlatformPaths(t *testing.T) {
 	}
 }
 
-func TestProcessSSHConfigMergesFileValuesAndPreservesCommandPrecedence(t *testing.T) {
+func sshMergeTestFileConfig(t *testing.T) *ssh_config.Config {
+	t.Helper()
 	fileConfig, err := ssh_config.Decode(strings.NewReader(`Host alias
   Hostname file.example.test
   Port 2200
@@ -341,56 +342,57 @@ func TestProcessSSHConfigMergesFileValuesAndPreservesCommandPrecedence(t *testin
 	if err != nil {
 		t.Fatalf("decode SSH config: %v", err)
 	}
+	return fileConfig
+}
 
-	t.Run("uses file values and legacy first entries", func(t *testing.T) {
-		config := &SSHConfigAuth{}
-		if err := processSSHConfig(fileConfig, config, "alias"); err != nil {
-			t.Fatalf("process SSH config: %v", err)
-		}
-		if config.Port != "2200" || config.User != "file-user" || config.Hostname != "file.example.test" || config.IdentityFile != "/file/identity" || config.StrictHostKeyChecking != "yes" {
-			t.Fatalf("unexpected file-derived scalar config: %+v", config)
-		}
-		if want := []string{"/file/user one", "/file/user two", "/file/user-three"}; !reflect.DeepEqual(config.UserKnownHostsFiles, want) || config.UserKnownHostsFile != want[0] {
-			t.Fatalf("unexpected user known-hosts config: %+v", config)
-		}
-		if want := []string{`C:\ProgramData\ssh\system one`, "/file/system two", "/file/system-three", `\\server\share\known_hosts`}; !reflect.DeepEqual(config.SystemKnownHostsFiles, want) || config.SystemKnownHostsFile != want[0] {
-			t.Fatalf("unexpected system known-hosts config: %+v", config)
-		}
-	})
+func TestProcessSSHConfigUsesFileValuesAndLegacyFirstEntries(t *testing.T) {
+	config := &SSHConfigAuth{}
+	if err := processSSHConfig(sshMergeTestFileConfig(t), config, "alias"); err != nil {
+		t.Fatalf("process SSH config: %v", err)
+	}
+	if config.Port != "2200" || config.User != "file-user" || config.Hostname != "file.example.test" || config.IdentityFile != "/file/identity" || config.StrictHostKeyChecking != "yes" {
+		t.Fatalf("unexpected file-derived scalar config: %+v", config)
+	}
+	if want := []string{"/file/user one", "/file/user two", "/file/user-three"}; !reflect.DeepEqual(config.UserKnownHostsFiles, want) || config.UserKnownHostsFile != want[0] {
+		t.Fatalf("unexpected user known-hosts config: %+v", config)
+	}
+	if want := []string{`C:\ProgramData\ssh\system one`, "/file/system two", "/file/system-three", `\\server\share\known_hosts`}; !reflect.DeepEqual(config.SystemKnownHostsFiles, want) || config.SystemKnownHostsFile != want[0] {
+		t.Fatalf("unexpected system known-hosts config: %+v", config)
+	}
+}
 
-	t.Run("uses defaults when file omits scalar values", func(t *testing.T) {
-		config := &SSHConfigAuth{}
-		if err := processSSHConfig(&ssh_config.Config{}, config, "requested.example.test"); err != nil {
-			t.Fatalf("process empty SSH config: %v", err)
-		}
-		if config.Port != "22" || config.User != "git" || config.Hostname != "requested.example.test" {
-			t.Fatalf("unexpected default config: %+v", config)
-		}
-	})
+func TestProcessSSHConfigUsesDefaults(t *testing.T) {
+	config := &SSHConfigAuth{}
+	if err := processSSHConfig(&ssh_config.Config{}, config, "requested.example.test"); err != nil {
+		t.Fatalf("process empty SSH config: %v", err)
+	}
+	if config.Port != "22" || config.User != "git" || config.Hostname != "requested.example.test" {
+		t.Fatalf("unexpected default config: %+v", config)
+	}
+}
 
-	t.Run("does not replace command values", func(t *testing.T) {
-		config := &SSHConfigAuth{
-			Hostname:              "command.example.test",
-			Port:                  "2222",
-			User:                  "command-user",
-			IdentityFile:          "/command/identity",
-			UserKnownHostsFile:    "/command/user",
-			UserKnownHostsFiles:   []string{"/command/user", "/command/user-two"},
-			SystemKnownHostsFile:  "/command/system",
-			SystemKnownHostsFiles: []string{"/command/system", "/command/system-two"},
-			StrictHostKeyChecking: "no",
-		}
-		if err := processSSHConfig(fileConfig, config, "alias"); err != nil {
-			t.Fatalf("process SSH config: %v", err)
-		}
-		if config.Hostname != "command.example.test" || config.Port != "2222" || config.User != "command-user" || config.IdentityFile != "/command/identity" || config.StrictHostKeyChecking != "no" {
-			t.Fatalf("file config overrode command scalar values: %+v", config)
-		}
-		if want := []string{"/command/user", "/command/user-two"}; !reflect.DeepEqual(config.UserKnownHostsFiles, want) || config.UserKnownHostsFile != want[0] {
-			t.Fatalf("file config overrode command user known-hosts values: %+v", config)
-		}
-		if want := []string{"/command/system", "/command/system-two"}; !reflect.DeepEqual(config.SystemKnownHostsFiles, want) || config.SystemKnownHostsFile != want[0] {
-			t.Fatalf("file config overrode command system known-hosts values: %+v", config)
-		}
-	})
+func TestProcessSSHConfigPreservesCommandPrecedence(t *testing.T) {
+	config := &SSHConfigAuth{
+		Hostname:              "command.example.test",
+		Port:                  "2222",
+		User:                  "command-user",
+		IdentityFile:          "/command/identity",
+		UserKnownHostsFile:    "/command/user",
+		UserKnownHostsFiles:   []string{"/command/user", "/command/user-two"},
+		SystemKnownHostsFile:  "/command/system",
+		SystemKnownHostsFiles: []string{"/command/system", "/command/system-two"},
+		StrictHostKeyChecking: "no",
+	}
+	if err := processSSHConfig(sshMergeTestFileConfig(t), config, "alias"); err != nil {
+		t.Fatalf("process SSH config: %v", err)
+	}
+	if config.Hostname != "command.example.test" || config.Port != "2222" || config.User != "command-user" || config.IdentityFile != "/command/identity" || config.StrictHostKeyChecking != "no" {
+		t.Fatalf("file config overrode command scalar values: %+v", config)
+	}
+	if want := []string{"/command/user", "/command/user-two"}; !reflect.DeepEqual(config.UserKnownHostsFiles, want) || config.UserKnownHostsFile != want[0] {
+		t.Fatalf("file config overrode command user known-hosts values: %+v", config)
+	}
+	if want := []string{"/command/system", "/command/system-two"}; !reflect.DeepEqual(config.SystemKnownHostsFiles, want) || config.SystemKnownHostsFile != want[0] {
+		t.Fatalf("file config overrode command system known-hosts values: %+v", config)
+	}
 }
