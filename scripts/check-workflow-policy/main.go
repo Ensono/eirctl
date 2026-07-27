@@ -627,6 +627,7 @@ cat >analysis/sonar-project.properties <<'PROPERTIES'
 sonar.host.url=https://sonarcloud.io
 sonar.organization=ensono
 sonar.projectKey=Ensono_eirctl
+sonar.scm.provider=git
 sonar.sources=source
 sonar.tests=source
 sonar.inclusions=source/**/*.go
@@ -667,6 +668,7 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.host.url=https://sonarcloud.io
 -Dsonar.organization=ensono
 -Dsonar.projectKey=Ensono_eirctl
+-Dsonar.scm.provider=git
 -Dsonar.sources=source
 -Dsonar.tests=source
 -Dsonar.go.coverage.reportPaths=reports/.coverage/out
