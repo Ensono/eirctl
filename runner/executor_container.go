@@ -99,7 +99,9 @@ func WithContainerClient(client ContainerExecutorIface) ContainerOpts {
 	}
 }
 
-func (e *ContainerExecutor) WithReset(doReset bool) {}
+func (e *ContainerExecutor) WithReset(doReset bool) {
+	// Container executors are created per execution and have no resettable state.
+}
 
 func (e *ContainerExecutor) WithTerminalUtils(tu *TerminalUtils) {
 	e.termUtils = tu
