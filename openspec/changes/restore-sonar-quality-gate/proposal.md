@@ -5,7 +5,7 @@ The latest trusted `main` analysis (`bb3d10dc2360a50752e2c73fe507c427bf14af92`) 
 ## What Changes
 
 - Remediate the six authenticated Critical findings expected to keep `new_code_smells_severity` above the permitted threshold: two cache-test complexity findings, one Git SSH configuration complexity finding, and three trusted workflow-policy findings.
-- Correct two security-significant Git SSH trust-source defects exposed by independent review: honor OpenSSH `GlobalKnownHostsFile` command overrides and preserve escaped, quoted, and multiple known-host paths from SSH configuration before validating or loading them.
+- Correct two security-significant Git SSH trust-source defects exposed by independent review: honor OpenSSH `GlobalKnownHostsFile` command overrides and preserve escaped, quoted, and multiple known-host paths from SSH configuration before validating or loading them; remediate any gate-relevant replacement finding introduced by that correction before acceptance.
 - Remediate the two additional Richard-assigned findings under `scripts/materialize-sonar-source` even though they are Minor and do not currently block the gate.
 - Resolve the evidence-ledger Tier 2 Critical/Major findings only where refreshed issue data and repository inspection establish a behavior-preserving, low-risk change; a drifted or riskier Tier 2 item is explicitly deferred to a separate proposal and cannot delay Tier 0/Tier 1 recovery.
 - Require every issue task to be executable by a smaller implementation model: confirm named preconditions, make one bounded change, run named focused checks, confirm postconditions, and stop for escalation if repository evidence differs from the task.
