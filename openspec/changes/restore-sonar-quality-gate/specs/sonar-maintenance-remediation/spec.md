@@ -53,14 +53,14 @@ Refactors in Git SSH configuration and trusted workflow-policy validation SHALL 
 - **THEN** every existing predicate executes in the same fail-fast order with unchanged action-prefix, immutable-pin, provenance, permission, checkout, and trusted/untrusted boundary semantics
 
 ### Requirement: Sonar closure is verified without policy bypass
-Local checks SHALL NOT be treated as proof that a Sonar issue is closed; final acceptance SHALL use authenticated SonarCloud issue and measure data from a fresh analysis of the exact revision while preserving the existing quality gate, new-code definition, scanner configuration, exclusions, and coverage mapping.
+Local checks SHALL NOT be treated as proof that a Sonar issue is closed; final acceptance SHALL use authenticated SonarCloud issue and measure data from a fresh protected pull-request analysis of the exact source revision while preserving the existing quality gate, new-code definition, scanner configuration, exclusions, and coverage mapping.
 
 #### Scenario: Local remediation checks pass
 - **WHEN** focused and repository-wide tests pass after an issue change
 - **THEN** the implementation records local structural postconditions but does not claim Sonar closure before authenticated analysis
 
-#### Scenario: Fresh analysis closes the scoped findings
-- **WHEN** SonarCloud analyzes the exact protected revision containing the remediations
+#### Scenario: Fresh protected pull-request analysis closes the scoped findings
+- **WHEN** SonarCloud analyzes the exact protected pull-request revision containing the remediations
 - **THEN** `evidence.md` records the exact analyzed revision and gate measures, every mandatory Tier 0/Tier 1 key is closed or absent, every Tier 2 key is closed or absent or has an authenticated drift/defer disposition, no replacement in-scope Critical smell is introduced, and the configured quality gate reports passing without suppression, acceptance, reclassification, dismissal, exclusion, threshold reduction, or ruleset bypass
 
 #### Scenario: Fresh analysis remains red

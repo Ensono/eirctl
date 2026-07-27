@@ -10,13 +10,13 @@ The implementation is intended to be taskable to a smaller coding model. Each ta
 
 **Goals:**
 
-- Close the six Critical findings expected to block the current trusted-main quality gate.
+- Close the six Critical findings expected to block the protected pull-request quality gate.
 - Resolve all remaining Richard-assigned or `scripts/` findings in the investigated set.
 - Resolve a bounded set of other Critical/Major findings whose clean fix is private, behavior-preserving, and supported by focused tests.
 - Preserve workflow trust boundaries, Git SSH precedence and fail-closed host-key behavior, test coverage, public APIs, scanner configuration, coverage mapping, and quality-gate policy.
 - Correct independently reviewed Git SSH trust-source drift so command-side `GlobalKnownHostsFile` and SSH-file quoted, escaped, repeated, and multi-path directives follow the existing verified-SSH contract.
 - Provide issue-by-issue tasks that a smaller model can execute safely by confirming preconditions and postconditions.
-- Produce authenticated post-change evidence from the exact analyzed revision and restore a green trusted-main build.
+- Produce authenticated post-change evidence from the exact protected pull-request revision and restore a green protected pull-request analysis.
 
 **Non-Goals:**
 
@@ -96,7 +96,7 @@ No task may reduce complexity by deleting error paths, weakening exact compariso
 
 ### 5. Separate local verification from authoritative Sonar acceptance
 
-Focused tests and static inspection can prove behavior and structure locally, but only authenticated SonarCloud analysis can close an issue and determine the aggregate gate. Implementation tasks therefore confirm local postconditions without claiming issue closure. A final verification task queries every scoped key and requires a fresh trusted-main analysis of the exact merged revision.
+Focused tests and static inspection can prove behavior and structure locally, but only authenticated SonarCloud analysis can close an issue and determine the aggregate gate. Implementation tasks therefore confirm local postconditions without claiming issue closure. Final acceptance for this change queries every scoped key and requires a fresh protected pull-request analysis of the exact source revision; post-merge trusted-main monitoring remains ordinary branch governance outside this change.
 
 The token is loaded from the maintainer environment only for API calls, never printed, persisted, passed on the command line, or included in artifacts.
 
@@ -111,13 +111,13 @@ Recommended implementation order:
 5. Private compiler and summary refactors.
 6. Git SSH refactor, mandatory trust-source/path-boundary corrections, focused security tests, and independent re-review.
 7. Workflow-policy complexity refactor with mutation/security checks and independent review.
-8. Full validation, PR analysis, exact-main analysis, and issue/gate re-query.
+8. Full validation, protected PR analysis, and issue/gate re-query.
 
 The Git SSH and workflow-policy refactors must not share an implementation commit. Parallel work is permitted only in isolated worktrees on non-overlapping files; otherwise one writer proceeds sequentially. Their independent reviewer must not be the implementing model/person, must record approval or findings in a PR review or `evidence.md`, and must link every finding to its resolution and rerun evidence before the slice is complete.
 
 ## Risks / Trade-offs
 
-- **[Risk] Closing the six keys may not lower the aggregate severity if Sonar attributes a replacement issue to moved code.** → Re-query scoped keys and the quality-gate condition after a fresh exact-revision analysis; do not weaken the gate if it remains red.
+- **[Risk] Closing the six keys may not lower the aggregate severity if Sonar attributes a replacement issue to moved code.** → Re-query scoped keys and the quality-gate condition after a fresh protected PR analysis; do not weaken the gate if it remains red.
 - **[Risk] Workflow-policy extraction could omit or reorder a trust check.** → Preserve explicit ordered phases, run the full mutation matrix and workflow-security checks, and require independent review.
 - **[Risk] SSH extraction or parser correction could change precedence or known-host behavior.** → Add/retain focused scalar, identity, command-side user/global trust-source, quoted/escaped/multi-path/repeated known-host, strict-checking, unknown-host, changed-key, and opt-out tests; require renewed independent approval.
 - **[Risk] Test refactors could make tests pass by weakening them.** → Compare case/assertion inventory before and after and require diff review.
@@ -131,9 +131,9 @@ The Git SSH and workflow-policy refactors must not share an implementation commi
 2. Implement Tier 0 and Tier 1 in reviewable slices, followed by Tier 2 only while its preconditions remain true.
 3. Run focused package/security checks after each slice and repository-wide checks before requesting final review.
 4. Obtain independent review for Git SSH and workflow-policy slices.
-5. Run protected PR Sonar analysis and confirm no new issues on the exact PR revision.
-6. Merge through the protected branch process, run trusted-main analysis for the exact merged revision, and confirm the overall quality gate is green.
-7. If the gate remains red, stop and use authenticated issue/measure evidence to identify the qualifying issue; do not alter policy or expand scope automatically.
+5. Run protected PR Sonar analysis and confirm the exact PR revision has no new qualifying issues and a green quality gate.
+6. Merge through the protected branch process under ordinary branch governance; trusted-main monitoring is not an acceptance task for this change.
+7. If the protected PR gate remains red, stop and use authenticated issue/measure evidence to identify the qualifying issue; do not alter policy or expand scope automatically.
 
 Rollback is ordinary source reversion of the offending slice. Scanner configuration, required checks, quality-gate policy, credential controls, CODEOWNERS, and trusted analysis topology remain in place during rollback.
 
