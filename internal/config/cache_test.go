@@ -128,13 +128,15 @@ func runStoreInCacheTest(t *testing.T, tt storeInCacheTestCase) {
 	}
 }
 
+type getFromCacheTestCase struct {
+	wantErr error
+	want    *config.ContextDefinition
+	cache   func() *config.Cache
+	entry   schema.ImportEntry
+}
+
 func Test_Get_fromCache(t *testing.T) {
-	ttests := map[string]struct {
-		wantErr error
-		want    *config.ContextDefinition
-		cache   func() *config.Cache
-		entry   schema.ImportEntry
-	}{
+	ttests := map[string]getFromCacheTestCase{
 		"successfully gets from cache": {
 			cache: func() *config.Cache {
 				m := mockfo{o: func(n string) (io.Reader, error) {
@@ -217,29 +219,34 @@ func Test_Get_fromCache(t *testing.T) {
 	}
 	for name, tt := range ttests {
 		t.Run(name, func(t *testing.T) {
-
-			t.Setenv("HOME", "/foo")
-			t.Setenv("USERPROFILE", "/foo")
-
-			got, err := tt.cache().Get(tt.entry)
-
-			if tt.wantErr != nil && err == nil {
-				t.Fatalf("got nil err but wanted %v", tt.wantErr)
-			}
-			if err != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Fatalf("wrong error, got %v, want %v", err, tt.wantErr)
-				}
-				return
-			}
-
-			if v, ok := got.Contexts["foo"]; !ok && v != nil {
-				t.Errorf("got %v, want %v", v, &utils.Container{Name: "image:123"})
-			} else {
-				if tt.want != nil && !reflect.DeepEqual(*v, *tt.want) {
-					t.Errorf("objects don't match, got %v, want %v", v, tt.want)
-				}
-			}
+			runGetFromCacheTest(t, tt)
 		})
+	}
+}
+
+func runGetFromCacheTest(t *testing.T, tt getFromCacheTestCase) {
+	t.Helper()
+	t.Setenv("HOME", "/foo")
+	t.Setenv("USERPROFILE", "/foo")
+
+	got, err := tt.cache().Get(tt.entry)
+	if tt.wantErr != nil {
+		if !errors.Is(err, tt.wantErr) {
+			t.Fatalf("wrong error, got %v, want %v", err, tt.wantErr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tt.want == nil {
+		return
+	}
+	value, ok := got.Contexts["foo"]
+	if !ok || value == nil {
+		t.Fatalf("got %v, want %v", value, &utils.Container{Name: "image:123"})
+	}
+	if !reflect.DeepEqual(*value, *tt.want) {
+		t.Errorf("objects don't match, got %v, want %v", value, tt.want)
 	}
 }
