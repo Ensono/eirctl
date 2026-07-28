@@ -12,7 +12,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-connections v0.7.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/go-git/go-billy/v5 v5.9.0
+	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/invopop/jsonschema v0.14.0
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/opencontainers/image-spec v1.1.1
