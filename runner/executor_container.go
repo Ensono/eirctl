@@ -287,7 +287,8 @@ func (e *ContainerExecutor) shell(ctx context.Context, containerConfig *containe
 
 	mutateShellContainerConfig(containerConfig)
 
-	hostConfig.ConsoleSize = [2]uint{uint(size[0]), uint(size[1])}
+	// Docker HostConfig.ConsoleSize uses [height, width].
+	hostConfig.ConsoleSize = [2]uint{uint(size[1]), uint(size[0])}
 
 	createdContainer, err := e.createContainer(ctx, containerConfig, hostConfig, job)
 	if err != nil {

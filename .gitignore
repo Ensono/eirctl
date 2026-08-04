@@ -11,7 +11,7 @@ bin/
 
 # Random
 local/
-
+internal/config/.eirctl-tester
 
 # Generated outputs
 .github/workflows/gha__e__infra__e__sample.yml
