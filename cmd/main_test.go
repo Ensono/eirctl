@@ -11,103 +11,74 @@ import (
 )
 
 func Test_main(t *testing.T) {
-	t.Run("main sanity check", func(t *testing.T) {
-		os.Args = []string{"eirctl", "run", "unknown"}
+	for _, testCase := range []struct {
+		name             string
+		args             []string
+		expectedLogLevel *logrus.Level
+	}{
+		{name: "main sanity check", args: []string{"eirctl", "run", "unknown"}},
+		{name: "main sanity check (explicit debug)", args: []string{"eirctl", "run", "unknown", "--debug"}, expectedLogLevel: logLevel(logrus.DebugLevel)},
+		{name: "main sanity check (explicit verbose)", args: []string{"eirctl", "run", "unknown", "--verbose"}, expectedLogLevel: logLevel(logrus.TraceLevel)},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertRootCommandFailure(t, testCase.args, testCase.expectedLogLevel)
+		})
+	}
 
-		eirctlRootCmd := eirctlcmd.NewEirCtlCmd(context.TODO(), os.Stdout, os.Stderr)
+	for _, testCase := range []struct {
+		name         string
+		args         []string
+		expectedCode int
+	}{
+		{name: "exit code correctly bubbled up", args: []string{"eirctl", "run", "task", "fail_125", "-c", "testdata/eirctl.yaml"}, expectedCode: 125},
+		{name: "exited at eirctl command not found", args: []string{"eirctl", "run", "task", "not-found", "-c", "testdata/eirctl.yaml"}, expectedCode: 1},
+		{name: "exited at eirctl with help", args: []string{"eirctl", "--help"}, expectedCode: 0},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertMainExit(t, testCase.args, testCase.expectedCode)
+		})
+	}
+}
 
-		if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
-			logrus.Fatal(err)
-		}
+func logLevel(level logrus.Level) *logrus.Level {
+	return &level
+}
 
-		setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
+func assertRootCommandFailure(t *testing.T, args []string, expectedLogLevel *logrus.Level) {
+	t.Helper()
+	withTestArgs(t, args)
+	previousLogLevel := logrus.GetLevel()
+	t.Cleanup(func() { logrus.SetLevel(previousLogLevel) })
 
-		if err := eirctlRootCmd.Execute(); err == nil {
-			t.Error("got nil wanted error")
-		}
-	})
+	eirctlRootCmd := eirctlcmd.NewEirCtlCmd(context.TODO(), os.Stdout, os.Stderr)
+	if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
+		t.Fatal(err)
+	}
 
-	t.Run("main sanity check (explicit debug)", func(t *testing.T) {
-		os.Args = []string{"eirctl", "run", "unknown", "--debug"}
+	setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
+	if err := eirctlRootCmd.Execute(); err == nil {
+		t.Error("got nil wanted error")
+	}
+	if expectedLogLevel != nil && logrus.GetLevel() != *expectedLogLevel {
+		t.Errorf("Expected Log Level to be '%s', got: '%s'", *expectedLogLevel, logrus.GetLevel())
+	}
+}
 
-		eirctlRootCmd := eirctlcmd.NewEirCtlCmd(context.TODO(), os.Stdout, os.Stderr)
+func assertMainExit(t *testing.T, args []string, expectedCode int) {
+	t.Helper()
+	withTestArgs(t, args)
+	stdout := &bytes.Buffer{}
+	if code := runMain(stdout, &bytes.Buffer{}); code != expectedCode {
+		t.Fatalf("got exit code %d, wanted %d", code, expectedCode)
+	}
+	if stdout.Len() < 1 {
+		t.Error("got empty error, expected a message")
+	}
+}
 
-		if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
-			logrus.Fatal(err)
-		}
-
-		setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
-
-		if err := eirctlRootCmd.Execute(); err == nil {
-			t.Error("got nil wanted error")
-		}
-
-		logLevel := logrus.GetLevel()
-		if logLevel != logrus.DebugLevel {
-			t.Errorf("Expected Log Level to be '%s', got: '%s'", logrus.DebugLevel, logLevel)
-		}
-	})
-
-	t.Run("main sanity check (explicit verbose)", func(t *testing.T) {
-		os.Args = []string{"eirctl", "run", "unknown", "--verbose"}
-
-		eirctlRootCmd := eirctlcmd.NewEirCtlCmd(context.TODO(), os.Stdout, os.Stderr)
-
-		if err := eirctlRootCmd.InitCommand(eirctlcmd.WithSubCommands()...); err != nil {
-			logrus.Fatal(err)
-		}
-
-		setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
-
-		if err := eirctlRootCmd.Execute(); err == nil {
-			t.Error("got nil wanted error")
-		}
-
-		logLevel := logrus.GetLevel()
-		if logLevel != logrus.TraceLevel {
-			t.Errorf("Expected Log Level to be '%s', got: '%s'", logrus.TraceLevel, logLevel)
-		}
-	})
-	t.Run("exit code correctly bubbled up", func(t *testing.T) {
-		os.Args = []string{"eirctl", "run", "task", "fail_125", "-c", "testdata/eirctl.yaml"}
-		moutW := &bytes.Buffer{}
-		merrW := &bytes.Buffer{}
-		ec := runMain(moutW, merrW)
-
-		if ec != 125 {
-			t.Fatalf("process ran wihout error")
-		}
-
-		if len(moutW.String()) < 1 {
-			t.Errorf("got empty error, expected a message")
-		}
-	})
-	t.Run("exited at eirctl command not found", func(t *testing.T) {
-		os.Args = []string{"eirctl", "run", "task", "not-found", "-c", "testdata/eirctl.yaml"}
-		moutW := &bytes.Buffer{}
-		merrW := &bytes.Buffer{}
-		ec := runMain(moutW, merrW)
-
-		if ec != 1 {
-			t.Fatalf("process ran wihout error")
-		}
-
-		if len(moutW.String()) < 1 {
-			t.Errorf("got empty error, expected a message")
-		}
-	})
-	t.Run("exited at eirctl with help", func(t *testing.T) {
-		os.Args = []string{"eirctl", "--help"}
-		moutW := &bytes.Buffer{}
-		merrW := &bytes.Buffer{}
-		ec := runMain(moutW, merrW)
-
-		if ec != 0 {
-			t.Fatalf("process ran wih error")
-		}
-
-		if len(moutW.String()) < 1 {
-			t.Errorf("got empty error, expected a message")
-		}
-	})
+func withTestArgs(t *testing.T, args []string) {
+	t.Helper()
+	previousArgs := os.Args
+	os.Args = args
+	t.Cleanup(func() { os.Args = previousArgs })
 }

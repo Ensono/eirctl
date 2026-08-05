@@ -56,46 +56,58 @@ func TestGenCi_GithubImpl(t *testing.T) {
 }
 
 func TestGenCi_GithubImpl_ordering(t *testing.T) {
+	workflow := generateNestedWorkflow(t)
 
-	t.Run("is correct in nested tasks", func(t *testing.T) {
-		config := genGraphHelper(t, eirctlTesterYaml)
-
-		gc, err := genci.New("github", config)
-
-		if err != nil {
-			t.Errorf("failed to generate github, %v\n", err)
-		}
-		b, err := gc.Convert(config.Pipelines["foo"])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(b) == 0 {
-			t.Fatal("no bytes written")
-		}
-		// testing unmarshall back using orderedMaps
-		ghConf := &schema.GithubWorkflow{}
-		if err := yaml.Unmarshal(b, ghConf); err != nil {
-			t.Fatal(err)
-		}
-
-		first := ghConf.Jobs.Values["first"].Steps
-
-		if first[2].Name != "foo-_first-_one" {
-			t.Errorf("got: %v, want foo-_first-_one", first[2].Name)
-		}
-		if first[3].Name != "foo-_first-_two" {
-			t.Fatal("")
-		}
-
-		second := ghConf.Jobs.Values["second"].Steps
-		if second[2].Name != "foo-_second-_task3" {
-			t.Fatal("")
-		}
-		if second[5].Name != "foo-_second-_two" {
-			t.Fatal("")
-		}
-
+	assertWorkflowStepOrder(t, workflow, []workflowStepExpectation{
+		{job: "first", index: 2, name: "foo-_first-_one"},
+		{job: "first", index: 3, name: "foo-_first-_two"},
+		{job: "second", index: 2, name: "foo-_second-_task3"},
+		{job: "second", index: 5, name: "foo-_second-_two"},
 	})
+}
+
+type workflowStepExpectation struct {
+	job   string
+	index int
+	name  string
+}
+
+func generateNestedWorkflow(t *testing.T) *schema.GithubWorkflow {
+	t.Helper()
+
+	config := genGraphHelper(t, eirctlTesterYaml)
+	gc, err := genci.New("github", config)
+	if err != nil {
+		t.Fatalf("failed to generate github: %v", err)
+	}
+
+	bytes, err := gc.Convert(config.Pipelines["foo"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bytes) == 0 {
+		t.Fatal("no bytes written")
+	}
+
+	workflow := &schema.GithubWorkflow{}
+	if err := yaml.Unmarshal(bytes, workflow); err != nil {
+		t.Fatal(err)
+	}
+	return workflow
+}
+
+func assertWorkflowStepOrder(t *testing.T, workflow *schema.GithubWorkflow, expectations []workflowStepExpectation) {
+	t.Helper()
+
+	for _, expectation := range expectations {
+		steps := workflow.Jobs.Values[expectation.job].Steps
+		if expectation.index >= len(steps) {
+			t.Fatalf("job %q has %d steps, want step %d named %q", expectation.job, len(steps), expectation.index, expectation.name)
+		}
+		if got := steps[expectation.index].Name; got != expectation.name {
+			t.Errorf("job %q step %d name = %q, want %q", expectation.job, expectation.index, got, expectation.name)
+		}
+	}
 }
 
 var eirctlTesterYaml = []byte(`contexts:
