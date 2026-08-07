@@ -108,7 +108,7 @@ runs:
 [source,yaml]
 ----
   - name: EirctlVersion
-    value: 0.11.4
+    value: v0.11.8
 ----
 The following command can be used to find the latest version of `eirctl`:
 * PowerShell
