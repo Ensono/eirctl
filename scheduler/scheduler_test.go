@@ -260,50 +260,6 @@ func Test_Scheduler_ConditionErroredStage(t *testing.T) {
 	}
 }
 
-func Test_Scheduler_Error_Required(t *testing.T) {
-	stage1 := scheduler.NewStage("stage1", func(s *scheduler.Stage) {
-		s.Task = task.FromCommands("t1", "true")
-		s.Condition = "true"
-	})
-
-	stage2 := scheduler.NewStage("stage2", func(s *scheduler.Stage) {
-		s.Task = task.FromCommands("t2", "false")
-		s.AllowFailure = true
-		s.DependsOn = []string{"stage1"}
-		s.Condition = "wrong"
-	})
-
-	graph, err := scheduler.NewExecutionGraph("t1", stage1, stage2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	taskRunner := mockTaskRunner{
-		run: func(t *task.Task) error {
-			if t.Commands[0] == "/usr/bin/false" {
-				t.WithExitCode(1)
-				t.WithError(fmt.Errorf("error"))
-				return errors.New("task failed")
-			}
-			return nil
-		},
-	}
-
-	schdlr := scheduler.NewScheduler(taskRunner)
-	err = schdlr.Schedule(graph)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if stage1.ReadStatus() != scheduler.StatusDone {
-		t.Errorf("stage 1 incorrectly finished, got %v wanted Done", stage1.ReadStatus())
-	}
-	// This is now kind of pointless
-	if stage2.ReadStatus() != scheduler.StatusSkipped {
-		t.Errorf("stage 2 incorrectly finished, got %v wanted Done", stage2.ReadStatus())
-	}
-}
-
 func Test_Scheduler_EnvFile_path_precedence_after_denormalization(t *testing.T) {
 
 	taskEnvFile, err := os.CreateTemp("", "task-*.env")

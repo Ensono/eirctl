@@ -182,8 +182,9 @@ func getTerminalSizeFromSttyCommand(execCmd func(name string, arg ...string) Cmd
 		return TerminalSize{}, errors.New("utils.getTerminalSizeFromSttyCommand: Expected two integers back from stty")
 	}
 
-	width, err := strconv.Atoi(outputString[0])
-	height, err2 := strconv.Atoi(outputString[1])
+	// `stty size` returns "rows columns", so map to height then width.
+	height, err := strconv.Atoi(outputString[0])
+	width, err2 := strconv.Atoi(outputString[1])
 
 	if err != nil || err2 != nil {
 		logrus.Tracef("utils.getTerminalSizeFromSttyCommand: Expected two numbers as a response, got:\n\t - Width: %d\n\r - Height: %d", width, height)

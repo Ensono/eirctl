@@ -49,70 +49,51 @@ func TestNewVariables(t *testing.T) {
 }
 
 func TestVariables_MergeV2(t *testing.T) {
-	ttests := map[string]struct {
+	tests := map[string]struct {
 		currentVar    *variables.Variables
 		overwriteVars *variables.Variables
-		expect        struct {
-			key string
-			val string
-		}
+		expected      map[string]string
 	}{
 		"value is overwritten": {
 			currentVar:    variables.FromMap(map[string]string{"original": "ignore", "untouched": "foo"}),
 			overwriteVars: variables.FromMap(map[string]string{"original": "new"}),
-			expect: struct {
-				key string
-				val string
-			}{key: "original", val: "new"},
+			expected:      map[string]string{"original": "new", "untouched": "foo"},
 		},
 		"value is left": {
 			currentVar:    variables.FromMap(map[string]string{"original": "ignore", "untouched": "foo"}),
 			overwriteVars: variables.FromMap(map[string]string{"foo": "bar"}),
-			expect: struct {
-				key string
-				val string
-			}{key: "original", val: "ignore"},
+			expected:      map[string]string{"original": "ignore", "untouched": "foo", "foo": "bar"},
 		},
 		"value is merged with nothing to overwrite": {
 			currentVar:    variables.FromMap(map[string]string{"original": "ignore", "untouched": "foo"}),
 			overwriteVars: variables.FromMap(map[string]string{"foo": "bar"}),
-			expect: struct {
-				key string
-				val string
-			}{key: "foo", val: "bar"},
+			expected:      map[string]string{"original": "ignore", "untouched": "foo", "foo": "bar"},
 		},
 	}
-	for name, tt := range ttests {
+	for name, testCase := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := tt.currentVar.Merge(tt.overwriteVars)
-			val, found := got.Map()[tt.expect.key]
-			if !found {
-				t.Errorf("not found %s\n", tt.expect.key)
-			}
-			if val != tt.expect.val {
-				t.Errorf("incorrect value set %q, wanted %q", val, tt.expect.val)
-			}
+			assertVariablesEqual(t, testCase.currentVar.Merge(testCase.overwriteVars), testCase.expected)
 		})
 	}
 
-	// check chaining
 	t.Run("check chaining by precedence", func(t *testing.T) {
-		mainVar := variables.FromMap(map[string]string{})
-		var2 := variables.FromMap(map[string]string{"foo": "bar", "some": "123"})
-		var3 := variables.FromMap(map[string]string{"baz": "qux", "some": "456"})
-		mainVar = mainVar.Merge(var2).Merge(var3)
+		mainVar := variables.FromMap(map[string]string{}).
+			Merge(variables.FromMap(map[string]string{"foo": "bar", "some": "123"})).
+			Merge(variables.FromMap(map[string]string{"baz": "qux", "some": "456"}))
 
-		for _, ss := range [][]string{{"foo", "bar"}, {"some", "456"}, {"baz", "qux"}} {
-			if val, found := mainVar.Map()[ss[0]]; found {
-				if val != ss[1] {
-					t.Errorf("wrong value %q, wanted %q\n", val, ss[1])
-				}
-			} else {
-				t.Errorf("key (%q) not found in mainVar map\n", ss[0])
-			}
-		}
-		if len(mainVar.Map()) != 3 {
-			t.Errorf("wrong number of keys in map %v\n", mainVar)
-		}
+		assertVariablesEqual(t, mainVar, map[string]string{"foo": "bar", "some": "456", "baz": "qux"})
 	})
+}
+
+func assertVariablesEqual(t *testing.T, got *variables.Variables, expected map[string]string) {
+	t.Helper()
+	actual := got.Map()
+	if len(actual) != len(expected) {
+		t.Fatalf("got %d keys, wanted %d: got %#v", len(actual), len(expected), actual)
+	}
+	for key, expectedValue := range expected {
+		if actualValue, found := actual[key]; !found || actualValue != expectedValue {
+			t.Errorf("got %q for key %q, wanted %q", actualValue, key, expectedValue)
+		}
+	}
 }

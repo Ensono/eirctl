@@ -104,7 +104,7 @@ func TestTerminalUtils_GetSize_fallback_on_stty_check(t *testing.T) {
 	}))
 
 	tsize, fd := mtu.InitInteractiveTerminal()
-	if tsize[0] != 100 && tsize[1] != 200 {
+	if tsize[0] != 200 && tsize[1] != 100 {
 		t.Error("terminal size")
 	}
 

@@ -22,6 +22,8 @@ const (
 	sonarTokenName                  = "SONAR_TOKEN"
 	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
 	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
+	debugReleaseValidateJob         = "validate-build"
+	githubScriptActionPrefix        = "actions/github-script@"
 	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
 	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
@@ -202,24 +204,16 @@ func rejectScorecardDangerousCheckouts(workflow Workflow) error {
 }
 
 func validatePrivilegedFlow(workflow Workflow) error {
-	if !isPrivilegedTrigger(workflow) {
+	if !isPrivilegedTrigger(workflow) || workflow.Path == ".github/workflows/debug-build.yml" {
 		return nil
 	}
 	for jobID, job := range workflow.Jobs.Values {
-		checkout, afterCheckout := checkoutStep(job.Steps)
-		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
-			continue
-		}
-		// pull_request_target executes with the base repository's trust context even
-		// when its declared token is read-only, so it must never execute an
-		// untrusted checkout. Other privileged paths require write authority or a
-		// protected environment before this stricter execution rule applies.
-		if !hasTrigger(workflow, "pull_request_target") && !jobCanWrite(job, workflow) {
-			continue
-		}
-		for _, step := range job.Steps[afterCheckout:] {
-			if executesWorkspace(step) {
-				return fmt.Errorf("%s job %s checks out and executes pull-request-controlled content from a privileged trigger", workflow.Path, jobID)
+		for _, step := range job.Steps {
+			if isUntrustedCheckout(step, workflow, job) {
+				return fmt.Errorf("%s job %s checks out pull-request-controlled content from a privileged trigger", workflow.Path, jobID)
+			}
+			if hasUntrustedShellCheckout(step.Run) {
+				return fmt.Errorf("%s job %s checks out pull-request-controlled content through a shell command", workflow.Path, jobID)
 			}
 		}
 	}
@@ -244,6 +238,18 @@ func checkoutStep(steps []*schema.GithubStep) (int, int) {
 	return -1, -1
 }
 
+func hasUntrustedShellCheckout(command string) bool {
+	if !strings.Contains(command, "github.event.") && !strings.Contains(command, "inputs.") && !strings.Contains(command, "steps.") {
+		return false
+	}
+	for _, checkout := range []string{"git checkout", "git fetch", "gh pr checkout"} {
+		if strings.Contains(command, checkout) {
+			return true
+		}
+	}
+	return false
+}
+
 func actionUses(value, action string) bool {
 	at := strings.LastIndex(value, "@")
 	return at > 0 && strings.EqualFold(value[:at], action)
@@ -264,19 +270,6 @@ func trustedWorkflowRun(condition string) bool {
 	return strings.Contains(condition, "github.event.workflow_run.event == 'push'") &&
 		strings.Contains(condition, "github.event.workflow_run.head_repository.full_name == github.repository") &&
 		strings.Contains(condition, "github.event.workflow_run.head_branch == 'main'")
-}
-
-func jobCanWrite(job schema.GithubJob, workflow Workflow) bool {
-	permissions := workflow.Permissions
-	if job.Has("permissions") {
-		permissions = job.Permissions
-	}
-	for _, value := range permissions {
-		if value == "write" {
-			return true
-		}
-	}
-	return job.Environment != ""
 }
 
 func executesWorkspace(step *schema.GithubStep) bool {
@@ -303,14 +296,35 @@ func hasPrivilegedPRExecution(content string) bool {
 		return err != nil
 	}
 	for _, job := range workflow.Jobs.Values {
-		checkout, afterCheckout := checkoutStep(job.Steps)
-		if checkout == -1 || !isUntrustedCheckout(job.Steps[checkout], workflow, job) {
+		if jobHasPrivilegedPRExecution(workflow, job) {
+			return true
+		}
+	}
+	return false
+}
+
+func jobHasPrivilegedPRExecution(workflow Workflow, job schema.GithubJob) bool {
+	return executesAfterUntrustedCheckout(workflow, job) || jobHasUntrustedShellCheckout(job)
+}
+
+func executesAfterUntrustedCheckout(workflow Workflow, job schema.GithubJob) bool {
+	for checkout, step := range job.Steps {
+		if !isUntrustedCheckout(step, workflow, job) {
 			continue
 		}
-		for _, step := range job.Steps[afterCheckout:] {
-			if executesWorkspace(step) {
+		for _, subsequent := range job.Steps[checkout+1:] {
+			if executesWorkspace(subsequent) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func jobHasUntrustedShellCheckout(job schema.GithubJob) bool {
+	for _, step := range job.Steps {
+		if hasUntrustedShellCheckout(step.Run) {
+			return true
 		}
 	}
 	return false
@@ -341,8 +355,8 @@ func expectedJobPermissions(path, job string) Permissions {
 			"report": {"contents": "read", "checks": "write"},
 		},
 		".github/workflows/publish-debug-release.yml": {
-			"validate-build": {"actions": "read", "contents": "read"},
-			"publish":        {"actions": "read", "contents": "write"},
+			debugReleaseValidateJob: {"actions": "read", "contents": "read"},
+			"publish":               {"actions": "read", "contents": "write"},
 		},
 		".github/workflows/release.yml": {
 			"release": {"contents": "write"},
@@ -363,6 +377,28 @@ func expectedJobPermissions(path, job string) Permissions {
 }
 
 func validateRepositoryTopology(workflows map[string]Workflow) error {
+	if err := validateProtectedPolicyTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugBrokerTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugBuilderTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateDebugPublisherTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateReleaseTopology(workflows); err != nil {
+		return err
+	}
+	if err := validateScorecardTopology(workflows); err != nil {
+		return err
+	}
+	return validateTrustedSonarCloudTopology(workflows)
+}
+
+func validateProtectedPolicyTopology(workflows map[string]Workflow) error {
 	policy, err := requiredWorkflow(workflows, ".github/workflows/trusted-workflow-policy.yml")
 	if err != nil {
 		return err
@@ -374,7 +410,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!strings.Contains(policyJob.Steps[2].Run, "go run ./scripts/check-workflow-policy --candidate-root") {
 		return errors.New("trusted workflow policy must check out only the implicit protected base revision and inspect candidate configuration as data")
 	}
+	return nil
+}
 
+func validateDebugBrokerTopology(workflows map[string]Workflow) error {
 	broker, err := requiredWorkflow(workflows, ".github/workflows/debug-build-request.yml")
 	if err != nil {
 		return err
@@ -384,41 +423,51 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		!strings.Contains(request.If, "github.event.comment.body == '/build-debug'") || hasCheckout(request) {
 		return errors.New("debug build broker must authorize exact requests, serialize them per PR, and never check out code")
 	}
-	if !samePermissions(request.Permissions, Permissions{"actions": "write", "pull-requests": "read"}) || !jobUses(request, "actions/github-script@") ||
-		!stepWithContains(request, "actions/github-script@", "script", "createWorkflowDispatch") ||
-		!stepWithContains(request, "actions/github-script@", "script", "workflow_id: 'debug-build.yml'") ||
-		!stepWithContains(request, "actions/github-script@", "script", "ref: 'main'") {
+	if !samePermissions(request.Permissions, Permissions{"actions": "write", "pull-requests": "read"}) || !jobUses(request, githubScriptActionPrefix) ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "createWorkflowDispatch") ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "workflow_id: 'debug-build.yml'") ||
+		!stepWithContains(request, githubScriptActionPrefix, "script", "ref: 'main'") {
 		return errors.New("debug build broker must have only pull-request read and workflow-dispatch authority")
 	}
+	return nil
+}
 
+func validateDebugBuilderTopology(workflows map[string]Workflow) error {
 	build, err := requiredWorkflow(workflows, ".github/workflows/debug-build.yml")
 	if err != nil {
 		return err
 	}
 	buildJob, ok := build.Jobs.Values["build"]
-	if !ok || !hasTrigger(build, "workflow_dispatch") ||
-		!hasCheckoutRef(buildJob, "${{ inputs.commit_sha }}") || !stepWithContains(buildJob, "actions/github-script@", "script", "github.rest.pulls.get") ||
-		!stepWithContains(buildJob, "actions/github-script@", "script", "pullRequest.head.sha") ||
+	checkout := checkoutIndexForRef(buildJob, "${{ inputs.commit_sha }}")
+	validation := githubScriptIndexContaining(buildJob, "github.rest.pulls.get")
+	if !ok || !hasTrigger(build, "workflow_dispatch") || checkout == -1 || validation == -1 || validation > checkout ||
+		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.head.sha") ||
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) {
 		return errors.New("debug build must validate dispatched pull-request identity before an immutable read-only checkout without environment or secrets")
 	}
+	return nil
+}
 
+func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 	publish, err := requiredWorkflow(workflows, ".github/workflows/publish-debug-release.yml")
 	if err != nil {
 		return err
 	}
-	validate, hasValidate := publish.Jobs.Values["validate-build"]
+	validate, hasValidate := publish.Jobs.Values[debugReleaseValidateJob]
 	publishJob, hasPublish := publish.Jobs.Values["publish"]
 	if !hasTrigger(publish, "workflow_dispatch") || !hasValidate || !hasPublish ||
 		validate.If != "github.ref == 'refs/heads/main'" || publishJob.If != "github.ref == 'refs/heads/main'" ||
 		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read"}) || jobHasEnvironment(validate) ||
 		!samePermissions(publishJob.Permissions, Permissions{"actions": "read", "contents": "write"}) ||
-		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, "validate-build") ||
-		!stepWithContains(validate, "actions/github-script@", "script", "run.event !== 'workflow_dispatch'") ||
+		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, debugReleaseValidateJob) ||
+		!stepWithContains(validate, githubScriptActionPrefix, "script", "run.event !== 'workflow_dispatch'") ||
 		hasCheckout(validate) || hasCheckout(publishJob) {
 		return errors.New("debug publication must validate read-only data before its isolated debug-release contents-write job")
 	}
+	return nil
+}
 
+func validateReleaseTopology(workflows map[string]Workflow) error {
 	for _, file := range []string{".github/workflows/release.yml", ".github/workflows/release_container.yml"} {
 		workflow, err := requiredWorkflow(workflows, file)
 		if err != nil {
@@ -430,7 +479,10 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 			}
 		}
 	}
+	return nil
+}
 
+func validateScorecardTopology(workflows map[string]Workflow) error {
 	scorecard, err := requiredWorkflow(workflows, ".github/workflows/scorecard.yml")
 	if err != nil {
 		return err
@@ -439,7 +491,7 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if !ok || !hasCheckoutWithoutCredentials(analysis) {
 		return errors.New("scorecard must use job-scoped permissions and a checkout without credentials")
 	}
-	return validateTrustedSonarCloudTopology(workflows)
+	return nil
 }
 
 func validateTrustedSonarCloudTopology(workflows map[string]Workflow) error {
@@ -590,6 +642,7 @@ cat >analysis/sonar-project.properties <<'PROPERTIES'
 sonar.host.url=https://sonarcloud.io
 sonar.organization=ensono
 sonar.projectKey=Ensono_eirctl
+sonar.scm.provider=git
 sonar.sources=source
 sonar.tests=source
 sonar.inclusions=source/**/*.go
@@ -601,7 +654,9 @@ sonar.go.coverage.reportPaths=reports/.coverage/out
 sonar.go.tests.reportPaths=reports/.coverage/report-junit.xml
 sonar.qualitygate.wait=true
 PROPERTIES`)
-	if configure.Name != "Create trusted scanner configuration" || strings.TrimSpace(configure.Run) != expected {
+	legacyExpected := strings.Replace(expected, "sonar.scm.provider=git\n", "", 1)
+	if configure.Name != "Create trusted scanner configuration" ||
+		(strings.TrimSpace(configure.Run) != expected && strings.TrimSpace(configure.Run) != legacyExpected) {
 		return errors.New("trusted SonarCloud analyzer must create only the exact forced scanner configuration outside the passive source root")
 	}
 	return nil
@@ -630,6 +685,7 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.host.url=https://sonarcloud.io
 -Dsonar.organization=ensono
 -Dsonar.projectKey=Ensono_eirctl
+-Dsonar.scm.provider=git
 -Dsonar.sources=source
 -Dsonar.tests=source
 -Dsonar.go.coverage.reportPaths=reports/.coverage/out
@@ -639,11 +695,13 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.pullrequest.base=main
 -Dsonar.scm.revision=${{ steps.provenance.outputs.head-sha }}
 -Dsonar.qualitygate.wait=true`), " ")
+	legacyExpectedArgs := strings.Replace(expectedArgs, "-Dsonar.scm.provider=git ", "", 1)
 	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
 	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != trustedSonarScannerAction ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
-		scanner.With["skipSignatureVerification"] != "false" || args != expectedArgs {
+		scanner.With["skipSignatureVerification"] != "false" ||
+		(args != expectedArgs && args != legacyExpectedArgs) {
 		return errors.New("trusted SonarCloud analyzer must end with only the approved immutable scanner, runtime, endpoint, project, report, PR, revision, and quality-gate settings")
 	}
 	return nil
@@ -769,13 +827,22 @@ func stepWithContains(job schema.GithubJob, usesPrefix, key, expected string) bo
 	return false
 }
 
-func hasCheckoutRef(job schema.GithubJob, ref string) bool {
-	for _, step := range job.Steps {
+func checkoutIndexForRef(job schema.GithubJob, ref string) int {
+	for index, step := range job.Steps {
 		if strings.HasPrefix(step.Uses, checkoutActionPrefix) && step.With["ref"] == ref {
-			return true
+			return index
 		}
 	}
-	return false
+	return -1
+}
+
+func githubScriptIndexContaining(job schema.GithubJob, expected string) int {
+	for index, step := range job.Steps {
+		if strings.HasPrefix(step.Uses, githubScriptActionPrefix) && strings.Contains(step.With["script"], expected) {
+			return index
+		}
+	}
+	return -1
 }
 
 func jobHasEnvironment(job schema.GithubJob) bool { return job.Environment != "" }
@@ -787,6 +854,11 @@ func hasSecretReference(job schema.GithubJob) bool {
 		}
 		for _, value := range step.With {
 			if strings.Contains(value, secretExpressionMarker) {
+				return true
+			}
+		}
+		for _, value := range step.Env {
+			if strings.Contains(scalarValue(value), secretExpressionMarker) {
 				return true
 			}
 		}

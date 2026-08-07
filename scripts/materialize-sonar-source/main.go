@@ -89,19 +89,19 @@ type blobResponse struct {
 	Content  string `json:"content"`
 }
 
+type pullRepositoryResponse struct {
+	FullName string `json:"full_name"`
+}
+
 type pullResponse struct {
 	Number int `json:"number"`
 	Base   struct {
-		Ref  string `json:"ref"`
-		Repo struct {
-			FullName string `json:"full_name"`
-		} `json:"repo"`
+		Ref  string                 `json:"ref"`
+		Repo pullRepositoryResponse `json:"repo"`
 	} `json:"base"`
 	Head struct {
-		SHA  string `json:"sha"`
-		Repo struct {
-			FullName string `json:"full_name"`
-		} `json:"repo"`
+		SHA  string                 `json:"sha"`
+		Repo pullRepositoryResponse `json:"repo"`
 	} `json:"head"`
 }
 
