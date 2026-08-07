@@ -475,7 +475,7 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 		case "userknownhostsfile":
 			sshConf.UserKnownHostsFile = v
 			sshConf.UserKnownHostsFiles = append(sshConf.UserKnownHostsFiles, v)
-		case "systemknownhostsfile":
+		case "globalknownhostsfile", "systemknownhostsfile":
 			sshConf.SystemKnownHostsFile = v
 			sshConf.SystemKnownHostsFiles = append(sshConf.SystemKnownHostsFiles, v)
 		case "stricthostkeychecking":
@@ -491,7 +491,7 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	if len(sshConf.UserKnownHostsFiles) > 0 {
 		sshConf.UserKnownHostsFile = sshConf.UserKnownHostsFiles[0]
 	}
-	sshConf.SystemKnownHostsFiles = sshOptionValues(args, "systemknownhostsfile")
+	sshConf.SystemKnownHostsFiles = sshOptionValues(args, "globalknownhostsfile", "systemknownhostsfile")
 	if len(sshConf.SystemKnownHostsFiles) > 0 {
 		sshConf.SystemKnownHostsFile = sshConf.SystemKnownHostsFiles[0]
 	}
@@ -499,7 +499,7 @@ func parseGitSshCommandEnv() *SSHConfigAuth {
 	return sshConf
 }
 
-func sshOptionValues(args []string, option string) []string {
+func sshOptionValues(args []string, options ...string) []string {
 	var values []string
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
@@ -515,11 +515,20 @@ func sshOptionValues(args []string, option string) []string {
 			continue
 		}
 		key, value, found := strings.Cut(argument, "=")
-		if found && strings.EqualFold(key, option) {
+		if found && matchesSSHOption(key, options) {
 			values = append(values, value)
 		}
 	}
 	return values
+}
+
+func matchesSSHOption(key string, options []string) bool {
+	for _, option := range options {
+		if strings.EqualFold(key, option) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseDefaultSshConfigFilePaths parses GIT_SSH_COMMAND and sets the default paths for:
@@ -558,50 +567,221 @@ func parseDefaultSshConfigFilePaths() *SSHConfigAuth {
 	return defaultFilePaths
 }
 
-// processSSHConfig extracts the relevant info from a config file, merging with the overrides and defaults
+// processSSHConfig extracts the relevant info from a config file, merging with
+// values supplied through GIT_SSH_COMMAND, which take precedence.
 func processSSHConfig(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
-
-	if sshConfig.Port == "" {
-		filePort, _ := fileSSHCfg.Get(hostname, "Port")
-		sshConfig.Port = filePort
-		if sshConfig.Port == "" {
-			sshConfig.Port = "22"
-		}
+	mergeSSHScalarDefaults(fileSSHCfg, sshConfig, hostname)
+	mergeSSHIdentityFile(fileSSHCfg, sshConfig, hostname)
+	if err := mergeSSHKnownHostsFiles(fileSSHCfg, sshConfig, hostname); err != nil {
+		return err
 	}
-	if sshConfig.User == "" {
-		fileUser, _ := fileSSHCfg.Get(hostname, "User")
-		sshConfig.User = fileUser
-		if sshConfig.User == "" {
-			sshConfig.User = "git"
-		}
-	}
+	mergeSSHStrictHostKeyChecking(fileSSHCfg, sshConfig, hostname)
+	return nil
+}
 
-	if sshConfig.Hostname == "" {
-		fileHostname, _ := fileSSHCfg.Get(hostname, "Hostname")
-		sshConfig.Hostname = fileHostname
-		if sshConfig.Hostname == "" {
-			sshConfig.Hostname = hostname
-		}
-	}
+func mergeSSHScalarDefaults(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
+	setSSHConfigValue(fileSSHCfg, hostname, "Port", "22", &sshConfig.Port)
+	setSSHConfigValue(fileSSHCfg, hostname, "User", "git", &sshConfig.User)
+	setSSHConfigValue(fileSSHCfg, hostname, "Hostname", hostname, &sshConfig.Hostname)
+}
 
+func setSSHConfigValue(fileSSHCfg *ssh_config.Config, hostname, option, defaultValue string, value *string) {
+	if *value != "" {
+		return
+	}
+	*value, _ = fileSSHCfg.Get(hostname, option)
+	if *value == "" {
+		*value = defaultValue
+	}
+}
+
+func mergeSSHIdentityFile(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
 	if sshConfig.IdentityFile == "" {
-		fileIdentityFile, _ := fileSSHCfg.Get(hostname, "IdentityFile")
-		sshConfig.IdentityFile = fileIdentityFile
+		sshConfig.IdentityFile, _ = fileSSHCfg.Get(hostname, "IdentityFile")
 	}
-	if len(sshConfig.UserKnownHostsFiles) == 0 && sshConfig.UserKnownHostsFile == "" {
-		sshConfig.UserKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "UserKnownHostsFile")
-		if len(sshConfig.UserKnownHostsFiles) > 0 {
-			sshConfig.UserKnownHostsFile = sshConfig.UserKnownHostsFiles[0]
+}
+
+func mergeSSHKnownHostsFiles(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) error {
+	if err := mergeSSHKnownHostsFile(fileSSHCfg, hostname, "UserKnownHostsFile", &sshConfig.UserKnownHostsFiles, &sshConfig.UserKnownHostsFile); err != nil {
+		return err
+	}
+	return mergeSSHKnownHostsFile(fileSSHCfg, hostname, "GlobalKnownHostsFile", &sshConfig.SystemKnownHostsFiles, &sshConfig.SystemKnownHostsFile)
+}
+
+func mergeSSHKnownHostsFile(fileSSHCfg *ssh_config.Config, hostname, option string, paths *[]string, legacyPath *string) error {
+	if len(*paths) > 0 || *legacyPath != "" {
+		return nil
+	}
+	var err error
+	*paths, err = sshConfigPathValues(fileSSHCfg, hostname, option)
+	if err != nil {
+		return err
+	}
+	if len(*paths) > 0 {
+		*legacyPath = (*paths)[0]
+	}
+	return nil
+}
+
+func sshConfigPathValues(fileSSHCfg *ssh_config.Config, hostname, option string) ([]string, error) {
+	var paths []string
+	for _, host := range fileSSHCfg.Hosts {
+		hostPaths, err := sshConfigHostPathValues(host, hostname, option)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, hostPaths...)
+	}
+	return paths, nil
+}
+
+func sshConfigHostPathValues(host *ssh_config.Host, hostname, option string) ([]string, error) {
+	if !host.Matches(hostname) {
+		return nil, nil
+	}
+	var paths []string
+	for _, node := range host.Nodes {
+		nodePaths, err := sshConfigNodePathValues(node, hostname, option)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, nodePaths...)
+	}
+	return paths, nil
+}
+
+func sshConfigNodePathValues(node ssh_config.Node, hostname, option string) ([]string, error) {
+	switch value := node.(type) {
+	case *ssh_config.KV:
+		if strings.EqualFold(value.Key, option) {
+			return splitSSHConfigPathDirective(value), nil
+		}
+	case *ssh_config.Include:
+		return includedSSHConfigPathValues(value, hostname, option)
+	}
+	return nil, nil
+}
+
+func includedSSHConfigPathValues(include *ssh_config.Include, hostname, option string) ([]string, error) {
+	included, _ := include.GetAll(hostname, option)
+	var paths []string
+	for _, value := range included {
+		includedPaths, err := splitIncludedSSHConfigPaths(value)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, includedPaths...)
+	}
+	return paths, nil
+}
+
+func splitIncludedSSHConfigPaths(value string) ([]string, error) {
+	if strings.Contains(value, `"`) || hasEscapedSSHPathSeparator(value) {
+		paths, ok := splitSSHConfigPaths(restoreStrippedSSHConfigQuotes(value))
+		if ok {
+			return paths, nil
 		}
 	}
-	if len(sshConfig.SystemKnownHostsFiles) == 0 && sshConfig.SystemKnownHostsFile == "" {
-		sshConfig.SystemKnownHostsFiles, _ = fileSSHCfg.GetAll(hostname, "GlobalKnownHostsFile")
-		if len(sshConfig.SystemKnownHostsFiles) > 0 {
-			sshConfig.SystemKnownHostsFile = sshConfig.SystemKnownHostsFiles[0]
+
+	fields := strings.Fields(value)
+	if len(fields) < 2 {
+		return []string{value}, nil
+	}
+	literalExists := sshConfigPathExists(value)
+	fieldsExist := allSSHConfigPathsExist(fields)
+	if literalExists && fieldsExist {
+		return nil, fmt.Errorf("%w\nambiguous known-host path boundaries in included SSH configuration", ErrGitOperation)
+	}
+	if fieldsExist {
+		return fields, nil
+	}
+	return []string{value}, nil
+}
+
+func restoreStrippedSSHConfigQuotes(value string) string {
+	firstQuote := strings.IndexByte(value, '"')
+	lastQuote := strings.LastIndexByte(value, '"')
+	if firstQuote > 0 && lastQuote > firstQuote && lastQuote+1 < len(value) && !isSSHConfigWhitespace(value[firstQuote-1]) && !isSSHConfigWhitespace(value[lastQuote+1]) {
+		return `"` + value + `"`
+	}
+	return value
+}
+
+func isSSHConfigWhitespace(character byte) bool {
+	return character == ' ' || character == '\t' || character == '\r' || character == '\n'
+}
+
+func allSSHConfigPathsExist(paths []string) bool {
+	for _, path := range paths {
+		if !sshConfigPathExists(path) {
+			return false
 		}
 	}
+	return true
+}
+
+func sshConfigPathExists(path string) bool {
+	info, err := os.Stat(filepath.Clean(utils.NormalizeHome(path)))
+	return err == nil && !info.IsDir()
+}
+
+func splitSSHConfigPathDirective(value *ssh_config.KV) []string {
+	line := strings.TrimSpace(value.String())
+	if len(line) < len(value.Key) {
+		return []string{value.Value}
+	}
+	line = strings.TrimSpace(line[len(value.Key):])
+	line = strings.TrimSpace(strings.TrimPrefix(line, "="))
+	paths, ok := splitSSHConfigPaths(line)
+	if !ok || len(paths) == 0 {
+		return []string{value.Value}
+	}
+	return paths
+}
+
+func hasEscapedSSHPathSeparator(value string) bool {
+	for index, character := range value {
+		if character == '\\' && index+1 < len(value) && isSSHPathEscape(rune(value[index+1])) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitSSHConfigPaths(value string) ([]string, bool) {
+	paths, err := shell.Fields(escapeSSHPathVariables(preserveSSHPathBackslashes(value)), nil)
+	return paths, err == nil
+}
+
+func escapeSSHPathVariables(value string) string {
+	var escaped strings.Builder
+	for index, character := range value {
+		if character == '$' && (index == 0 || value[index-1] != '\\') {
+			escaped.WriteRune('\\')
+		}
+		escaped.WriteRune(character)
+	}
+	return escaped.String()
+}
+
+func preserveSSHPathBackslashes(value string) string {
+	characters := []rune(value)
+	var preserved strings.Builder
+	for index, character := range characters {
+		if character == '\\' && index+1 < len(characters) && !isSSHPathEscape(characters[index+1]) {
+			preserved.WriteRune('\\')
+		}
+		preserved.WriteRune(character)
+	}
+	return preserved.String()
+}
+
+func isSSHPathEscape(character rune) bool {
+	return character == ' ' || character == '\t' || character == '\'' || character == '"' || character == '#'
+}
+
+func mergeSSHStrictHostKeyChecking(fileSSHCfg *ssh_config.Config, sshConfig *SSHConfigAuth, hostname string) {
 	if sshConfig.StrictHostKeyChecking == "" {
 		sshConfig.StrictHostKeyChecking, _ = fileSSHCfg.Get(hostname, "StrictHostKeyChecking")
 	}
-	return nil
 }

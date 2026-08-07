@@ -446,6 +446,51 @@ func mockClientHelper(t *testing.T, mcc mockContainerClient) (*runner.ContainerE
 }
 
 func Test_ContainerExecutor_shell(t *testing.T) {
+	t.Run("maps TerminalSize [width,height] to Docker ConsoleSize [height,width]", func(t *testing.T) {
+		t.Parallel()
+		stdin := bytes.NewBufferString("")
+		stdout := output.NewSafeWriter(new(bytes.Buffer))
+		stderr := output.NewSafeWriter(&bytes.Buffer{})
+		respCh := make(chan container.WaitResponse)
+		errCh := make(chan error)
+		conn := NewMockConn()
+
+		mcc := mockContainerClientHelper(t, respCh, errCh, &bytes.Reader{}, conn)
+
+		var gotConsoleSize [2]uint
+		mcc.create = func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			gotConsoleSize = hostConfig.ConsoleSize
+			return container.CreateResponse{ID: "created0-123"}, nil
+		}
+
+		ce, configContext, cleanup := mockClientHelper(t, mcc)
+		defer cleanup()
+
+		ce.WithTerminalUtils(runner.NewTerminalUtils(&mockTerminal{getSizeFn: func(_ int) (runner.TerminalSize, error) {
+			return runner.TerminalSize{120, 40}, nil // TerminalSize is [width, height]
+		}}, runner.WithCustomFD(os.Stdin, os.Stdout)))
+
+		go func() {
+			respCh <- container.WaitResponse{Error: nil, StatusCode: 0}
+		}()
+
+		if _, err := ce.Execute(context.TODO(), &runner.Job{
+			Stdin:   io.NopCloser(stdin),
+			Stdout:  stdout,
+			Stderr:  stderr,
+			Dir:     configContext.Dir,
+			IsShell: true,
+			Env:     variables.NewVariables(),
+			Vars:    variables.NewVariables(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		if gotConsoleSize != [2]uint{40, 120} {
+			t.Fatalf("got ConsoleSize %v, want [40 120] ([height width])", gotConsoleSize)
+		}
+	})
+
 	t.Run("correctly gets output", func(t *testing.T) {
 		t.Parallel()
 		stdin := bytes.NewBufferString("")

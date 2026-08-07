@@ -23,6 +23,8 @@ var (
 	Revision = "aaaa1234"
 )
 
+const noSummaryFlag = "no-summary"
+
 type EirCtlCmd struct {
 	ctx        context.Context
 	Cmd        *cobra.Command
@@ -71,8 +73,8 @@ func NewEirCtlCmd(ctx context.Context, channelOut, channelErr io.Writer) *EirCtl
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.DryRun, "dry-run", "", false, "dry run")
 	_ = tc.viperConf.BindPFlag("dry-run", tc.Cmd.PersistentFlags().Lookup("dry-run"))
 
-	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.NoSummary, "no-summary", "", false, "show summary")
-	_ = tc.viperConf.BindPFlag("no-summary", tc.Cmd.PersistentFlags().Lookup("no-summary"))
+	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.NoSummary, noSummaryFlag, "", false, "show summary")
+	_ = tc.viperConf.BindPFlag(noSummaryFlag, tc.Cmd.PersistentFlags().Lookup(noSummaryFlag))
 
 	tc.Cmd.PersistentFlags().BoolVarP(&tc.rootFlags.Quiet, "quiet", "q", false, "quiet mode")
 	_ = tc.viperConf.BindPFlag("quiet", tc.Cmd.PersistentFlags().Lookup("quiet"))
