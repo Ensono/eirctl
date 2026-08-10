@@ -5,6 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
 [![Lint and Test](https://github.com/Ensono/eirctl/actions/workflows/pr.yml/badge.svg?branch=main)](https://github.com/Ensono/eirctl/actions/workflows/pr.yml?query=branch%3Amain)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Ensono/eirctl/badge)](https://scorecard.dev/viewer/?uri=github.com/Ensono/eirctl)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13762/badge)](https://www.bestpractices.dev/projects/13762)
 
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=bugs&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=sqale_index&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
@@ -460,11 +461,9 @@ The error `tls: failed to verify certificate: x509: certificate signed by unknow
 
 Setting `GOPROXY=direct` forces Go to fetch packages directly from their source repositories, bypassing any proxies that may be intercepting certificates.
 
-## How to contribute?
+## Contributing
 
-Feel free to contribute in any way you want. Share ideas, submit issues, create pull requests.
-You can start by improving this [README.md](https://github.com/Ensono/eirctl/blob/master/README.md) or suggesting new [features](https://github.com/Ensono/eirctl/issues)
-Thank you!
+Feedback, bug reports, enhancement ideas, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution process, validation commands, and guidance for reporting security vulnerabilities privately.
 
 ## License
 
