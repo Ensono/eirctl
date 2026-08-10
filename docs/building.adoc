@@ -1,0 +1,20 @@
+== Building eirctl documentation
+
+The documentation build is declared in the repository-root `docs.json` file. It renders `docs/index.adoc` as HTML and PDF without publishing either output.
+
+== Prerequisites
+
+* Go, to run the repository-local `eirctl` command.
+* Docker Engine, or a Docker-API-compatible OCI runtime such as Podman with its Docker-compatible socket exposed to `eirctl`.
+* Network access to pull the pinned `docker.io/ensono/eir-asciidoctor` image on its first use.
+
+== Build locally
+
+From the repository root, run:
+
+[source,shell]
+----
+go run cmd/main.go run docs:build --verbose
+----
+
+The task writes deterministic generated output to `outputs/docs/html` and `outputs/docs/pdf`. Generated output is validation evidence and must not be committed.

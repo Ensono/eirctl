@@ -1,0 +1,34 @@
+== V2 migration
+
+=== Changes
+
+* Contexts
+** Containers are first-class citizens.
+** The default container mount point is `/workspace/.taskctl`.
+** Update absolute paths to use that mount point, or prefer relative paths because `eirctl` sets the working directory to the repository root.
+* Environment and envfiles
+** `env` is available on contexts, pipelines, and tasks.
+** Values merge in this order: `Context < Pipelines < Tasks`; task values take precedence.
+** `eirctl.env` is read at the context level.
+* Scheduler
+** Graph denormalization gives every path to a reused task a unique identity.
+
+=== Environment
+
+`REGISTRY_AUTH_FILE` points to registry authentication data in the following format:
+
+[source,json]
+----
+{
+  "auths": {
+    "registry.url": {
+      "auth": "base64AuthString"
+    }
+  }
+}
+----
+
+[NOTE]
+====
+The authentication value is generally a base64-encoded `username:password` value; the authentication function assumes that format. Support for an `identitytoken` will be added when a use case requires it.
+====

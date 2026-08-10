@@ -1,0 +1,92 @@
+== Installation
+
+=== Getting started
+
+Download a prebuilt binary for your system from https://github.com/Ensono/eirctl/releases[GitHub Releases]. `eirctl` is available for Windows, macOS, and Linux on `amd64` and `arm64` architectures.
+
+=== Install
+
+==== Linux binary
+
+[TIP]
+====
+Windows Subsystem for Linux users can follow the Linux instructions from a WSL terminal.
+====
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-linux-amd64 -o eirctl
+----
+
+==== macOS binary
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
+----
+
+On Linux and macOS, install system-wide by placing the executable in `/usr/local/bin`:
+
+[source,bash]
+----
+chmod +x eirctl
+sudo mv eirctl /usr/local/bin
+----
+
+Alternatively, install it for the current user:
+
+[source,bash]
+----
+chmod +x eirctl
+mkdir -p "$HOME/.local/bin"
+mv eirctl "$HOME/.local/bin"
+----
+
+[CAUTION]
+====
+Some distributions do not add `$HOME/.local/bin` to `PATH` automatically. Ensure that the directory exists, has appropriate permissions, and is added to your shell profile before restarting the shell.
+====
+
+==== Windows binary
+
+Download the Windows binary manually, or use PowerShell to download it and place it on `PATH`. Prefer a directory in the current user's home directory, such as `C:\Users\<user>\bin`.
+
+[source,powershell]
+----
+$binDir = "${env:HOMEDRIVE}${env:HOMEPATH}\bin"
+New-Item -Path $binDir -ItemType Directory -ErrorAction SilentlyContinue
+Invoke-WebRequest -Uri https://github.com/Ensono/eirctl/releases/latest/download/eirctl-windows-amd64.exe -OutFile "${binDir}\eirctl.exe"
+$env:PATH = "${env:PATH};${binDir}"
+----
+
+=== Verify installation
+
+[source,bash]
+----
+eirctl --version
+----
+
+The command reports the installed semantic version and revision, for example `eirctl version v<version>-<revision>`.
+
+=== Different architectures
+
+Download the release that matches the target architecture: `amd64` for Intel/AMD processors and `arm64` for ARM processors.
+
+==== ARM-based Macs
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-arm64 -o eirctl
+----
+
+==== Intel-based Macs
+
+[source,bash]
+----
+curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-amd64 -o eirctl
+----
+
+=== Usage
+
+* `eirctl` runs the interactive task prompt.
+* `eirctl --help` (or `eirctl -h`) lists available commands and options.

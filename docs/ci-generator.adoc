@@ -1,0 +1,49 @@
+== CI generator
+
+Generate CI YAML files from an `eirctl` pipeline definition. The design discussion is available in https://github.com/Ensono/taskctl/issues/16[the original taskctl issue].
+
+=== Internals
+
+The internal execution graph is an n-ary tree of stages. Its root is an `eirctl` pipeline. A pipeline may contain tasks that run in parallel or in an order defined by `depends_on`.
+
+[source,mermaid]
+----
+flowchart TD
+    A(Start pipeline x) --> B(task a)
+    A --> C(task b)
+    A --> D(task c)
+    B --> E(task e)
+    C --> E(task e)
+    D --> F(task d)
+    F --> E
+    E --> X(Finish pipeline x)
+----
+
+The example starts `task a`, `task b`, and `task c` in parallel. `task d` waits for `task c`; `task e` waits for `task a`, `task b`, and `task d`.
+
+=== Implementation
+
+`eirctl` properties are mapped to CI-specific implementations.
+
+[source,mermaid]
+----
+flowchart TD
+    A[eirctl Pipeline] --> |GitHub| B{Job}
+    B --> |GitHub| C{Steps}
+    C -->|eirctl| D[Step 1 - GitHub]
+    C -->|eirctl| E[Step 2 - GitHub]
+    C -->|eirctl| F[Step 3 - GitHub]
+----
+
+=== Supported generators
+
+The list of supported generators grows as implementations are added. To add one, follow the strategy pattern in the https://github.com/Ensono/eirctl/blob/main/internal/genci/genci.go[genci package]; https://github.com/Ensono/eirctl/blob/main/internal/genci/githubimpl.go[githubimpl] is an example and remains in beta.
+
+Currently implemented:
+
+* GitHub
+* More generators are planned.
+
+=== Sample configuration
+
+The https://github.com/Ensono/eirctl/blob/main/cmd/eirctl/testdata/gha.sample.yml[GitHub Actions generator fixture] is used by tests and documentation. Generated workflow output is intentionally not stored in `.github/workflows/`; generated examples must not become executable repository workflows.

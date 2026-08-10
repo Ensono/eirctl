@@ -1,0 +1,93 @@
+== Artifacts
+
+[NOTE]
+====
+`eirctl` no longer scrapes standard output as default output storage after every task.
+====
+
+A task can publish file outputs or a dotenv-format output. Downstream tasks in a pipeline can then consume the stored values.
+
+=== Dotenv
+
+Artifacts are useful inside pipelines. Use `depends_on` to ensure that the producing task completes before a consumer runs. Outputs are available across contexts.
+
+The following example uses the default context to create a dotenv artifact and then consumes it from a container context:
+
+[source,yaml]
+----
+summary: true
+debug: true
+output: prefixed
+
+contexts:
+  newdocker:ctx:
+    container:
+      name: alpine:latest
+    envfile:
+      exclude:
+        # These are excluded by default.
+        - PATH
+        - HOME
+        - TMPDIR
+
+pipelines:
+  tester:
+    - task: task:one
+    - task: task:two
+      depends_on:
+        - task:one
+
+tasks:
+  task:one:
+    env:
+      ORIGINAL_VAR: foo123
+    command:
+      - echo "task one ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo123"
+      - echo ORIGINAL_VAR=foo333 > .artifact.env
+    after:
+      # Runs in a new context.
+      - echo ORIGINAL_VAR=shouldNOTBEUSED > .artifact.env
+    artifacts:
+      name: test_env_from_task_one
+      path: .artifact.env
+      type: dotenv
+
+  task:two:
+    command:
+      - echo "task:two ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo333"
+    context: newdocker:ctx
+----
+
+=== Environment (experimental)
+
+When a command assigns or exports a Bash-style variable and its artifact capture type is `env`, downstream pipeline tasks can consume that variable.
+
+Prefix exported values with `EIRCTL_TASK_OUTPUT_`:
+
+[source,yaml]
+----
+tasks:
+  run:container:nouveau:
+    context: nouveau:container
+    command: |
+      echo EIRCTL_TASK_OUTPUT_FOO=$FOO
+    env:
+      FOO: bar
+    artifacts:
+      type: env
+
+  consume:out:
+    command: |
+      echo $FOO
+
+pipelines:
+  set-out:
+    - task: run:container:nouveau
+    - task: consume:out
+      depends_on: run:container:nouveau
+----
+
+[NOTE]
+====
+The variable must be set directly in the task command, not in a script invoked by that command.
+====

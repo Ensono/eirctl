@@ -1,0 +1,9 @@
+{
+  "outputRoot": "outputs/docs",
+  "html": {
+    "entry": "html/index.html"
+  },
+  "pdf": {
+    "entry": "pdf/index.pdf"
+  }
+}

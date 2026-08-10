@@ -23,7 +23,11 @@
 
 Whilst it is built within the Ensono ecosystem and is used within the Ensono Independent Runner and Ensono Stacks, **it can and is used in isolation**.
 
-## [Installation](./docs/installation.md)
+## [Installation](./docs/installation.adoc)
+
+## Documentation
+
+The canonical documentation entry point is [docs/index.adoc](./docs/index.adoc). It links to installation, imports, artifacts, watchers, CI generation, graph internals, V2 migration, CI security, and local documentation builds.
 
 ## Development prerequisites
 
@@ -38,11 +42,11 @@ Key concepts, see below for more details.
 - [task](#tasks) → defines a series of commands and their possible variations which compile down to a job
 - [contexts](#contexts)
 - [pipelines](#pipelines)
-- [imports](./docs/import.md)
+- [imports](./docs/import.adoc)
 
 Additional concepts:
 
-- [execution graphs](./docs/graph-implementation.md)
+- [execution graphs](./docs/graph-implementation.adoc)
 - [native container support](#docker-context)
 
 ### CLI
@@ -61,7 +65,7 @@ The CLI offers a range of commands, most of them needs a valid config file.
 - `shell`: Shell into the supplied container-context, works only with the native container context. (Beta Feature)
 - `show`: Shows task's details.
 - `validate`: Validates config file.
-- `watch`: Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.md)).
+- `watch`: Watches changes in directories to perform certain tasks (see [watchers](docs/watchers.adoc)).
 
 ## Tasks
 
@@ -212,7 +216,7 @@ The `SetMe` variable will be checked before the command is templated and will fa
 
 ### Storing task's output
 
-For more information about storing the task output and picking it up by another task see the [artifacts](./docs/artifacts.md) for more details.
+For more information about storing the task output and picking it up by another task see the [artifacts](./docs/artifacts.adoc) for more details.
 
 > [!NOTE]
 > Future iteration should include a custom remote backend like S3, GCS, etc...
@@ -312,7 +316,7 @@ eirctl has several output formats:
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 
-The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.md#environment-variables).
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.adoc#environment-variables).
 
 > [!NOTE]
 > _envfile_ property on the context allows for further customization of the injected environment.

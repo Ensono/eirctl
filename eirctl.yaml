@@ -15,6 +15,15 @@ contexts:
     container:
       name: mirror.gcr.io/bash:5.0.18-alpine3.22@sha256:943f4381e5c98f3be2f505464cd4b84ec84715251abf30f37476d3865ddcc2ce
 
+  docs:
+    container:
+      name: docker.io/ensono/eir-asciidoctor:1.2.81@sha256:e6d4d42394bcd3de42bbed653b0162f811cff33f8f9670a2c60cca89107b490d
+      shell: pwsh
+      shell_args:
+        - -NoProfile
+        - -Command
+      enable_mount: true
+
 pipelines:
   build:binary:
     - task: clean
@@ -37,6 +46,16 @@ pipelines:
         VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
 
 tasks:
+  docs:build:
+    context: docs
+    description: Builds HTML and PDF documentation declared by docs.json.
+    command: |
+      $ErrorActionPreference = "Stop"
+      Import-Module /modules/EnsonoBuild/EnsonoBuild.psd1 -ErrorAction Stop
+      Build-Documentation -Config /eirctl/docs.json -BasePath /eirctl -Verbose
+      Copy-Item -Recurse -Force /eirctl/docs/svg /eirctl/outputs/docs/html/svg
+      node /eirctl/scripts/validate-docs-output.mjs --manifest /eirctl/scripts/docs-output-manifest.json
+
   build:
     context: go1x
     description: Builds Go binary
