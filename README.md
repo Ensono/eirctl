@@ -3,7 +3,8 @@
 ![eirctl logo](./docs/eirctl-logo.svg)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Ensono/eirctl.svg)](https://pkg.go.dev/github.com/Ensono/eirctl)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Ensono/eirctl)](https://goreportcard.com/report/github.com/Ensono/eirctl)
+[![Lint and Test](https://github.com/Ensono/eirctl/actions/workflows/pr.yml/badge.svg?branch=main)](https://github.com/Ensono/eirctl/actions/workflows/pr.yml?query=branch%3Amain)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Ensono/eirctl/badge)](https://scorecard.dev/viewer/?uri=github.com/Ensono/eirctl)
 
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=bugs&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=sqale_index&token=e86946cc9dca27f76752e1e7ba256b38a4aa9196)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)

@@ -4,7 +4,7 @@
 
 * Contexts
 ** Containers are first-class citizens.
-** The default container mount point is `/workspace/.taskctl`.
+** The default container mount point is `/eirctl`.
 ** Update absolute paths to use that mount point, or prefer relative paths because `eirctl` sets the working directory to the repository root.
 * Environment and envfiles
 ** `env` is available on contexts, pipelines, and tasks.
