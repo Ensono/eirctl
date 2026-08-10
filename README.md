@@ -317,7 +317,7 @@ eirctl has several output formats:
 
 Contexts allow you to set up execution environment, variables, binary which will run your task, up/down commands etc.
 
-The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.adoc#environment-variables).
+The context has the lowest precedence in environment variable setting - i.e. it will be overwritten by pipeline → task level variables - [more info here](./docs/graph-implementation.adoc#_environment_variables).
 
 > [!NOTE]
 > _envfile_ property on the context allows for further customization of the injected environment.
