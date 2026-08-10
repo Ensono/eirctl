@@ -7,7 +7,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
 
 import:
-  - https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/shared/infra/tf.yaml
+  - https://raw.githubusercontent.com/Ensono/eirctl/v0.11.8/shared/terraform/eirctl.yaml
   - git::ssh://private-repo.org/org123/shared-libs//eirctl/security/scanning.yaml?ref=v0.0.1
   - ./local/relative/to/cli/eirctl.yaml
   - /absolute/path/eirctl.yaml

@@ -63,11 +63,12 @@ checkout `ref` entirely. Trusted release workflows use the literal
 variable. The release job fails closed before GitVersion, builds,
 registry login, tagging, or publication if protected `main` has
 advanced or the completed upstream run does not match. Release checkouts
-never persist credentials; the binary release job receives its
-`contents: write` token only in the Git Data API tag-creation step
-after the build. The structural checker rejects the Scorecard dynamic
-checkout forms and requires this static-checkout-plus-verification and
-non-persistent-credential topology for every release job.
+never persist credentials. The binary release job has job-level
+`contents: write`, used to create the Git Data API tag after the build
+and to publish the GitHub Release. The structural checker rejects the
+Scorecard dynamic checkout forms and requires this
+static-checkout-plus-verification and non-persistent-credential topology
+for every release job.
 
 === Authoritative workflow policy
 

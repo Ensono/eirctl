@@ -88,5 +88,5 @@ curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-
 
 === Usage
 
-* `eirctl` runs the interactive task prompt.
+* `eirctl run` opens the interactive task selector.
 * `eirctl --help` (or `eirctl -h`) lists available commands and options.

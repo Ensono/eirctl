@@ -55,7 +55,7 @@ Additional concepts:
 The CLI offers a range of commands, most of them needs a valid config file.
 
 > [!NOTE]
-> `eirctl <pipeline|task>` will behave as `eirctl run pipeline|task`
+> Run a pipeline or task with `eirctl run <pipeline-or-task>`. Running `eirctl run` without a target opens the interactive task selector.
 
 - `completion`: Generate the autocompletion script for the specified shell (`bash`, `fish`, `powershell` or `zsh`).
 - `generate`: Generates a CI definition in a target implementation from a `eirctl` pipeline definition.

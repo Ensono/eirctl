@@ -5,13 +5,13 @@
 `eirctl` no longer scrapes standard output as default output storage after every task.
 ====
 
-A task can publish file outputs or a dotenv-format output. Downstream tasks in a pipeline can then consume the stored values.
+Tasks can propagate dotenv-format values or experimental environment values to downstream tasks in a pipeline. Although `file` is a defined artifact type, file artifacts are not currently processed and do not propagate to downstream tasks.
 
 === Dotenv
 
 Artifacts are useful inside pipelines. Use `depends_on` to ensure that the producing task completes before a consumer runs. Outputs are available across contexts.
 
-The following example uses the default context to create a dotenv artifact and then consumes it from a container context:
+The following example uses the default context to create a dotenv artifact and then consumes it from a container context. Task-level `after` commands run after artifact capture in the task's configured context; they are distinct from context cleanup hooks.
 
 [source,yaml]
 ----
@@ -45,7 +45,7 @@ tasks:
       - echo "task one ORIGINAL_VAR => ${ORIGINAL_VAR} should be foo123"
       - echo ORIGINAL_VAR=foo333 > .artifact.env
     after:
-      # Runs in a new context.
+      # Runs after artifact capture in the task's configured context.
       - echo ORIGINAL_VAR=shouldNOTBEUSED > .artifact.env
     artifacts:
       name: test_env_from_task_one
