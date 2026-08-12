@@ -15,23 +15,14 @@ contexts:
     container:
       name: mirror.gcr.io/bash:5.0.18-alpine3.22@sha256:943f4381e5c98f3be2f505464cd4b84ec84715251abf30f37476d3865ddcc2ce
 
-  docs:
+  asciidoc:
     container:
-      name: docker.io/ensono/eir-asciidoctor:1.2.81@sha256:e6d4d42394bcd3de42bbed653b0162f811cff33f8f9670a2c60cca89107b490d
-      shell: pwsh
-      shell_args:
-        - -NoProfile
-        - -Command
-      enable_mount: true
-
-  ascii:doc:
-    container:
-      name: docker.io/asciidoctor/docker-asciidoctor:main@sha256:9402b6473af7da74a9de829275e45657d5d5d4dbc11aeef4deab55a19670ac23
+      name: docker.io/asciidoctor/docker-asciidoctor:1.106.0@sha256:6266e05784c2d8ece9d9fe5e593b12c3beebebbc467135fd6f4a56269c93cea3
       enable_mount: true
 
   node24:
     container:
-      name: docker.io/node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+      name: docker.io/node:24.19.0-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
       enable_mount: true
 
 pipelines:
@@ -64,33 +55,26 @@ pipelines:
         - gen:docs:pdf
 
 tasks:
-  docs:build:
-    context: docs
-    description: Builds HTML and PDF documentation declared by docs.json.
-    command: |
-      $ErrorActionPreference = "Stop"
-      Import-Module /modules/EnsonoBuild/EnsonoBuild.psd1 -ErrorAction Stop
-      Build-Documentation -Config /eirctl/docs.json -BasePath /eirctl -Verbose
-      Copy-Item -Recurse -Force /eirctl/docs/svg /eirctl/outputs/docs/html/svg
-      node /eirctl/scripts/validate-docs-output.mjs --manifest /eirctl/scripts/docs-output-manifest.json
-
   gen:docs:html:
-    context: ascii:doc
-    description: Generates HTML documentation from AsciiDoc sources.
+    context: asciidoc
+    description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.
     command:
       - |
-        asciidoctor -b html5 -o .eirctl/outputs/docs/html/index.html docs/index.adoc
+        mkdir -p .eirctl/outputs/docs/html
+        asciidoctor --failure-level WARN -b html5 -o .eirctl/outputs/docs/html/index.html docs/index.adoc
         cp -rf docs/svg .eirctl/outputs/docs/html/svg
-  
+
   gen:docs:pdf:
-    context: ascii:doc
-    description: Generates PDF documentation from AsciiDoc sources.
+    context: asciidoc
+    description: Renders docs/index.adoc as PDF beneath .eirctl/outputs/docs.
     command:
-      - asciidoctor-pdf -o .eirctl/outputs/docs/pdf/index.pdf docs/index.adoc
+      - |
+        mkdir -p .eirctl/outputs/docs/pdf
+        asciidoctor-pdf --failure-level WARN -o .eirctl/outputs/docs/pdf/index.pdf docs/index.adoc
 
   gen:docs:validate:
     context: node24
-    description: Validates the generated documentation.
+    description: Validates the repository-owned rendered-output manifest beneath .eirctl/outputs/docs.
     command:
       - |
         node scripts/validate-docs-output.mjs \

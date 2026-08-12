@@ -35,10 +35,10 @@ go run -race cmd/main.go run lints
 go run cmd/main.go run pipeline gha:unit:test --verbose
 
 # Build and validate documentation when documentation changes
-go run cmd/main.go run docs:build --verbose
+go run cmd/main.go run build:docs --verbose
 ```
 
-The test pipeline generates coverage and JUnit report files under `.coverage/`. The documentation build writes generated output under `outputs/docs/`; do not commit generated documentation output.
+The test pipeline generates coverage and JUnit report files under `.coverage/`. The documentation build writes generated output under `.eirctl/outputs/docs/`; do not commit generated documentation output.
 
 ## Community standards
 

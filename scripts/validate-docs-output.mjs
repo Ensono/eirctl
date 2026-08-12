@@ -114,7 +114,7 @@ async function main() {
   console.log(`Validated documentation output: ${htmlEntry} and ${pdfEntry}`);
 }
 
-main().catch((error) => {
+await main().catch((error) => {
   console.error(`Documentation output validation failed: ${error.message}`);
   process.exitCode = 1;
 });

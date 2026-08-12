@@ -1,9 +1,0 @@
-{
-  "title": "index",
-  "output": "{{ basepath }}/outputs/docs/{{ format }}",
-  "path": "{{ basepath }}/docs/index.adoc",
-  "formats": [
-    "html",
-    "pdf"
-  ]
-}

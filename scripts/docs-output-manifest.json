@@ -1,5 +1,5 @@
 {
-  "outputRoot": "outputs/docs",
+  "outputRoot": ".eirctl/outputs/docs",
   "html": {
     "entry": "html/index.html"
   },

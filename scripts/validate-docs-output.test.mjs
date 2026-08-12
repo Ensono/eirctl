@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "validate-docs-output.mjs");
 const manifest = {
-  outputRoot: "outputs/docs",
+  outputRoot: ".eirctl/outputs/docs",
   html: { entry: "html/index.html" },
   pdf: { entry: "pdf/index.pdf" }
 };
@@ -37,6 +37,16 @@ async function withFixture(callback) {
     await rm(value.directory, { recursive: true, force: true });
   }
 }
+
+test("accepts complete valid output", async () => {
+  await withFixture(async ({ manifestPath, output }) => {
+    await writeFile(path.join(output, "html", "index.html"), "<!doctype html><html><img src=\"images/logo.svg\"></html>");
+    await mkdir(path.join(output, "html", "images"));
+    await writeFile(path.join(output, "html", "images", "logo.svg"), "<svg></svg>");
+    await writeFile(path.join(output, "pdf", "index.pdf"), "%PDF-1.7\n");
+    await assert.doesNotReject(runValidator(manifestPath, output));
+  });
+});
 
 test("fails when a required output is missing", async () => {
   await withFixture(async ({ manifestPath, output }) => {
