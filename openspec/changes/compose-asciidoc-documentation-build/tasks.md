@@ -30,5 +30,5 @@
 - [x] 5.2 Run `build:docs` through an available Docker-API-compatible runtime, directly inspect the HTML/PDF entries and copied assets, and confirm generated files remain ignored beneath `.eirctl/`.
 - [x] 5.3 Run `scripts/check-immutable-ci-dependencies.sh` and `scripts/check-workflow-security.sh` after the workflow and runtime changes.
 - [x] 5.4 Run the relevant lint, Go test, and build checks, plus configured pre-commit checks if present, without weakening existing policies.
-- [ ] 5.5 Complete `evidence.md` with final authoritative registry URLs, tags/digests, architectures, available compressed and pulled/on-disk footprints, PR run/job URLs, total job and build-step timings, artifact names/sizes/contents, and the baseline comparison; do not treat hosted-runner timing as a hard correctness gate.
+- [x] 5.5 Complete `evidence.md` with final authoritative registry URLs, tags/digests, architectures, available compressed and pulled/on-disk footprints, PR run/job URLs, total job and build-step timings, artifact names/sizes/contents, and the baseline comparison; do not treat hosted-runner timing as a hard correctness gate.
 - [x] 5.6 Verify every modified and added `asciidoc-documentation-build` scenario, confirm there is one canonical local/CI build contract, and run strict OpenSpec validation before requesting review.

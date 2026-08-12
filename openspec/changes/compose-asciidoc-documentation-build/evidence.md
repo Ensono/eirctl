@@ -34,7 +34,19 @@ The previous composed-pipeline trial is available at <https://github.com/Ensono/
 
 ## Final-change CI evidence
 
-No pull request has yet been created for this uncommitted OpenSpec implementation. Add the resulting run/job URLs, artifact name, size, inspected contents, and job/build-step timings here after CI completes.
+The final documentation implementation run completed successfully:
+
+| Item | Evidence |
+| --- | --- |
+| PR | <https://github.com/Ensono/eirctl/pull/143> |
+| Workflow run | <https://github.com/Ensono/eirctl/actions/runs/31597370303> |
+| Documentation job | <https://github.com/Ensono/eirctl/actions/runs/31597370303/job/94116069199> |
+| Total Documentation job duration | 48 seconds (2026-08-12T12:38:02Z to 2026-08-12T12:38:50Z) |
+| Build-and-validate step duration | 37 seconds (2026-08-12T12:38:10Z to 2026-08-12T12:38:47Z) |
+| Artifact | `rendered-documentation-31597370303-1`, 120,779 bytes, SHA-256 `1150a07465c9db368850b91d545d91afc708520978d1c2524cc742f946c9a41c` |
+| Inspected artifact contents | `html/index.html`, `html/svg/denormalized.svg`, `html/svg/legend.svg`, `html/svg/normalized.svg`, `pdf/index.pdf` |
+
+The final implementation job is 16 seconds shorter than the recorded 64-second shared-image baseline. This timing comparison is supporting evidence only; it is not a correctness gate.
 
 ## Pre-existing dependency finding
 
