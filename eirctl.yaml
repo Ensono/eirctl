@@ -60,9 +60,10 @@ tasks:
     description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.
     command:
       - |
+        rm -rf .eirctl/outputs/docs/html
         mkdir -p .eirctl/outputs/docs/html
         asciidoctor --failure-level WARN -b html5 -o .eirctl/outputs/docs/html/index.html docs/index.adoc
-        cp -rf docs/svg .eirctl/outputs/docs/html/svg
+        cp -rf docs/svg .eirctl/outputs/docs/html
 
   gen:docs:pdf:
     context: asciidoc
