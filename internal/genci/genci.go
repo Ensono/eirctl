@@ -2,7 +2,7 @@
 // eirctl pipeline nodes.
 //
 // This is a translation layer between eirctl concepts of tasks, pipelines and contexts into the world of CI tools yaml syntax.
-// See a list of supported tools and overview [here](https://github.com/Ensono/eirctl/blob/master/docs/ci-generator.md).
+// See a list of supported tools and overview [here](https://github.com/Ensono/eirctl/blob/main/docs/ci-generator.adoc).
 //
 //	Sample output in github
 //	```yaml

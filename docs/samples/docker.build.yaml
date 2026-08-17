@@ -17,7 +17,7 @@ contexts:
         - --security-opt seccomp=unconfined
         - --security-opt label=disable
     env:
-      DOCKER_CONFIG: /workspace/.taskctl/.docker
+      DOCKER_CONFIG: /eirctl/.docker
     envfile:
       exclude:
         - HOME
@@ -27,12 +27,12 @@ contexts:
       # some container with the executor from kaniko in it
       name: docker.io/dnitsch/kaniko-test:0.0.3
     env:
-      # /workspace/.taskctl is the default path where the current working directory gets mounted to
+      # /eirctl is the default path where the current working directory is mounted
       # ensure you have a step before that runs relevant credential generation
       # Depending on your use case the auth credentials need to look in a certain way
       # https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#pushing-to-different-registries
       #
-      DOCKER_CONFIG: /workspace/.taskctl/.docker
+      DOCKER_CONFIG: /eirctl/.docker
 
 pipelines:
   tag:push:image:
@@ -56,7 +56,7 @@ tasks:
     description: |
       Pushes an image to registry
 
-      Example: taskctl run build:push:image -c docs/samples/docker.build.yaml
+      Example: eirctl run build:push:image -c docs/samples/docker.build.yaml
     context: docker:build
     command:
       - executor --context . --dockerfile Dockerfile --destination dnitsch/app-kaniko-test:0.0.7
@@ -66,7 +66,7 @@ tasks:
     description: |
       builds multi arch images and pushes them to registry
 
-      Example: taskctl run podman:build:push -c docs/samples/docker.build.yaml
+      Example: eirctl run podman:build:push -c docs/samples/docker.build.yaml
     command:
       - |
         podman build --platform=linux/amd64 -f Dockerfile -t dnitsch/app-podman-test:${BUILD_VERSION}-linux-amd64 .

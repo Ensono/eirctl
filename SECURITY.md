@@ -6,7 +6,9 @@ Security fixes are provided for the latest released version of eirctl. Please up
 
 ## Reporting a Vulnerability
 
-Please report suspected security vulnerabilities privately to [stacks@ensono.com](mailto:stacks@ensono.com). Do not open a public GitHub issue for a potential vulnerability.
+Please report suspected security vulnerabilities through [GitHub Private Vulnerability Reporting](https://github.com/Ensono/eirctl/security/advisories/new). Do not open a public GitHub issue for a potential vulnerability.
+
+If you cannot use the GitHub reporting form, email [stacks@ensono.com](mailto:stacks@ensono.com).
 
 Include, where possible:
 

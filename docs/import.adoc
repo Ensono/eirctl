@@ -1,0 +1,52 @@
+== Imports
+
+`eirctl` can merge configuration files from local and remote sources.
+
+[source,yaml]
+----
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
+
+import:
+  - https://raw.githubusercontent.com/Ensono/eirctl/v0.11.8/shared/terraform/eirctl.yaml
+  - git::ssh://private-repo.org/org123/shared-libs//eirctl/security/scanning.yaml?ref=v0.0.1
+  - ./local/relative/to/cli/eirctl.yaml
+  - /absolute/path/eirctl.yaml
+----
+
+=== HTTPS
+
+For HTTPS imports, ensure that the URL returns the configuration contents directly. On GitHub, use a `raw.githubusercontent.com` URL.
+
+[NOTE]
+====
+Use the `.yaml` extension where possible.
+====
+
+=== Git
+
+For Git imports, use SSH for private repositories. HTTPS is suitable for public repositories when the provider does not offer a raw-content URL, such as GitHub.
+
+[IMPORTANT]
+====
+The import value must match `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`.
+====
+
+Supported Git protocols are:
+
+* SSH
+* HTTPS
+* FILE
+
+[TIP]
+====
+An optional `ref` can identify a branch, tag, or commit SHA.
+====
+
+[IMPORTANT]
+====
+Set `GIT_SSH_PASSPHRASE` when the selected SSH key is encrypted with a passphrase. This setting is global: once set, it is used across all organizations and repositories.
+====
+
+=== Filesystem
+
+Filesystem imports support relative and absolute paths.

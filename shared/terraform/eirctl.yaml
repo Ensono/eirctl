@@ -28,7 +28,7 @@ tasks:
 
       If you want to run the correction locally upon a CI failure
 
-      `taskctl run tf:lint:format -- -additional-flag`
+      `eirctl run tf:lint:format -- -additional-flag`
     command:
       - |
         terraform fmt -diff -recursive {{ if .ArgsList }}{{ .Args }}{{ end }} ${TF_DIR}

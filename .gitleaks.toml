@@ -1,0 +1,54 @@
+# Extend the pinned Gitleaks default rules. These exclusions are limited to
+# reviewed historical test-fixture commits; they do not suppress future findings.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-key"
+
+  [[rules.allowlists]]
+  description = "Historical SSH test-key fixtures"
+  condition = "AND"
+  commits = [
+    "be7ef09e974e52e911b8e830fa8fdbaf7215d099",
+    "f7ba368888a624c5b70f55c3e991514163190cfb",
+    "2370b207b4ef4c555eb3c191a884e583b47d9e40",
+    "d90a923cab6444e6122ba403e2b551c23b0ad174",
+  ]
+  paths = [
+    '''^internal/config/loader_git_test\.go$''',
+  ]
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Historical container test-token fixtures"
+  condition = "AND"
+  commits = [
+    "6612e57921786b87990209e9830097c71ab1ac44",
+    "7dca729b427ad6fb401c4b33e97115f50a3341c7",
+  ]
+  paths = [
+    '''^runner/executor_container_test\.go$''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Historical removed container test-token fixtures"
+  condition = "AND"
+  commits = [
+    "aaa96beee577e7e21a950927f303842142338779",
+  ]
+  paths = [
+    '''^runner/container_test\.go$''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Historical invalid SonarCloud token recorded in archived evidence"
+  condition = "AND"
+  commits = [
+    "88e5c22be87723af900d8827e9e312291ee2ebd5",
+  ]
+  paths = [
+    '''^openspec/changes/archive/2026-07-27-restore-sonar-quality-gate/evidence\.md$''',
+  ]
