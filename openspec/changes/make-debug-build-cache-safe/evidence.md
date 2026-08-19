@@ -50,12 +50,12 @@ These broad checks were run and were not weakened or bypassed:
 - Simulated the authoritative boundary by running the unmodified `origin/main` checker from detached worktree `/tmp/eirctl-origin-main` against bottom-branch candidate workflow/configuration data; it passed.
 - Bottom-branch focused tests, full Go tests, Go vet, pre-commit, workflow security, and strict OpenSpec validation passed locally.
 - Submitted native GitHub stack #152 with the official `github/gh-stack` extension:
-  - bottom policy transition: PR 151, https://github.com/Ensono/eirctl/pull/151, `fix/debug-build-policy-transition` → `main`;
-  - top strict workflow cutover: PR 150, https://github.com/Ensono/eirctl/pull/150, `fix/vulns-2026-08-19` → `fix/debug-build-policy-transition`.
-- PR 151 GitHub Actions checks passed, including protected policy, CodeQL Actions, lint, tests, and documentation. SonarCloud reported a failed external quality gate caused by 13 critical maintainability findings (code duplication and cognitive complexity), with 0 new bugs and 0 new vulnerabilities; those findings are being fixed rather than bypassed.
+  - bottom policy transition: PR 151, https://github.com/Ensono/eirctl/pull/151, `fix/debug-build-policy-transition` → `main`, initial commit `18daa14`;
+  - top strict workflow cutover: PR 150, https://github.com/Ensono/eirctl/pull/150, `fix/vulns-2026-08-19` → `fix/debug-build-policy-transition`, tip `1152411` at initial stack submission.
+- PR 151 GitHub Actions checks passed, including protected policy, CodeQL Actions, lint, tests, and documentation. SonarCloud reported a failed external quality gate caused by 13 critical maintainability findings (code duplication and cognitive complexity), with 0 new bugs and 0 new vulnerabilities; those findings were fixed rather than bypassed.
 
 ### Live-flow blocker
 
 `issue_comment` workflow definitions are loaded from the default branch. Before merge, an exact `/build-debug` comment on PR 150 would execute the old default-branch dispatch topology, not this branch's reusable workflow. The unsafe predecessor was therefore not triggered for testing. The protected publisher likewise cannot prove acceptance of the new request-run identity until the new definitions exist on the default branch.
 
-Tasks 6.1–6.6 remain pending. The implementation needs a staged migration: first merge a policy-compatible transition that allows the reviewed target topology while the old workflows remain, then deliver the workflow cutover and strict rejection of the predecessor. After the cutover reaches `main`, record the authorized and negative request runs, caller/called job identity, permissions/runner, artifact IDs/names, publisher validation, cleanup, final CodeQL alert state, and repository prerequisites here.
+Tasks 6.3–6.8 remain pending. The implementation needs a staged migration: first merge a policy-compatible transition that allows the reviewed target topology while the old workflows remain, then deliver the workflow cutover and strict rejection of the predecessor. After the cutover reaches `main`, record the authorized and negative request runs, caller/called job identity, permissions/runner, artifact IDs/names, publisher validation, cleanup, final CodeQL alert state, and repository prerequisites here.
