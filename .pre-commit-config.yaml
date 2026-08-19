@@ -1,0 +1,30 @@
+# Run Gitleaks before commits to prevent newly introduced credentials.
+# The revision is the immutable commit for Gitleaks v8.30.1, verified from
+# the upstream GitHub release.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+        args: ["--config=.gitleaks.toml"]
+
+  - repo: local
+    hooks:
+      - id: go-vet
+        name: Go vet
+        entry: go vet ./...
+        language: system
+        pass_filenames: false
+        files: '\.go$'
+      - id: go-build
+        name: Go build
+        entry: go build ./...
+        language: system
+        pass_filenames: false
+        files: '\.go$'
+      - id: go-test
+        name: Go test
+        entry: go test ./...
+        language: system
+        pass_filenames: false
+        files: '\.go$'

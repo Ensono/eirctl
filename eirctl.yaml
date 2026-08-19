@@ -15,6 +15,16 @@ contexts:
     container:
       name: mirror.gcr.io/bash:5.0.18-alpine3.22@sha256:943f4381e5c98f3be2f505464cd4b84ec84715251abf30f37476d3865ddcc2ce
 
+  asciidoc:
+    container:
+      name: docker.io/asciidoctor/docker-asciidoctor:1.106.0@sha256:6266e05784c2d8ece9d9fe5e593b12c3beebebbc467135fd6f4a56269c93cea3
+      enable_mount: true
+
+  node24:
+    container:
+      name: docker.io/node:24.19.0-alpine3.24@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+      enable_mount: true
+
 pipelines:
   build:binary:
     - task: clean
@@ -36,7 +46,42 @@ pipelines:
       variables:
         VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
 
+  build:docs:
+    - task: gen:docs:html
+    - task: gen:docs:pdf
+    - task: gen:docs:validate
+      depends_on:
+        - gen:docs:html
+        - gen:docs:pdf
+
 tasks:
+  gen:docs:html:
+    context: asciidoc
+    description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.
+    command:
+      - |
+        rm -rf .eirctl/outputs/docs/html
+        mkdir -p .eirctl/outputs/docs/html
+        asciidoctor --failure-level WARN -b html5 -o .eirctl/outputs/docs/html/index.html docs/index.adoc
+        cp -rf docs/svg .eirctl/outputs/docs/html
+
+  gen:docs:pdf:
+    context: asciidoc
+    description: Renders docs/index.adoc as PDF beneath .eirctl/outputs/docs.
+    command:
+      - |
+        mkdir -p .eirctl/outputs/docs/pdf
+        asciidoctor-pdf --failure-level WARN -o .eirctl/outputs/docs/pdf/index.pdf docs/index.adoc
+
+  gen:docs:validate:
+    context: node24
+    description: Validates the repository-owned rendered-output manifest beneath .eirctl/outputs/docs.
+    command:
+      - |
+        node scripts/validate-docs-output.mjs \
+        --manifest scripts/docs-output-manifest.json \
+        --output-root .eirctl/outputs/docs
+
   build:
     context: go1x
     description: Builds Go binary

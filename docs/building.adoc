@@ -1,0 +1,20 @@
+== Building eirctl documentation
+
+The repository-owned `build:docs` pipeline renders `docs/index.adoc` as HTML and PDF without publishing either output. It composes explicit Asciidoctor HTML and PDF tasks with a Node validation task. The validator (`scripts/validate-docs-output.mjs`) and expected-output manifest (`scripts/docs-output-manifest.json`) are bespoke eirctl controls, not copied runner files or static-file imports.
+
+== Prerequisites
+
+* Go, to run the repository-local `eirctl` command.
+* Docker Engine, or a Docker-API-compatible OCI runtime such as Podman with its Docker-compatible socket exposed to `eirctl`.
+* Network access to pull the digest-pinned `docker.io/asciidoctor/docker-asciidoctor` and `docker.io/node` images on their first use.
+
+== Build locally
+
+From the repository root, run:
+
+[source,shell]
+----
+go run cmd/main.go run build:docs --verbose
+----
+
+The pipeline writes deterministic generated output to `.eirctl/outputs/docs/html` and `.eirctl/outputs/docs/pdf`, then validates the required entries, signatures, and generated local references. Generated output is validation evidence and must not be committed.

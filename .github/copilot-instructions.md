@@ -28,7 +28,7 @@ Container contexts use `runner/executor_container.go` with the Docker client API
 
 -   **Normalized graphs** (`eirctl graph`) show logical dependencies for visualization
 -   **Denormalized graphs** (`eirctl run --graph-only`) show actual execution plan with unique node instances
--   See `scheduler/denormalize.go` and `docs/graph-implementation.md`
+-   See `scheduler/denormalize.go` and `docs/graph-implementation.adoc`
 
 ## Development Patterns
 

@@ -1,0 +1,31 @@
+== Watchers
+
+=== Filesystem watchers
+
+A watcher observes files selected by patterns and runs its task whenever a matching filesystem event occurs.
+
+[source,yaml]
+----
+watchers:
+  watcher1:
+    watch: ["README.*", "pkg/**/*.go"] # Files to watch
+    exclude: ["pkg/excluded.go", "pkg/excluded-dir/*"] # Exclude patterns
+    events: [create, write, remove, rename, chmod] # Filesystem events to listen to
+    task: task1 # Task to run when an event occurs
+----
+
+=== Patterns
+
+`eirctl` uses https://github.com/bmatcuk/doublestar[doublestar] patterns for include and exclude rules.
+
+[cols="1,3",options="header"]
+|===
+| Special term | Meaning
+| `*` | Matches any sequence of non-path-separators.
+| `**` | Matches any sequence of characters, including path separators.
+| `?` | Matches a single non-path-separator character.
+| `[class]` | Matches a single non-path-separator character against a class; see the https://github.com/bmatcuk/doublestar/blob/master/README.md#character-classes[character-class documentation].
+| `{alt1,...}` | Matches a sequence when one comma-separated alternative matches.
+|===
+
+Escape a character with special meaning using a backslash (`\`).

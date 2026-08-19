@@ -390,7 +390,13 @@ func mockContainerClientHelper(t *testing.T, respCh <-chan container.WaitRespons
 			return io.NopCloser(outStreamer), nil
 		},
 		inspect: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			resp := container.InspectResponse{&container.ContainerJSONBase{}, []container.MountPoint{}, &container.Config{}, &container.NetworkSettings{}, &ocispec.Descriptor{}}
+			resp := container.InspectResponse{
+				ContainerJSONBase:       &container.ContainerJSONBase{},
+				Mounts:                  []container.MountPoint{},
+				Config:                  &container.Config{},
+				NetworkSettings:         &container.NetworkSettings{},
+				ImageManifestDescriptor: &ocispec.Descriptor{},
+			}
 			resp.State = &container.State{ExitCode: 0}
 			resp.Image = "container:foo"
 			resp.Config = &container.Config{Cmd: []string{"pwd"}}

@@ -1,0 +1,28 @@
+= eirctl Documentation
+:toc: left
+:toclevels: 2
+:sectanchors:
+:sectlinks:
+:icons: font
+:source-highlighter: highlightjs
+:experimental:
+
+The eirctl documentation describes installation, configuration imports, task artifacts, watchers, CI generation, graph internals, migration guidance, documentation builds, and CI security controls.
+
+include::installation.adoc[]
+
+include::import.adoc[]
+
+include::artifacts.adoc[]
+
+include::watchers.adoc[]
+
+include::ci-generator.adoc[]
+
+include::graph-implementation.adoc[]
+
+include::v2.adoc[]
+
+include::ci-security.adoc[]
+
+include::building.adoc[]
