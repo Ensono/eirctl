@@ -1,0 +1,92 @@
+name: Debug build
+
+on:
+  workflow_call:
+    inputs:
+      pull_request:
+        description: Pull request number authorized by the request workflow
+        required: true
+        type: string
+      commit_sha:
+        description: Immutable current pull-request head SHA authorized by the request workflow
+        required: true
+        type: string
+    outputs:
+      semver:
+        description: GitVersion SemVer recorded by trusted finalization
+        value: ${{ jobs.build.outputs.semver }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      semver: ${{ steps.gitversion.outputs.semVer }}
+    steps:
+      - name: Revalidate pull-request identity before checkout
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PULL_REQUEST: ${{ inputs.pull_request }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        with:
+          script: |
+            const pullNumber = Number(process.env.PULL_REQUEST);
+            const commitSHA = process.env.COMMIT_SHA;
+            const repository = context.repo.owner + '/' + context.repo.repo;
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1 || !/^[0-9a-f]{40}$/i.test(commitSHA)) {
+              core.setFailed('A positive pull request number and full 40-character commit SHA are required.');
+              return;
+            }
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (pullRequest.state !== 'open' || pullRequest.base.repo.full_name !== repository || pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()) {
+              core.setFailed('The pull request is not open at the authorized current commit SHA in this repository.');
+              return;
+            }
+
+      - name: Check out validated pull-request revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+        with:
+          versionSpec: '6.2.0'
+      - name: Set SemVer version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+        with:
+          configFilePath: GitVersion.yml
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.6
+          cache: false
+
+      - name: Build debug binaries
+        env:
+          SEMVER: ${{ steps.gitversion.outputs.semVer }}
+          HEAD_SHA: ${{ inputs.commit_sha }}
+        run: |
+          go run cmd/main.go run pipeline build:binary \
+            --set Version="v${SEMVER}" \
+            --set Revision="${HEAD_SHA}"
+
+      - name: Upload run-specific intermediate binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bin/
+          if-no-files-found: error
+          retention-days: 1

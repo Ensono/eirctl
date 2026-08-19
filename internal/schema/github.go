@@ -16,6 +16,7 @@ type GithubWorkflow struct {
 	Defaults    *GithubDefaults      `json:"defaults,omitempty" yaml:"defaults,omitempty"`
 	Env         map[string]any       `json:"env,omitempty" yaml:"env,omitempty"`
 	Permissions map[string]string    `json:"permissions,omitempty" yaml:"permissions,omitempty"`
+	Concurrency *GithubConcurrency   `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 }
 
 // TriggerEvents represents the trigger events for the GitHub workflow.
@@ -26,6 +27,7 @@ type GithubTriggerEvents struct {
 	IssueComment       GithubIssueCommentEvent       `json:"issue_comment" yaml:"issue_comment,omitempty"`
 	RepositoryDispatch GithubRepositoryDispatchEvent `json:"repository_dispatch" yaml:"repository_dispatch,omitempty"`
 	Schedule           []GithubScheduleEvent         `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	WorkflowCall       GithubWorkflowCallEvent       `json:"workflow_call" yaml:"workflow_call,omitempty"`
 	WorkflowDispatch   GithubWorkflowDispatchEvent   `json:"workflow_dispatch" yaml:"workflow_dispatch,omitempty"`
 	WorkflowRun        GithubWorkflowRunEvent        `json:"workflow_run" yaml:"workflow_run,omitempty"`
 
@@ -42,15 +44,30 @@ func (events *GithubTriggerEvents) Has(name string) bool {
 	return ok
 }
 
+// ConfiguredNames returns every explicitly configured trigger, including
+// events unknown to this schema version, so security policy can fail closed.
+func (events *GithubTriggerEvents) ConfiguredNames() []string {
+	if events == nil {
+		return nil
+	}
+	names := make([]string, 0, len(events.configured))
+	for name := range events.configured {
+		names = append(names, name)
+	}
+	return names
+}
+
 // UnmarshalYAML accepts every trigger form supported by GitHub Actions: a
 // scalar event, a sequence of events, or a mapping containing event options.
 func (events *GithubTriggerEvents) UnmarshalYAML(node *yaml.Node) error {
 	*events = GithubTriggerEvents{configured: map[string]struct{}{}}
+	node = resolveYAMLAlias(node)
 	switch node.Kind {
 	case yaml.ScalarNode:
 		return events.configure(node.Value, nil)
 	case yaml.SequenceNode:
 		for _, value := range node.Content {
+			value = resolveYAMLAlias(value)
 			if value.Kind != yaml.ScalarNode {
 				return fmt.Errorf("github trigger: expected an event name but got %v", value.Kind)
 			}
@@ -60,9 +77,9 @@ func (events *GithubTriggerEvents) UnmarshalYAML(node *yaml.Node) error {
 		}
 		return nil
 	case yaml.MappingNode:
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if err := events.configure(node.Content[i].Value, node.Content[i+1]); err != nil {
-				return fmt.Errorf("github trigger %s: %w", node.Content[i].Value, err)
+		for name, value := range yamlMapping(node) {
+			if err := events.configure(name, value); err != nil {
+				return fmt.Errorf("github trigger %s: %w", name, err)
 			}
 		}
 		return nil
@@ -89,6 +106,8 @@ func (events *GithubTriggerEvents) configure(name string, value *yaml.Node) erro
 		return value.Decode(&events.RepositoryDispatch)
 	case "schedule":
 		return value.Decode(&events.Schedule)
+	case "workflow_call":
+		return value.Decode(&events.WorkflowCall)
 	case "workflow_dispatch":
 		return value.Decode(&events.WorkflowDispatch)
 	case "workflow_run":
@@ -120,6 +139,19 @@ type GithubPullRequestEvent struct {
 // ScheduleEvent represents a cron schedule event trigger configuration.
 type GithubScheduleEvent struct {
 	Cron string `json:"cron,omitempty" yaml:"cron,omitempty"`
+}
+
+// GithubWorkflowCallEvent represents a reusable workflow entry point.
+type GithubWorkflowCallEvent struct {
+	Inputs  map[string]GithubInput          `json:"inputs,omitempty" yaml:"inputs,omitempty"`
+	Outputs map[string]GithubWorkflowOutput `json:"outputs,omitempty" yaml:"outputs,omitempty"`
+	Secrets map[string]any                  `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+}
+
+// GithubWorkflowOutput represents an output exported by a reusable workflow.
+type GithubWorkflowOutput struct {
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Value       string `json:"value,omitempty" yaml:"value,omitempty"`
 }
 
 // WorkflowDispatchEvent represents a manually triggered workflow dispatch event.
@@ -156,8 +188,21 @@ func (values *GithubStringList) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	case yaml.SequenceNode:
 		return node.Decode((*[]string)(values))
+	case yaml.MappingNode:
+		var selection struct {
+			Group  string           `yaml:"group"`
+			Labels GithubStringList `yaml:"labels"`
+		}
+		if err := node.Decode(&selection); err != nil {
+			return err
+		}
+		if selection.Group != "" {
+			*values = append(*values, "group:"+selection.Group)
+		}
+		*values = append(*values, selection.Labels...)
+		return nil
 	default:
-		return fmt.Errorf("expected a string or sequence but got %v", node.Kind)
+		return fmt.Errorf("expected a string, sequence, or runner selection mapping but got %v", node.Kind)
 	}
 }
 
@@ -174,12 +219,17 @@ type GithubInput struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	Required    bool   `json:"required,omitempty" yaml:"required,omitempty"`
 	Default     string `json:"default,omitempty" yaml:"default,omitempty"`
+	Type        string `json:"type,omitempty" yaml:"type,omitempty"`
 }
 
 // Job represents a job in the GitHub workflow.
 type GithubJob struct {
 	Name           string                     `json:"name,omitempty" yaml:"name,omitempty"`
 	Needs          []string                   `json:"needs,omitempty" yaml:"needs,omitempty"`
+	Uses           string                     `json:"uses,omitempty" yaml:"uses,omitempty"`
+	With           map[string]string          `json:"with,omitempty" yaml:"with,omitempty"`
+	Secrets        any                        `json:"secrets,omitempty" yaml:"secrets,omitempty"`
+	Outputs        map[string]string          `json:"outputs,omitempty" yaml:"outputs,omitempty"`
 	RunsOn         GithubStringList           `json:"runs-on,omitempty" yaml:"runs-on,omitempty"`
 	Container      *GithubContainer           `json:"container,omitempty" yaml:"container,omitempty"`
 	Services       map[string]GithubContainer `json:"services,omitempty" yaml:"services,omitempty"`
@@ -222,6 +272,7 @@ func (concurrency *GithubConcurrency) UnmarshalYAML(node *yaml.Node) error {
 // UnmarshalYAML normalizes polymorphic GitHub Actions job fields while keeping
 // the generator-facing Go types stable.
 func (job *GithubJob) UnmarshalYAML(node *yaml.Node) error {
+	node = resolveYAMLAlias(node)
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("github job: expected a mapping node but got %v", node.Kind)
 	}
@@ -248,6 +299,10 @@ func (job *GithubJob) UnmarshalYAML(node *yaml.Node) error {
 func decodeGithubJobFields(values map[string]*yaml.Node, job *GithubJob) error {
 	for name, target := range map[string]any{
 		"name":            &job.Name,
+		"uses":            &job.Uses,
+		"with":            &job.With,
+		"secrets":         &job.Secrets,
+		"outputs":         &job.Outputs,
 		"runs-on":         &job.RunsOn,
 		"steps":           &job.Steps,
 		"if":              &job.If,
@@ -329,12 +384,49 @@ func validateGithubJobSteps(steps []*GithubStep) error {
 	return nil
 }
 
+func resolveYAMLAlias(node *yaml.Node) *yaml.Node {
+	seen := map[*yaml.Node]struct{}{}
+	for node != nil && node.Kind == yaml.AliasNode {
+		if _, ok := seen[node]; ok {
+			break
+		}
+		seen[node] = struct{}{}
+		node = node.Alias
+	}
+	return node
+}
+
 func yamlMapping(node *yaml.Node) map[string]*yaml.Node {
+	node = resolveYAMLAlias(node)
 	values := map[string]*yaml.Node{}
 	for i := 0; node != nil && node.Kind == yaml.MappingNode && i+1 < len(node.Content); i += 2 {
-		values[node.Content[i].Value] = node.Content[i+1]
+		name := node.Content[i].Value
+		value := node.Content[i+1]
+		if name == "<<" {
+			mergeYAMLMapping(values, value)
+			continue
+		}
+		values[name] = value
 	}
 	return values
+}
+
+func mergeYAMLMapping(values map[string]*yaml.Node, node *yaml.Node) {
+	node = resolveYAMLAlias(node)
+	if node == nil {
+		return
+	}
+	if node.Kind == yaml.SequenceNode {
+		for _, merged := range node.Content {
+			mergeYAMLMapping(values, merged)
+		}
+		return
+	}
+	for name, value := range yamlMapping(node) {
+		if _, exists := values[name]; !exists {
+			values[name] = value
+		}
+	}
 }
 
 var ErrMustIncludeSubComponents = errors.New("must include at least one")
@@ -372,8 +464,8 @@ type GithubStep struct {
 	With            map[string]string `json:"with,omitempty" yaml:"with,omitempty"`
 	Env             map[string]any    `json:"env,omitempty" yaml:"env,omitempty"`
 	Shell           string            `json:"shell,omitempty" yaml:"shell,omitempty"`
-	ContinueOnError bool              `json:"continue-on-error,omitempty" yaml:"continue_on_error,omitempty"`
-	TimeoutMinutes  int               `json:"timeout-minutes,omitempty" yaml:"timeout_minutes,omitempty"`
+	ContinueOnError bool              `json:"continue-on-error,omitempty" yaml:"continue-on-error,omitempty"`
+	TimeoutMinutes  int               `json:"timeout-minutes,omitempty" yaml:"timeout-minutes,omitempty"`
 	If              string            `json:"if,omitempty" yaml:"if,omitempty"`
 }
 
@@ -420,24 +512,52 @@ func (om *OrderedMap) Add(key string, val GithubJob) {
 
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (om *OrderedMap) UnmarshalYAML(node *yaml.Node) error {
+	node = resolveYAMLAlias(node)
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("OrderedMap: expected a mapping node but got %v", node.Kind)
 	}
 	om.Values = make(map[string]GithubJob, len(node.Content)/2)
 	om.Keys = make([]string, 0, len(node.Content)/2)
-	// node.Content is [ key1, val1, key2, val2, ... ]
-	for i := 0; i < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valNode := node.Content[i+1]
-		key := keyNode.Value
-
-		var v GithubJob
-		if err := valNode.Decode(&v); err != nil {
+	om.mu = &sync.Mutex{}
+	add := func(key string, valNode *yaml.Node, replace bool) error {
+		if _, exists := om.Values[key]; exists && !replace {
+			return nil
+		}
+		var value GithubJob
+		if err := resolveYAMLAlias(valNode).Decode(&value); err != nil {
 			return err
 		}
-
-		om.Keys = append(om.Keys, key)
-		om.Values[key] = v
+		if _, exists := om.Values[key]; !exists {
+			om.Keys = append(om.Keys, key)
+		}
+		om.Values[key] = value
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value != "<<" {
+			continue
+		}
+		merged := resolveYAMLAlias(node.Content[i+1])
+		mergedNodes := []*yaml.Node{merged}
+		if merged != nil && merged.Kind == yaml.SequenceNode {
+			mergedNodes = merged.Content
+		}
+		for _, mergedNode := range mergedNodes {
+			for key, value := range yamlMapping(mergedNode) {
+				if err := add(key, value, false); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if key == "<<" {
+			continue
+		}
+		if err := add(key, node.Content[i+1], true); err != nil {
+			return err
+		}
 	}
 	return nil
 }
