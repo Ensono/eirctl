@@ -47,15 +47,17 @@ type Loader struct {
 
 // NewConfigLoader is Loader constructor
 func NewConfigLoader(dst *Config) Loader {
+	homeDir := utils.MustGetUserHomeDir()
+
 	cl := Loader{
 		dst:           dst,
 		imports:       make(map[string]bool),
-		homeDir:       utils.MustGetUserHomeDir(),
+		homeDir:       homeDir,
 		dir:           utils.MustGetwd(),
 		strictDecoder: false,
 	}
 
-	cache := NewCache().WithWriteImport(cl.writeImportedFile)
+	cache := NewCache(homeDir).WithWriteImport(cl.writeImportedFile)
 	cl.cache = cache
 	return cl
 }
