@@ -33,7 +33,7 @@ The canonical documentation entry point is [docs/index.adoc](./docs/index.adoc).
 
 ## Development prerequisites
 
-Maintained local builds and validation require **Go 1.26.5**. Use the exact patch release so local builds match CI and the builder images.
+Maintained local builds and validation require **Go 1.26.6**. Use the exact patch release so local builds match CI and the builder images.
 
 ## Configuration
 
