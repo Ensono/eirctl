@@ -49,6 +49,10 @@ These broad checks were run and were not weakened or bypassed:
 - The target topology requires exact trigger sets and exactly one effective `issue_comment` caller from `.github/workflows/debug-build-request.yml`.
 - Simulated the authoritative boundary by running the unmodified `origin/main` checker from detached worktree `/tmp/eirctl-origin-main` against bottom-branch candidate workflow/configuration data; it passed.
 - Bottom-branch focused tests, full Go tests, Go vet, pre-commit, workflow security, and strict OpenSpec validation passed locally.
+- Submitted native GitHub stack #152 with the official `github/gh-stack` extension:
+  - bottom policy transition: PR 151, https://github.com/Ensono/eirctl/pull/151, `fix/debug-build-policy-transition` → `main`;
+  - top strict workflow cutover: PR 150, https://github.com/Ensono/eirctl/pull/150, `fix/vulns-2026-08-19` → `fix/debug-build-policy-transition`.
+- PR 151 GitHub Actions checks passed, including protected policy, CodeQL Actions, lint, tests, and documentation. SonarCloud reported a failed external quality gate caused by 13 critical maintainability findings (code duplication and cognitive complexity), with 0 new bugs and 0 new vulnerabilities; those findings are being fixed rather than bypassed.
 
 ### Live-flow blocker
 

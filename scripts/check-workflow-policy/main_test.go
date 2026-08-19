@@ -256,38 +256,40 @@ func TestDirectAndReusableExecutionCacheAuthority(t *testing.T) {
 		{event: "push", trigger: "on:\n  push:\n    branches: ['main']", wantWrite: true},
 	}
 	for _, tc := range cases {
-		for _, reusable := range []bool{false, true} {
-			name := tc.event + "-direct"
-			if reusable {
-				name = tc.event + "-reusable"
-			}
-			t.Run(name, func(t *testing.T) {
-				buildYAML := "on: [workflow_call]\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@0123456789012345678901234567890123456789\n        with: {ref: '${{ inputs.commit_sha }}'}\n      - run: go test ./...\n"
-				callerJobs := "jobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@0123456789012345678901234567890123456789\n        with: {ref: '${{ inputs.commit_sha }}'}\n      - run: go test ./...\n"
-				if reusable {
-					callerJobs = "jobs: {call: {uses: ./.github/workflows/build.yml}}\n"
-				}
-				caller, err := parseWorkflow(".github/workflows/caller.yml", []byte(tc.trigger+"\n"+callerJobs))
-				if err != nil {
-					t.Fatal(err)
-				}
-				workflows := map[string]Workflow{".github/workflows/caller.yml": caller}
-				target := caller
-				if reusable {
-					build, err := parseWorkflow(".github/workflows/build.yml", []byte(buildYAML))
-					if err != nil {
-						t.Fatal(err)
-					}
-					workflows[build.Path] = build
-					target = build
-				}
-				events := resolveEffectiveRootEvents(workflows)[target.Path]
-				authority := authorityForJob(workflows, target, target.Jobs.Values["build"], events)
-				if authority.defaultBranchCacheWrite != tc.wantWrite {
-					t.Fatalf("cache-write authority = %v, want %v; events=%#v", authority.defaultBranchCacheWrite, tc.wantWrite, events)
-				}
-			})
+		t.Run(tc.event+"-direct", func(t *testing.T) {
+			assertExecutionCacheAuthority(t, tc.trigger, false, tc.wantWrite)
+		})
+		t.Run(tc.event+"-reusable", func(t *testing.T) {
+			assertExecutionCacheAuthority(t, tc.trigger, true, tc.wantWrite)
+		})
+	}
+}
+
+func assertExecutionCacheAuthority(t *testing.T, trigger string, reusable, wantWrite bool) {
+	t.Helper()
+	buildYAML := "on: [workflow_call]\njobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@0123456789012345678901234567890123456789\n        with: {ref: '${{ inputs.commit_sha }}'}\n      - run: go test ./...\n"
+	callerJobs := "jobs:\n  build:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@0123456789012345678901234567890123456789\n        with: {ref: '${{ inputs.commit_sha }}'}\n      - run: go test ./...\n"
+	if reusable {
+		callerJobs = "jobs: {call: {uses: ./.github/workflows/build.yml}}\n"
+	}
+	caller, err := parseWorkflow(".github/workflows/caller.yml", []byte(trigger+"\n"+callerJobs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflows := map[string]Workflow{".github/workflows/caller.yml": caller}
+	target := caller
+	if reusable {
+		build, err := parseWorkflow(".github/workflows/build.yml", []byte(buildYAML))
+		if err != nil {
+			t.Fatal(err)
 		}
+		workflows[build.Path] = build
+		target = build
+	}
+	events := resolveEffectiveRootEvents(workflows)[target.Path]
+	authority := authorityForJob(workflows, target, target.Jobs.Values["build"], events)
+	if authority.defaultBranchCacheWrite != wantWrite {
+		t.Fatalf("cache-write authority = %v, want %v; events=%#v", authority.defaultBranchCacheWrite, wantWrite, events)
 	}
 }
 

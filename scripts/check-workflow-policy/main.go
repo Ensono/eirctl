@@ -40,6 +40,16 @@ const (
 	legacyDebugRequestSHA256        = "335f46155d347ce80d2fd22b74b7afcb8cb9932bcba9dcca5d2481bea4557d87"
 	legacyDebugBuilderSHA256        = "52035aa6741a6f9f518e8ff36b88e9f440165e213fefd09f69db18731d6b77e5"
 	legacyDebugPublisherSHA256      = "9fd0a519c99dcf01e55cd1eb8dc1960601beac09283b94fadc3f75360b13874e"
+	debugBuilderWorkflowPath        = ".github/workflows/debug-build.yml"
+	debugRequestWorkflowPath        = ".github/workflows/debug-build-request.yml"
+	debugPublisherWorkflowPath      = ".github/workflows/publish-debug-release.yml"
+	pullRequestsPermission          = "pull-requests"
+	downloadArtifactAction          = "actions/download-artifact"
+	downloadArtifactActionPrefix    = downloadArtifactAction + "@"
+	uploadArtifactActionPrefix      = "actions/upload-artifact@"
+	artifactIDsField                = "artifact-ids"
+	debugLayoutStepName             = "Validate bounded binary layout without execution"
+	debugProvenanceStepName         = "Create trusted clean-runner provenance"
 )
 
 var pinnedAction = regexp.MustCompile(`@[0-9a-f]{40}$`)
@@ -98,7 +108,7 @@ func Validate(root string) error {
 	effectiveEvents := resolveEffectiveRootEvents(workflows)
 	legacyDebugTopology := isExactLegacyDebugTopology(workflows)
 	for path, workflow := range workflows {
-		if legacyDebugTopology && path == ".github/workflows/debug-build.yml" && legacyBuilderHasNoAdditionalCallers(effectiveEvents[path]) {
+		if legacyDebugTopology && path == debugBuilderWorkflowPath && legacyBuilderHasNoAdditionalCallers(effectiveEvents[path]) {
 			continue
 		}
 		if err := validatePrivilegedFlow(workflows, workflow, effectiveEvents[path]); err != nil {
@@ -163,13 +173,13 @@ func hasOnlyTriggers(workflow Workflow, expected ...string) bool {
 }
 
 func hasOnlyEffectiveDebugCaller(workflows map[string]Workflow) bool {
-	const builder = ".github/workflows/debug-build.yml"
+	const builder = debugBuilderWorkflowPath
 	events := resolveEffectiveRootEvents(workflows)[builder]
 	if len(events) != 1 {
 		return false
 	}
 	for event := range events {
-		return event.Name == "issue_comment" && event.SourcePath == ".github/workflows/debug-build-request.yml"
+		return event.Name == "issue_comment" && event.SourcePath == debugRequestWorkflowPath
 	}
 	return false
 }
@@ -334,28 +344,38 @@ func resolveEffectiveRootEvents(workflows map[string]Workflow) map[string]map[ef
 	for path, workflow := range workflows {
 		events[path] = directRootEvents(workflow)
 	}
-	changed := true
-	for changed {
-		changed = false
-		for callerPath, caller := range workflows {
-			for _, job := range caller.Jobs.Values {
-				calledPath, ok := localReusableWorkflowPath(job.Uses)
-				if !ok {
-					continue
-				}
-				if _, exists := workflows[calledPath]; !exists {
-					continue
-				}
-				for event := range events[callerPath] {
-					if _, exists := events[calledPath][event]; !exists {
-						events[calledPath][event] = struct{}{}
-						changed = true
-					}
-				}
-			}
-		}
+	for propagateReusableEvents(workflows, events) {
 	}
 	return events
+}
+
+func propagateReusableEvents(workflows map[string]Workflow, events map[string]map[effectiveRootEvent]struct{}) bool {
+	changed := false
+	for callerPath, caller := range workflows {
+		for _, job := range caller.Jobs.Values {
+			calledPath, ok := localReusableWorkflowPath(job.Uses)
+			if !ok {
+				continue
+			}
+			if _, exists := workflows[calledPath]; !exists {
+				continue
+			}
+			changed = propagateRootEvents(events[callerPath], events[calledPath]) || changed
+		}
+	}
+	return changed
+}
+
+func propagateRootEvents(source, destination map[effectiveRootEvent]struct{}) bool {
+	changed := false
+	for event := range source {
+		if _, exists := destination[event]; exists {
+			continue
+		}
+		destination[event] = struct{}{}
+		changed = true
+	}
+	return changed
 }
 
 func directRootEvents(workflow Workflow) map[effectiveRootEvent]struct{} {
@@ -592,18 +612,18 @@ func expectedWorkflowPermissions(path string) Permissions {
 }
 
 func expectedJobPermissions(workflow Workflow, job string) Permissions {
-	if workflow.Path == ".github/workflows/debug-build-request.yml" && workflow.SourceSHA256 == legacyDebugRequestSHA256 && job == "request" {
-		return Permissions{"actions": "write", "pull-requests": "read"}
+	if workflow.Path == debugRequestWorkflowPath && workflow.SourceSHA256 == legacyDebugRequestSHA256 && job == "request" {
+		return Permissions{"actions": "write", pullRequestsPermission: "read"}
 	}
 	allowed := map[string]map[string]Permissions{
-		".github/workflows/debug-build-request.yml": {
-			"authorize": {"pull-requests": "read"},
+		debugRequestWorkflowPath: {
+			"authorize": {pullRequestsPermission: "read"},
 			"finalize":  {"actions": "read", "contents": "read"},
 		},
 		".github/workflows/pr.yml": {
 			"report": {"contents": "read", "checks": "write"},
 		},
-		".github/workflows/publish-debug-release.yml": {
+		debugPublisherWorkflowPath: {
 			debugReleaseValidateJob: {"actions": "read", "contents": "read"},
 			"publish":               {"actions": "read", "contents": "write"},
 		},
@@ -649,16 +669,16 @@ func legacyBuilderHasNoAdditionalCallers(events map[effectiveRootEvent]struct{})
 		return false
 	}
 	for event := range events {
-		return event.Name == "workflow_dispatch" && event.SourcePath == ".github/workflows/debug-build.yml"
+		return event.Name == "workflow_dispatch" && event.SourcePath == debugBuilderWorkflowPath
 	}
 	return false
 }
 
 func isExactLegacyDebugTopology(workflows map[string]Workflow) bool {
 	expected := map[string]string{
-		".github/workflows/debug-build-request.yml":   legacyDebugRequestSHA256,
-		".github/workflows/debug-build.yml":           legacyDebugBuilderSHA256,
-		".github/workflows/publish-debug-release.yml": legacyDebugPublisherSHA256,
+		debugRequestWorkflowPath:   legacyDebugRequestSHA256,
+		debugBuilderWorkflowPath:   legacyDebugBuilderSHA256,
+		debugPublisherWorkflowPath: legacyDebugPublisherSHA256,
 	}
 	for path, digest := range expected {
 		workflow, ok := workflows[path]
@@ -695,7 +715,7 @@ func validateProtectedPolicyTopology(workflows map[string]Workflow) error {
 }
 
 func validateDebugBrokerTopology(workflows map[string]Workflow) error {
-	broker, err := requiredWorkflow(workflows, ".github/workflows/debug-build-request.yml")
+	broker, err := requiredWorkflow(workflows, debugRequestWorkflowPath)
 	if err != nil {
 		return err
 	}
@@ -708,7 +728,7 @@ func validateDebugBrokerTopology(workflows map[string]Workflow) error {
 	}
 	if strings.Join(strings.Fields(authorize.If), " ") != "github.event.issue.pull_request != null && github.event.comment.body == '/build-debug'" ||
 		hasCheckout(authorize) || jobHasUntrustedShellCheckout(authorize) || hasLocalAction(authorize) ||
-		!samePermissions(authorize.Permissions, Permissions{"pull-requests": "read"}) ||
+		!samePermissions(authorize.Permissions, Permissions{pullRequestsPermission: "read"}) ||
 		len(authorize.Steps) != 1 || !jobUses(authorize, githubScriptActionPrefix) ||
 		!stepDigestMatches(authorize, "Authorize exact debug-build request", "script", debugAuthorizeScriptSHA256) ||
 		!stepWithContains(authorize, githubScriptActionPrefix, "script", "getCollaboratorPermissionLevel") ||
@@ -723,25 +743,25 @@ func validateDebugBrokerTopology(workflows map[string]Workflow) error {
 		return errors.New("debug build request must pass only validated identity to the local read-only reusable builder without secrets or authority elevation")
 	}
 	validation := githubScriptIndexContaining(finalize, "github.rest.pulls.get")
-	download := actionIndex(finalize, "actions/download-artifact")
+	download := actionIndex(finalize, downloadArtifactAction)
 	if !containsNeed(finalize.Needs, "authorize") || !containsNeed(finalize.Needs, "build") ||
 		!exactDebugFinalizerSteps(finalize) || validation == -1 || download == -1 || validation > download ||
 		!isGithubHosted(finalize) || !samePermissions(finalize.Permissions, Permissions{"actions": "read", "contents": "read"}) ||
 		!stepDigestMatches(finalize, "Revalidate immutable identity before finalization", "script", debugFinalizeValidateSHA256) ||
-		!stepDigestMatches(finalize, "Validate bounded binary layout without execution", "run", debugArtifactLayoutSHA256) ||
-		!stepDigestMatches(finalize, "Create trusted clean-runner provenance", "run", debugProvenanceCreateSHA256) ||
+		!stepDigestMatches(finalize, debugLayoutStepName, "run", debugArtifactLayoutSHA256) ||
+		!stepDigestMatches(finalize, debugProvenanceStepName, "run", debugProvenanceCreateSHA256) ||
 		jobHasEnvironment(finalize) || hasSecretReference(finalize) || hasCheckout(finalize) ||
-		!stepWithContains(finalize, "actions/download-artifact@", "name", "debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}") ||
-		!jobRunContains(finalize, "Validate bounded binary layout without execution", "lstat().st_mode") ||
-		!jobRunContains(finalize, "Create trusted clean-runner provenance", "finalized_by") ||
-		!stepWithContains(finalize, "actions/upload-artifact@", "name", "debug-build-${{ github.run_id }}") {
+		!stepWithContains(finalize, downloadArtifactActionPrefix, "name", "debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}") ||
+		!jobRunContains(finalize, debugLayoutStepName, "lstat().st_mode") ||
+		!jobRunContains(finalize, debugProvenanceStepName, "finalized_by") ||
+		!stepWithContains(finalize, uploadArtifactActionPrefix, "name", "debug-build-${{ github.run_id }}") {
 		return errors.New("debug build request must finalize bounded opaque binaries and trusted provenance on a fresh read-only runner")
 	}
 	return nil
 }
 
 func validateDebugBuilderTopology(workflows map[string]Workflow) error {
-	build, err := requiredWorkflow(workflows, ".github/workflows/debug-build.yml")
+	build, err := requiredWorkflow(workflows, debugBuilderWorkflowPath)
 	if err != nil {
 		return err
 	}
@@ -763,15 +783,15 @@ func validateDebugBuilderTopology(workflows map[string]Workflow) error {
 		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()") ||
 		!checkoutDisablesCredentials(buildJob, checkout) || !stepWithContains(buildJob, "actions/setup-go@", "cache", "false") ||
 		jobHasEnvironment(buildJob) || hasSecretReference(buildJob) || jobSecretsConfigured(buildJob) ||
-		!stepWithContains(buildJob, "actions/upload-artifact@", "name", "debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}") ||
-		jobRunContains(buildJob, "", "debug-build-provenance.json") || stepWithContains(buildJob, "actions/upload-artifact@", "name", "debug-build-${{ github.run_id }}") {
+		!stepWithContains(buildJob, uploadArtifactActionPrefix, "name", "debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}") ||
+		jobRunContains(buildJob, "", "debug-build-provenance.json") || stepWithContains(buildJob, uploadArtifactActionPrefix, "name", "debug-build-${{ github.run_id }}") {
 		return errors.New("debug build must be a workflow_call-only, GitHub-hosted, read-only builder that revalidates immutable PR identity and uploads only intermediate binaries")
 	}
 	return nil
 }
 
 func validateDebugPublisherTopology(workflows map[string]Workflow) error {
-	publish, err := requiredWorkflow(workflows, ".github/workflows/publish-debug-release.yml")
+	publish, err := requiredWorkflow(workflows, debugPublisherWorkflowPath)
 	if err != nil {
 		return err
 	}
@@ -793,9 +813,9 @@ func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 		!stepWithContains(validate, githubScriptActionPrefix, "script", "matches.length !== 1") ||
 		!stepWithContains(validate, githubScriptActionPrefix, "script", "artifact.workflow_run?.id !== runId") ||
 		!stepWithContains(validate, githubScriptActionPrefix, "script", "String(run.run_attempt)") ||
-		!stepWithContains(validate, "actions/download-artifact@", "artifact-ids", "${{ steps.validate.outputs.artifact_id }}") ||
+		!stepWithContains(validate, downloadArtifactActionPrefix, artifactIDsField, "${{ steps.validate.outputs.artifact_id }}") ||
 		!validDebugProvenanceCheck(validate, "Verify clean-runner provenance before publication") ||
-		!stepWithContains(publishJob, "actions/download-artifact@", "artifact-ids", "${{ needs.validate-build.outputs.artifact_id }}") ||
+		!stepWithContains(publishJob, downloadArtifactActionPrefix, artifactIDsField, "${{ needs.validate-build.outputs.artifact_id }}") ||
 		!validDebugProvenanceCheck(publishJob, "Recheck provenance on the protected publish runner") ||
 		!publisherUsesOnlyExpectedBinaries(publishJob) || hasCheckout(validate) || hasCheckout(publishJob) ||
 		executesDownloadedContent(validate) || executesDownloadedContent(publishJob) {
@@ -961,9 +981,9 @@ func validateTrustedSonarProvenance(provenance *schema.GithubStep) error {
 }
 
 func validateTrustedSonarReports(download, validateReports *schema.GithubStep) error {
-	if download.Name != "Download only the verified Sonar report artifact" || !actionUses(download.Uses, "actions/download-artifact") ||
+	if download.Name != "Download only the verified Sonar report artifact" || !actionUses(download.Uses, downloadArtifactAction) ||
 		len(download.With) != 5 || download.With["repository"] != "${{ github.repository }}" ||
-		download.With["artifact-ids"] != "${{ steps.provenance.outputs.artifact-id }}" ||
+		download.With[artifactIDsField] != "${{ steps.provenance.outputs.artifact-id }}" ||
 		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
 		download.With["github-token"] != "${{ github.token }}" || download.With["path"] != "analysis/reports" ||
 		validateReports.Name != "Validate bounded passive report artifact" || strings.TrimSpace(validateReports.Run) != "trusted/scripts/validate-sonar-reports.sh analysis/reports" {
@@ -1195,9 +1215,9 @@ func exactDebugFinalizerSteps(job schema.GithubJob) bool {
 		return false
 	}
 	return stepDigestMatches(job, "Revalidate immutable identity before finalization", "script", debugFinalizeValidateSHA256) &&
-		job.Steps[1].Name == "Download only the run-specific intermediate artifact" && actionUses(job.Steps[1].Uses, "actions/download-artifact") &&
-		stepDigestMatches(job, "Validate bounded binary layout without execution", "run", debugArtifactLayoutSHA256) &&
-		stepDigestMatches(job, "Create trusted clean-runner provenance", "run", debugProvenanceCreateSHA256) &&
+		job.Steps[1].Name == "Download only the run-specific intermediate artifact" && actionUses(job.Steps[1].Uses, downloadArtifactAction) &&
+		stepDigestMatches(job, debugLayoutStepName, "run", debugArtifactLayoutSHA256) &&
+		stepDigestMatches(job, debugProvenanceStepName, "run", debugProvenanceCreateSHA256) &&
 		job.Steps[4].Name == "Upload immutable final debug build artifact" && actionUses(job.Steps[4].Uses, "actions/upload-artifact")
 }
 
@@ -1226,7 +1246,7 @@ func jobRunContains(job schema.GithubJob, stepName, expected string) bool {
 }
 
 func executesDownloadedContent(job schema.GithubJob) bool {
-	download := actionIndex(job, "actions/download-artifact")
+	download := actionIndex(job, downloadArtifactAction)
 	if download == -1 {
 		return false
 	}

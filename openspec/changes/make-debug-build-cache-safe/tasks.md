@@ -40,7 +40,7 @@
 ## 6. Deliver and Prove the Flow with a GitHub PR Stack
 
 - [x] 6.1 Create a bottom policy-transition branch from `main` that changes no debug workflow file, passes the existing protected-base checker, and accepts only the exact reviewed legacy and target topologies while adding the structural parser, caller-resolution, and regression tests.
-- [ ] 6.2 Use the official `github/gh-stack` extension to initialize and submit a two-layer stack whose bottom policy PR targets `main` and whose top workflow-cutover PR targets the policy branch; record both PR URLs and stack order.
+- [x] 6.2 Use the official `github/gh-stack` extension to initialize and submit a two-layer stack whose bottom policy PR targets `main` and whose top workflow-cutover PR targets the policy branch; record both PR URLs and stack order.
 - [ ] 6.3 Require the bottom PR's protected policy, focused tests, workflow lint, broader validation, and review to pass, then merge it first. If the top cutover cannot proceed promptly, disable the debug request path rather than broaden the transition rule.
 - [ ] 6.4 Keep the top layer atomic: install the reusable request/builder/finalizer/publisher topology, documentation and archive outcomes, and strict policy removal of every legacy dispatch/label allowance. After GitHub retargets it to `main`, require protected policy and CodeQL Actions success for the exact pushed SHA with no replacement high-severity workflow alert.
 - [ ] 6.5 Merge the strict top layer, confirm alert 23 closes without dismissal, then use an authorized test pull request to show that one exact `/build-debug` comment creates one successful `issue_comment` request run and one reusable builder invocation for the captured full head SHA.

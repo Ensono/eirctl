@@ -519,46 +519,57 @@ func (om *OrderedMap) UnmarshalYAML(node *yaml.Node) error {
 	om.Values = make(map[string]GithubJob, len(node.Content)/2)
 	om.Keys = make([]string, 0, len(node.Content)/2)
 	om.mu = &sync.Mutex{}
-	add := func(key string, valNode *yaml.Node, replace bool) error {
-		if _, exists := om.Values[key]; exists && !replace {
-			return nil
-		}
-		var value GithubJob
-		if err := resolveYAMLAlias(valNode).Decode(&value); err != nil {
-			return err
-		}
-		if _, exists := om.Values[key]; !exists {
-			om.Keys = append(om.Keys, key)
-		}
-		om.Values[key] = value
-		return nil
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value != "<<" {
-			continue
-		}
-		merged := resolveYAMLAlias(node.Content[i+1])
-		mergedNodes := []*yaml.Node{merged}
-		if merged != nil && merged.Kind == yaml.SequenceNode {
-			mergedNodes = merged.Content
-		}
-		for _, mergedNode := range mergedNodes {
-			for key, value := range yamlMapping(mergedNode) {
-				if err := add(key, value, false); err != nil {
-					return err
-				}
-			}
-		}
+	if err := om.addMergedJobs(node); err != nil {
+		return err
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		if key == "<<" {
 			continue
 		}
-		if err := add(key, node.Content[i+1], true); err != nil {
+		if err := om.addYAMLJob(key, node.Content[i+1], true); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (om *OrderedMap) addMergedJobs(node *yaml.Node) error {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value != "<<" {
+			continue
+		}
+		for _, mergedNode := range yamlMergeNodes(node.Content[i+1]) {
+			for key, value := range yamlMapping(mergedNode) {
+				if err := om.addYAMLJob(key, value, false); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func yamlMergeNodes(node *yaml.Node) []*yaml.Node {
+	merged := resolveYAMLAlias(node)
+	if merged != nil && merged.Kind == yaml.SequenceNode {
+		return merged.Content
+	}
+	return []*yaml.Node{merged}
+}
+
+func (om *OrderedMap) addYAMLJob(key string, node *yaml.Node, replace bool) error {
+	if _, exists := om.Values[key]; exists && !replace {
+		return nil
+	}
+	var value GithubJob
+	if err := resolveYAMLAlias(node).Decode(&value); err != nil {
+		return err
+	}
+	if _, exists := om.Values[key]; !exists {
+		om.Keys = append(om.Keys, key)
+	}
+	om.Values[key] = value
 	return nil
 }
 

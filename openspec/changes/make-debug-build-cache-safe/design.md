@@ -114,13 +114,13 @@ The implementation will record run URLs, run/event/workflow identities, artifact
 
 ### 8. Deliver the protected-policy bootstrap as a native GitHub PR stack
 
-The authoritative `pull_request_target` workflow executes checker code from the pull request's base branch. A single pull request cannot both replace the debug topology and teach the protected base checker to accept it: the old base checker rejects the target before the candidate checker can run. An exact `/build-debug` pre-merge test is also unsafe because `issue_comment` loads the old workflow definition from the default branch.
+The authoritative `pull_request_target` workflow executes checker code from the repository's default branch, even when a stacked pull request targets an intermediate branch. A single pull request cannot both replace the debug topology and teach that protected default-branch checker to accept it: the old checker rejects the target before candidate code can run. An exact `/build-debug` pre-merge test is also unsafe because `issue_comment` loads the old workflow definition from the default branch.
 
 Delivery will therefore use GitHub's public-preview stacked pull requests through the official `github/gh-stack` extension:
 
 1. The bottom policy-transition branch targets `main`. It adds the structural parser, effective-caller model, tests, and a narrowly reviewed migration rule that accepts either the exact legacy debug topology or the exact target topology. It does not change executable debug workflows. The old base checker therefore sees unchanged workflow topology and can approve this layer.
-2. The top workflow-cutover branch targets the policy-transition branch. It changes the request, builder, finalizer, publisher, documentation, and archive outcomes, and tightens policy so the legacy dispatch and label topologies are rejected. Its protected checker runs from the transition branch and can validate the target topology.
-3. Merge bottom-up. GitHub retargets the top pull request to `main`; rerun required checks, then merge the strict cutover. The repository spends only the interval between layer merges under the exact dual-topology transition rule.
+2. The top workflow-cutover branch targets the policy-transition branch. It changes the request, builder, finalizer, publisher, documentation, and archive outcomes, and tightens policy so the legacy dispatch and label topologies are rejected. Before the bottom layer merges, its protected check still runs the old default-branch checker and is expected to fail.
+3. Merge bottom-up. GitHub retargets the top pull request to `main`; rerun required checks so the now-default transition checker validates the strict target, then merge the cutover. The repository spends only the interval between layer merges under the exact dual-topology transition rule.
 
 The transition rule must compare the complete legacy workflow envelope rather than introduce a general dispatch exemption. It remains covered by a removal test in the top layer. If the top layer cannot merge promptly, disable the debug request path rather than leave a broadly permissive migration rule.
 
