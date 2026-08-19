@@ -224,36 +224,128 @@ auditable repository-controlled trust boundary.
 
 === Debug prerelease process
 
-The debug prerelease process has three separate trust domains:
+==== Cache authority boundary
+
+On June 26, 2026, GitHub introduced
+https://github.blog/changelog/2026-06-26-read-only-actions-cache-for-untrusted-triggers/[read-only Actions cache access for untrusted triggers].
+GitHub's current
+https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#cache-access-for-low-trust-workflow-triggers[cache access documentation]
+states that only default-branch `push`, `workflow_dispatch`,
+`repository_dispatch`, `delete`, `registry_package`, `page_build`, and
+`schedule` runs can create or overwrite caches in the default branch's
+scope. Other default-branch-context events, including `issue_comment`,
+receive read-only cache access when an untrusted actor can trigger them.
+Ordinary `pull_request` caches remain scoped to the pull request merge
+ref rather than the shared default branch.
+
+A reusable workflow does not create a new root trust event. The
+https://docs.github.com/en/actions/sharing-automations/reusing-workflows[caller invokes it as a job],
+its permissions can only be maintained or reduced, and this repository's
+policy resolves every local caller transitively. The debug builder
+therefore inherits the authorized request run's effective
+`issue_comment` event and read-only default-branch cache boundary. A
+`workflow_dispatch`, `repository_dispatch`, default-branch `push`, or
+other documented cache-writing caller is rejected even if the called
+workflow declares `contents: read`, disables checkout credentials, and
+sets `setup-go` caching to `false`. Disabling convenience caching is
+defense in depth; pull-request code can otherwise address the cache
+service directly.
+
+The debug prerelease process has four separate trust domains:
+
+[listing]
+....
+maintainer /build-debug comment
+            |
+            v
+trusted issue_comment authorization (no checkout)
+            |
+            v
+local workflow_call builder (read-only cache, untrusted execution)
+            |
+            v
+fresh trusted finalizer (bounded opaque files + provenance)
+            |
+            v
+main-only validator --> protected debug-release publisher
+....
 
 [arabic]
-. *Request broker:* an exact `/build-debug` comment on a pull request
-starts the *Request debug build* `issue_comment` workflow. It accepts
-only commenters with repository `write`, `maintain`, or `admin`
-permission, reads the current PR head SHA, and uses the supported
-workflow-dispatch API to start the builder from `main`. It never
-checks out or executes pull-request code and has only pull-request read
-plus workflow-dispatch authority.
-. *Untrusted builder:* *Debug build* receives typed PR-number and SHA
-inputs, verifies both against the repository API before checkout, then
-checks out only that immutable SHA with `contents: read`. It has no
-protected environment, secrets, release authority, or automatic Go
-dependency cache. Its provenance records the `workflow_dispatch`
-event, repository, PR, source SHA, workflow run ID, run attempt, and
-version.
+. *Trusted authorization:* an exact `/build-debug` comment on a pull
+request starts *Request debug build*. A checkout-free job accepts only
+commenters with repository `write`, `maintain`, or `admin` permission,
+requires this repository as the open pull request's base, captures the
+current full head SHA, and emits only the PR number and SHA.
+. *Untrusted reusable builder:* a dependent job calls the local *Debug
+build* `workflow_call`-only workflow with those typed required values.
+The builder re-reads the pull request immediately before checkout and
+fails if the head moved. It checks out only that exact SHA with
+`contents: read` and `persist-credentials: false` on a GitHub-hosted
+runner, receives no secret or environment, disables automatic Go
+caching, and uploads only a run-and-attempt-specific intermediate
+binary artifact.
+. *Trusted finalizer:* a fresh GitHub-hosted job revalidates the PR and
+SHA, downloads the intermediate artifact without executing it, and
+requires the exact seven expected regular binary files within reviewed
+per-file and aggregate size bounds. Symlinks, special files, missing or
+extra files, unsafe layout, and empty or oversized binaries fail the
+run. The clean job creates provenance from trusted authorization and
+run metadata and uploads the immutable final
+`debug-build-<run-id>` artifact. An attacker-created final-name
+collision causes the trusted upload and request run to fail rather than
+making the artifact eligible.
 . *Trusted publisher:* a maintainer dispatches *Publish debug
-prerelease* from `main` with the build run ID, pull-request number,
+prerelease* from `main` with the request run ID, pull-request number,
 and full commit SHA. Both jobs fail closed on another ref. Read-only
-validation accepts only a successful dispatched Debug build from this
-repository and verifies the current PR SHA, run attempt, artifact ID,
-and provenance before the separate `debug-release` environment-gated
-job receives `contents: write`.
+validation accepts exactly one unexpired final artifact from a
+successful `.github/workflows/debug-build-request.yml` run whose root
+event is `issue_comment`, rechecks the current PR head, and verifies
+repository, event, workflow path, PR, SHA, run ID, run attempt, artifact
+name, finalizer identity, and provenance. Only then can the separate
+`debug-release` environment-gated job receive `contents: write`; it
+redownloads only the validated artifact ID, repeats provenance checks,
+and passes the seven explicit binary paths to the pinned release
+action.
 
-Repeated authorized requests remain serialized per PR. The publisher
-downloads artifacts as opaque data: it never checks out or executes
-pull-request code or artifact contents. Published releases are
-prereleases that identify the PR and immutable source SHA; consumers
-must treat them as untrusted debug output.
+==== Operator procedure and rollback
+
+[arabic]
+. Confirm the intended pull request is open and its current head is the
+revision to build.
+. As a maintainer, comment exactly `/build-debug`; edited text,
+additional arguments, unauthorized actors, and issue comments that are
+not attached to a pull request do not call the builder.
+. Record the resulting *Request debug build* run ID, run attempt, full
+head SHA, intermediate artifact name, and final
+`debug-build-<run-id>` artifact. A newer PR head requires a new comment;
+do not reuse a stale run.
+. To publish, dispatch *Publish debug prerelease* from `main` with that
+request run ID, PR number, and full SHA. Treat validation success as
+artifact identity evidence, not as trust in the binary contents. Normal
+`debug-release` approval remains required.
+. After testing, remove draft/test release state when applicable and
+allow the intermediate one-day and final fourteen-day artifact
+retention policies to clean up, or delete test artifacts through the
+approved repository process.
+
+Cache contents are not signed and must never contain credentials or
+other sensitive data. The read-only boundary depends on GitHub.com's
+documented service policy and on reusable jobs retaining the caller's
+effective root event. If GitHub changes that policy, CodeQL classifies
+the topology as cache-write-capable, a new high-severity workflow alert
+appears, or live validation does not show the expected event and
+artifacts, disable the request/build call. Do not roll back to direct
+`workflow_dispatch` execution or to `GITHUB_TOKEN` label mutation:
+the former restores default-branch cache-write authority and the latter
+is suppressed from starting the labeled workflow. Retain the protected
+publisher while the request path is disabled.
+
+Repeated authorized requests remain serialized per PR without
+cancelling an already-running immutable build. Trusted jobs download
+artifacts as opaque data and never source, install, execute, or add them
+to the command environment. Published releases identify the PR and
+immutable source SHA; consumers must treat every binary as untrusted
+debug output.
 
 === SSH server trust
 
