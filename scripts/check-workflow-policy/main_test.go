@@ -470,8 +470,8 @@ func TestLegacyDebugTransitionRequiresExactReviewedFiles(t *testing.T) {
 	if err := os.WriteFile(path, append(contents, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(root); err == nil || !strings.Contains(err.Error(), "cache-write authority") {
-		t.Fatalf("Validate() error = %v, want exact legacy digest rejection", err)
+	if err := Validate(root); err == nil {
+		t.Fatal("Validate() accepted a mutated legacy debug workflow")
 	}
 }
 

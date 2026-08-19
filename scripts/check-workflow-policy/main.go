@@ -615,16 +615,26 @@ func expectedJobPermissions(workflow Workflow, job string) Permissions {
 	if workflow.Path == debugRequestWorkflowPath && workflow.SourceSHA256 == legacyDebugRequestSHA256 && job == "request" {
 		return Permissions{"actions": "write", pullRequestsPermission: "read"}
 	}
+	if workflow.Path == debugBuilderWorkflowPath && workflow.SourceSHA256 == legacyDebugBuilderSHA256 && job == "build" {
+		return Permissions{"contents": "read"}
+	}
+	if workflow.Path == debugPublisherWorkflowPath && workflow.SourceSHA256 == legacyDebugPublisherSHA256 && job == debugReleaseValidateJob {
+		return Permissions{"actions": "read", "contents": "read"}
+	}
 	allowed := map[string]map[string]Permissions{
 		debugRequestWorkflowPath: {
 			"authorize": {pullRequestsPermission: "read"},
-			"finalize":  {"actions": "read", "contents": "read"},
+			"build":     {"contents": "read", pullRequestsPermission: "read"},
+			"finalize":  {"actions": "read", "contents": "read", pullRequestsPermission: "read"},
+		},
+		debugBuilderWorkflowPath: {
+			"build": {"contents": "read", pullRequestsPermission: "read"},
 		},
 		".github/workflows/pr.yml": {
 			"report": {"contents": "read", "checks": "write"},
 		},
 		debugPublisherWorkflowPath: {
-			debugReleaseValidateJob: {"actions": "read", "contents": "read"},
+			debugReleaseValidateJob: {"actions": "read", "contents": "read", pullRequestsPermission: "read"},
 			"publish":               {"actions": "read", "contents": "write"},
 		},
 		".github/workflows/release.yml": {
@@ -739,14 +749,14 @@ func validateDebugBrokerTopology(workflows map[string]Workflow) error {
 	}
 	if build.Uses != "./.github/workflows/debug-build.yml" || !containsNeed(build.Needs, "authorize") ||
 		build.With["pull_request"] != "${{ needs.authorize.outputs.pull_request }}" || build.With["commit_sha"] != "${{ needs.authorize.outputs.commit_sha }}" ||
-		!samePermissions(build.Permissions, Permissions{"contents": "read"}) || jobSecretsConfigured(build) || build.Environment != "" || len(build.Steps) != 0 || len(build.RunsOn) != 0 {
+		!samePermissions(build.Permissions, Permissions{"contents": "read", pullRequestsPermission: "read"}) || jobSecretsConfigured(build) || build.Environment != "" || len(build.Steps) != 0 || len(build.RunsOn) != 0 {
 		return errors.New("debug build request must pass only validated identity to the local read-only reusable builder without secrets or authority elevation")
 	}
 	validation := githubScriptIndexContaining(finalize, "github.rest.pulls.get")
 	download := actionIndex(finalize, downloadArtifactAction)
 	if !containsNeed(finalize.Needs, "authorize") || !containsNeed(finalize.Needs, "build") ||
 		!exactDebugFinalizerSteps(finalize) || validation == -1 || download == -1 || validation > download ||
-		!isGithubHosted(finalize) || !samePermissions(finalize.Permissions, Permissions{"actions": "read", "contents": "read"}) ||
+		!isGithubHosted(finalize) || !samePermissions(finalize.Permissions, Permissions{"actions": "read", "contents": "read", pullRequestsPermission: "read"}) ||
 		!stepDigestMatches(finalize, "Revalidate immutable identity before finalization", "script", debugFinalizeValidateSHA256) ||
 		!stepDigestMatches(finalize, debugLayoutStepName, "run", debugArtifactLayoutSHA256) ||
 		!stepDigestMatches(finalize, debugProvenanceStepName, "run", debugProvenanceCreateSHA256) ||
@@ -777,7 +787,7 @@ func validateDebugBuilderTopology(workflows map[string]Workflow) error {
 		len(build.On.WorkflowCall.Secrets) != 0 ||
 		!pullInput.Required || pullInput.Type != "string" || !shaInput.Required || shaInput.Type != "string" ||
 		checkout == -1 || validation == -1 || validation > checkout || !isGithubHosted(buildJob) ||
-		!samePermissions(buildJob.Permissions, Permissions{"contents": "read"}) ||
+		!samePermissions(buildJob.Permissions, Permissions{"contents": "read", pullRequestsPermission: "read"}) ||
 		!stepDigestMatches(buildJob, "Revalidate pull-request identity before checkout", "script", debugBuilderValidateSHA256) ||
 		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.base.repo.full_name !== repository") ||
 		!stepWithContains(buildJob, githubScriptActionPrefix, "script", "pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()") ||
@@ -799,7 +809,7 @@ func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 	publishJob, hasPublish := publish.Jobs.Values["publish"]
 	if !hasOnlyTriggers(publish, "workflow_dispatch") || !hasValidate || !hasPublish ||
 		validate.If != "github.ref == 'refs/heads/main'" || publishJob.If != "github.ref == 'refs/heads/main'" ||
-		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read"}) || jobHasEnvironment(validate) ||
+		!samePermissions(validate.Permissions, Permissions{"actions": "read", "contents": "read", pullRequestsPermission: "read"}) || jobHasEnvironment(validate) ||
 		!samePermissions(publishJob.Permissions, Permissions{"actions": "read", "contents": "write"}) ||
 		publishJob.Environment != "debug-release" || !containsNeed(publishJob.Needs, debugReleaseValidateJob) ||
 		!stepDigestMatches(validate, "Validate selected request run, artifact, and PR revision", "script", debugPublishValidateSHA256) ||

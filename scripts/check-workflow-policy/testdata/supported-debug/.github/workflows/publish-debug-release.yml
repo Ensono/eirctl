@@ -26,6 +26,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       artifact_id: ${{ steps.validate.outputs.artifact_id }}
       artifact_name: ${{ steps.validate.outputs.artifact_name }}
