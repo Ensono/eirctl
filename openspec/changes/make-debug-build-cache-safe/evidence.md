@@ -89,8 +89,16 @@ After Ensono-Staging added every referenced action identity to its organization 
 - Deployment `6000625955` completed with status `success`. Prerelease tag `debug-pr-3-4b5236316cb8` contained exactly the seven expected binaries.
 - Cleanup: the prerelease and tag, both artifacts, the validation PR, and its branch were deleted. Staging Actions remained enabled, no run required approval, and no release remained. At validation completion, staging `main` matched the production workflow tree at `6cf7d9d`.
 
+### Production stack progression — 2026-08-20
+
+- Bottom transition PR https://github.com/Ensono/eirctl/pull/151 passed protected policy, focused and broad tests, lint, CodeQL, documentation, and SonarCloud; it merged first at `2026-08-20T11:04:18Z` as merge commit `429ea8131a9ed741bdea6bd8a15c2a63f2151245`.
+- GitHub retargeted top cutover PR https://github.com/Ensono/eirctl/pull/150 to `main`. `gh stack sync` rebased the strict layer onto merge commit `429ea813`; validated top SHA `236fe74b105116b929ad5e2e315a36df1b2f4192`.
+- Required checks passed for that retargeted layer: [Trusted workflow policy](https://github.com/Ensono/eirctl/actions/runs/32362119547/job/96403721907), [CodeQL Actions](https://github.com/Ensono/eirctl/actions/runs/32362118239/job/96403720992), Go and JavaScript/TypeScript CodeQL, lint, Linux tests, documentation, and test-report publication.
+- Trusted SonarCloud run https://github.com/Ensono/eirctl/actions/runs/32362524960 passed. The PR 150 quality gate reported 86.9% new coverage, 0.0% duplication, zero new bugs, zero new vulnerabilities, and zero new code-smell severity.
+- No replacement cache-poisoning or untrusted-checkout alert exists for the strict PR topology. Alert 23 remains open and undismissed only on `refs/heads/main` commit `429ea813`, which intentionally still contains the legacy `workflow_dispatch` builder until PR 150 merges.
+
 ### Production live-flow blocker
 
-`issue_comment` workflow definitions are loaded from the default branch. Before merge, an exact `/build-debug` comment on PR 150 would execute the old default-branch dispatch topology, not this branch's reusable workflow. The unsafe predecessor was therefore not triggered for testing. The protected publisher likewise cannot prove acceptance of the new request-run identity until the new definitions exist on the default branch.
+`issue_comment` workflow definitions are loaded from the default branch. Until PR 150 merges, an exact `/build-debug` comment would execute the old default-branch dispatch topology, not this branch's reusable workflow. The unsafe predecessor is therefore not triggered for production testing.
 
-Production tasks 6.3–6.5 remain pending. The implementation needs a staged migration: first merge a policy-compatible transition that allows the reviewed target topology while the old workflows remain, then deliver the workflow cutover and strict rejection of the predecessor. After the cutover reaches `main`, record the authorized and negative request runs, caller/called job identity, permissions/runner, artifact IDs/names, publisher validation, cleanup, final CodeQL alert state, and repository prerequisites here.
+Production task 6.5 remains pending: merge the strict top layer, confirm alert 23 closes without dismissal, then repeat the authorized request and identity checks against the new default-branch workflow definitions.
