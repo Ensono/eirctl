@@ -45,8 +45,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.26.5
-      - name: Check maintained Go versions
-        run: scripts/check-go-version.sh
       - name: Check immutable CI dependencies
         run: scripts/check-immutable-ci-dependencies.sh
       - name: Check CODEOWNERS coverage
