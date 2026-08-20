@@ -31,6 +31,7 @@ type Reference struct {
 	Name     string
 	Kind     protocol.SymbolKind
 	Field    string
+	Scope    string
 	Location protocol.Location
 	Source   protocol.DocumentSource
 }
@@ -68,11 +69,12 @@ type CompletionItem struct {
 }
 
 type Result struct {
-	Symbols     []protocol.Symbol
-	References  []Reference
-	Imports     []Import
-	Diagnostics []protocol.Diagnostic
-	Sources     map[string]protocol.DocumentSource
+	Symbols      []protocol.Symbol
+	StageSymbols []protocol.Symbol
+	References   []Reference
+	Imports      []Import
+	Diagnostics  []protocol.Diagnostic
+	Sources      map[string]protocol.DocumentSource
 }
 
 func AnalyzeDocument(doc *ast.Document, opts Options) Result {
@@ -267,11 +269,30 @@ func collectPipelineReferences(doc *ast.Document, result *Result, source protoco
 	}
 
 	for _, pipelineEntry := range ast.MappingEntries(pipelinesNode) {
+		scope := pipelineScope(doc.URI, pipelineEntry.Key.Value)
 		for _, stageNode := range ast.SequenceItems(pipelineEntry.Value) {
+			collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "task")
+			collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "pipeline")
 			collectPipelineStageReference(doc, result, source, stageNode, "task", protocol.SymbolKindTask)
 			collectPipelineStageReference(doc, result, source, stageNode, "pipeline", protocol.SymbolKindPipeline)
+			collectDependsOnReferences(doc, result, source, scope, stageNode)
 		}
 	}
+}
+
+func collectPipelineStageDefinition(doc *ast.Document, result *Result, source protocol.DocumentSource, pipelineName string, scope string, stageNode *yaml.Node, field string) {
+	_, valueNode, found := ast.LookupMappingValue(stageNode, field)
+	if !found || valueNode.Kind != yaml.ScalarNode || valueNode.Value == "" {
+		return
+	}
+	result.StageSymbols = append(result.StageSymbols, protocol.Symbol{
+		Name:     valueNode.Value,
+		Kind:     protocol.SymbolKindStage,
+		Detail:   "pipeline stage in " + pipelineName,
+		Scope:    scope,
+		Location: doc.Location(valueNode),
+		Source:   source,
+	})
 }
 
 func collectPipelineStageReference(doc *ast.Document, result *Result, source protocol.DocumentSource, stageNode *yaml.Node, field string, kind protocol.SymbolKind) {
@@ -288,7 +309,44 @@ func collectPipelineStageReference(doc *ast.Document, result *Result, source pro
 	})
 }
 
+func collectDependsOnReferences(doc *ast.Document, result *Result, source protocol.DocumentSource, scope string, stageNode *yaml.Node) {
+	_, valueNode, found := ast.LookupMappingValue(stageNode, "depends_on")
+	if !found {
+		return
+	}
+
+	switch valueNode.Kind {
+	case yaml.ScalarNode:
+		appendDependsOnReference(doc, result, source, scope, valueNode)
+	case yaml.SequenceNode:
+		for _, item := range ast.SequenceItems(valueNode) {
+			appendDependsOnReference(doc, result, source, scope, item)
+		}
+	}
+}
+
+func appendDependsOnReference(doc *ast.Document, result *Result, source protocol.DocumentSource, scope string, node *yaml.Node) {
+	if node == nil || node.Kind != yaml.ScalarNode || node.Value == "" {
+		return
+	}
+	result.References = append(result.References, Reference{
+		Name:     node.Value,
+		Kind:     protocol.SymbolKindStage,
+		Field:    "pipelines.depends_on",
+		Scope:    scope,
+		Location: doc.Location(node),
+		Source:   source,
+	})
+}
+
+func pipelineScope(uri string, pipelineName string) string {
+	return filepath.Clean(uri) + "\x00" + pipelineName
+}
+
 func (r Result) Definitions(name string, kind protocol.SymbolKind) []protocol.Symbol {
+	if kind == protocol.SymbolKindStage {
+		return r.stageDefinitions(name, "")
+	}
 	var matches []protocol.Symbol
 	for _, symbol := range r.Symbols {
 		if symbol.Kind == kind && symbol.Name == name {
@@ -317,7 +375,21 @@ func (r Result) ReferencesFor(name string, kind protocol.SymbolKind) []Reference
 }
 
 func (r Result) ReferencesForSymbol(symbol protocol.Symbol) []Reference {
-	return r.ReferencesFor(symbol.Name, symbol.Kind)
+	var matches []Reference
+	if symbol.Source.ImportedFrom != nil {
+		importSource := documentSource(r.Sources, symbol.Source.ImportedFrom.URI)
+		matches = append(matches, Reference{
+			Name:     symbol.Name,
+			Kind:     symbol.Kind,
+			Field:    "import",
+			Location: *symbol.Source.ImportedFrom,
+			Source:   importSource,
+		})
+	}
+	if symbol.Kind == protocol.SymbolKindStage {
+		return append(matches, r.stageReferencesFor(symbol.Name, symbol.Scope)...)
+	}
+	return append(matches, r.ReferencesFor(symbol.Name, symbol.Kind)...)
 }
 
 func (r Result) DefinitionCandidatesFor(reference Reference) []protocol.Symbol {
@@ -330,6 +402,16 @@ func (r Result) DefinitionCandidatesFor(reference Reference) []protocol.Symbol {
 }
 
 func (r Result) DefinitionMatchesFor(reference Reference) []DefinitionMatch {
+	if reference.Kind == protocol.SymbolKindStage {
+		if definitions := r.stageDefinitions(reference.Name, reference.Scope); len(definitions) > 0 {
+			matches := make([]DefinitionMatch, 0, len(definitions))
+			for _, definition := range definitions {
+				matches = append(matches, DefinitionMatch{Symbol: definition, Score: 400, Match: MatchKindExact})
+			}
+			return matches
+		}
+		return nil
+	}
 	if definitions := r.Definitions(reference.Name, reference.Kind); len(definitions) > 0 {
 		matches := make([]DefinitionMatch, 0, len(definitions))
 		for _, definition := range definitions {
@@ -337,7 +419,72 @@ func (r Result) DefinitionMatchesFor(reference Reference) []DefinitionMatch {
 		}
 		return matches
 	}
-	return r.FuzzyDefinitions(reference.Name, reference.Kind)
+	return nil
+}
+
+func (r Result) stageDefinitions(name string, scope string) []protocol.Symbol {
+	var matches []protocol.Symbol
+	for _, symbol := range r.StageSymbols {
+		if name != "" && symbol.Name != name {
+			continue
+		}
+		if scope != "" && symbol.Scope != scope {
+			continue
+		}
+		matches = append(matches, symbol)
+	}
+	return matches
+}
+
+func (r Result) stageReferencesFor(name string, scope string) []Reference {
+	var matches []Reference
+	for _, reference := range r.References {
+		if reference.Kind != protocol.SymbolKindStage || reference.Name != name {
+			continue
+		}
+		if scope != "" && reference.Scope != scope {
+			continue
+		}
+		matches = append(matches, reference)
+	}
+	return matches
+}
+
+func (r Result) fuzzyStageDefinitions(name string, scope string) []DefinitionMatch {
+	query := strings.ToLower(strings.TrimSpace(name))
+	if query == "" {
+		return nil
+	}
+
+	var candidates []DefinitionMatch
+	seen := map[string]bool{}
+	for _, symbol := range r.StageSymbols {
+		if scope != "" && symbol.Scope != scope {
+			continue
+		}
+		key := symbol.Name + "\x00" + symbol.Scope + "\x00" + symbol.Location.URI + fmt.Sprintf(":%d:%d", symbol.Location.Range.Start.Line, symbol.Location.Range.Start.Character)
+		if seen[key] {
+			continue
+		}
+		score, match, ok := fuzzyMatchScore(query, strings.ToLower(symbol.Name))
+		if !ok {
+			continue
+		}
+		seen[key] = true
+		candidates = append(candidates, DefinitionMatch{Symbol: symbol, Score: score, Match: match})
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Score != candidates[j].Score {
+			return candidates[i].Score > candidates[j].Score
+		}
+		if candidates[i].Symbol.Name != candidates[j].Symbol.Name {
+			return candidates[i].Symbol.Name < candidates[j].Symbol.Name
+		}
+		return candidates[i].Symbol.Location.Range.Start.Character < candidates[j].Symbol.Location.Range.Start.Character
+	})
+
+	return candidates
 }
 
 func (r Result) FuzzyDefinitions(name string, kind protocol.SymbolKind) []DefinitionMatch {
@@ -396,6 +543,11 @@ func (r Result) SymbolAt(uri string, position protocol.Position) (protocol.Symbo
 			return symbol, true
 		}
 	}
+	for _, symbol := range r.StageSymbols {
+		if symbol.Location.URI == uri && symbol.Location.Range.Contains(position) {
+			return symbol, true
+		}
+	}
 	return protocol.Symbol{}, false
 }
 
@@ -413,6 +565,9 @@ func (r Result) DefinitionsAt(uri string, position protocol.Position) []protocol
 		return r.DefinitionCandidatesFor(reference)
 	}
 	if symbol, ok := r.SymbolAt(uri, position); ok {
+		if symbol.Kind == protocol.SymbolKindStage {
+			return r.stageDefinitions(symbol.Name, symbol.Scope)
+		}
 		return r.Definitions(symbol.Name, symbol.Kind)
 	}
 	return nil
@@ -423,7 +578,12 @@ func (r Result) DefinitionMatchesAt(uri string, position protocol.Position) []De
 		return r.DefinitionMatchesFor(reference)
 	}
 	if symbol, ok := r.SymbolAt(uri, position); ok {
-		definitions := r.Definitions(symbol.Name, symbol.Kind)
+		var definitions []protocol.Symbol
+		if symbol.Kind == protocol.SymbolKindStage {
+			definitions = r.stageDefinitions(symbol.Name, symbol.Scope)
+		} else {
+			definitions = r.Definitions(symbol.Name, symbol.Kind)
+		}
 		matches := make([]DefinitionMatch, 0, len(definitions))
 		for _, definition := range definitions {
 			matches = append(matches, DefinitionMatch{Symbol: definition, Score: 400, Match: MatchKindExact})
@@ -458,7 +618,7 @@ func (r Result) HoverAt(uri string, position protocol.Position) (Hover, bool) {
 	}
 	if reference, ok := r.ReferenceAt(uri, position); ok {
 		matches := r.DefinitionMatchesFor(reference)
-		message := fmt.Sprintf("Reference %s in %s.", reference.Name, reference.Field)
+		message := unresolvedReferenceMessage(reference) + "."
 		if len(matches) > 0 {
 			message = fmt.Sprintf("Reference %s in %s resolves to %d candidate(s).", reference.Name, reference.Field, len(matches))
 		}
@@ -474,9 +634,9 @@ func (r Result) HoverAt(uri string, position protocol.Position) (Hover, bool) {
 
 func (r Result) CompletionsAt(uri string, position protocol.Position) []CompletionItem {
 	if reference, ok := r.ReferenceAt(uri, position); ok {
-		matches := r.DefinitionMatchesFor(reference)
-		items := make([]CompletionItem, 0, len(matches))
-		for _, match := range matches {
+		candidates := r.completionCandidatesFor(reference)
+		items := make([]CompletionItem, 0, len(candidates))
+		for _, match := range candidates {
 			items = append(items, CompletionItem{
 				Label:      match.Symbol.Name,
 				Detail:     fmt.Sprintf("%s from %s (%s)", match.Symbol.Kind, match.Symbol.Source.Label, match.Match),
@@ -492,8 +652,90 @@ func (r Result) CompletionsAt(uri string, position protocol.Position) []Completi
 	return nil
 }
 
+func (r Result) completionCandidatesFor(reference Reference) []DefinitionMatch {
+	if reference.Kind == protocol.SymbolKindStage {
+		definitions := r.stageDefinitions("", reference.Scope)
+		matches := make([]DefinitionMatch, 0, len(definitions))
+		for _, definition := range definitions {
+			matches = append(matches, DefinitionMatch{Symbol: definition, Score: 400, Match: MatchKindExact})
+		}
+		sortDefinitionMatches(matches)
+		return matches
+	}
+
+	definitions := r.definitionsByKind(reference.Kind)
+	matches := make([]DefinitionMatch, 0, len(definitions))
+	for _, definition := range definitions {
+		matches = append(matches, DefinitionMatch{Symbol: definition, Score: 400, Match: MatchKindExact})
+	}
+	sortDefinitionMatches(matches)
+	return matches
+}
+
+func (r Result) StageCompletionsForScope(scope string) []CompletionItem {
+	definitions := r.stageDefinitions("", scope)
+	items := make([]CompletionItem, 0, len(definitions))
+	for _, definition := range definitions {
+		items = append(items, CompletionItem{
+			Label:      definition.Name,
+			Detail:     fmt.Sprintf("%s from %s", definition.Kind, definition.Source.Label),
+			InsertText: definition.Name,
+			Kind:       definition.Kind,
+			Source:     definition.Source,
+			Score:      400,
+			Match:      MatchKindExact,
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Label != items[j].Label {
+			return items[i].Label < items[j].Label
+		}
+		if items[i].Source.Label != items[j].Source.Label {
+			return items[i].Source.Label < items[j].Source.Label
+		}
+		return items[i].InsertText < items[j].InsertText
+	})
+	return items
+}
+
+func (r Result) definitionsByKind(kind protocol.SymbolKind) []protocol.Symbol {
+	var matches []protocol.Symbol
+	for _, symbol := range r.Symbols {
+		if symbol.Kind == kind {
+			matches = append(matches, symbol)
+		}
+	}
+	return matches
+}
+
+func sortDefinitionMatches(matches []DefinitionMatch) {
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Symbol.Name != matches[j].Symbol.Name {
+			return matches[i].Symbol.Name < matches[j].Symbol.Name
+		}
+		if matches[i].Symbol.Source.Label != matches[j].Symbol.Source.Label {
+			return matches[i].Symbol.Source.Label < matches[j].Symbol.Source.Label
+		}
+		return matches[i].Symbol.Location.Range.Start.Character < matches[j].Symbol.Location.Range.Start.Character
+	})
+}
+
 func validateReferences(result *Result, definitions map[protocol.SymbolKind]map[string]protocol.Symbol) {
 	for _, reference := range result.References {
+		if reference.Kind == protocol.SymbolKindStage {
+			if len(result.stageDefinitions(reference.Name, reference.Scope)) > 0 {
+				continue
+			}
+			result.Diagnostics = append(result.Diagnostics, protocol.Diagnostic{
+				URI:      reference.Location.URI,
+				Range:    reference.Location.Range,
+				Severity: protocol.SeverityError,
+				Code:     "unresolved-reference",
+				Source:   diagnosticSource,
+				Message:  unresolvedReferenceMessage(reference),
+			})
+			continue
+		}
 		if _, exists := definitions[reference.Kind][reference.Name]; exists {
 			continue
 		}
@@ -503,9 +745,29 @@ func validateReferences(result *Result, definitions map[protocol.SymbolKind]map[
 			Severity: protocol.SeverityError,
 			Code:     "unresolved-reference",
 			Source:   diagnosticSource,
-			Message:  fmt.Sprintf("unresolved %s reference %q in %s", reference.Kind, reference.Name, reference.Field),
+			Message:  unresolvedReferenceMessage(reference),
 		})
 	}
+}
+
+func unresolvedReferenceMessage(reference Reference) string {
+	if reference.Kind == protocol.SymbolKindStage && reference.Field == "pipelines.depends_on" {
+		pipelineName := pipelineNameFromScope(reference.Scope)
+		if pipelineName != "" {
+			return fmt.Sprintf("unknown pipeline stage %q in depends_on for pipeline %q", reference.Name, pipelineName)
+		}
+		return fmt.Sprintf("unknown pipeline stage %q in depends_on", reference.Name)
+	}
+
+	return fmt.Sprintf("unknown %s %q in %s", reference.Kind, reference.Name, reference.Field)
+}
+
+func pipelineNameFromScope(scope string) string {
+	_, pipelineName, found := strings.Cut(scope, "\x00")
+	if !found {
+		return ""
+	}
+	return pipelineName
 }
 
 func fuzzyMatchScore(query, candidate string) (int, MatchKind, bool) {

@@ -3,6 +3,8 @@ package ast
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Ensono/eirctl/lang/protocol"
@@ -20,6 +22,8 @@ type MappingEntry struct {
 	Value *yaml.Node
 }
 
+const diagnosticSource = "eirctl-lang"
+
 func Parse(uri string, content []byte) (*Document, error) {
 	var root yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
@@ -32,6 +36,37 @@ func Parse(uri string, content []byte) (*Document, error) {
 		Source: append([]byte(nil), content...),
 		Root:   &root,
 	}, nil
+}
+
+func ParseLenient(uri string, content []byte) (*Document, error) {
+	doc, _, err := ParseRecovering(uri, content)
+	return doc, err
+}
+
+func ParseRecovering(uri string, content []byte) (*Document, []protocol.Diagnostic, error) {
+	diagnostics := []protocol.Diagnostic{}
+	current := append([]byte(nil), content...)
+
+	for attempts := 0; attempts < 64; attempts++ {
+		doc, err := Parse(uri, current)
+		if err == nil {
+			return doc, diagnostics, nil
+		}
+
+		line, ok := parseYAMLParseErrorLine(err)
+		if !ok {
+			return emptyDocument(uri, content), diagnostics, err
+		}
+
+		diagnostics = append(diagnostics, parseDiagnostic(uri, line, err.Error()))
+		next := blankYAMLLines(current, line)
+		if bytes.Equal(next, current) {
+			return emptyDocument(uri, content), diagnostics, err
+		}
+		current = next
+	}
+
+	return emptyDocument(uri, content), diagnostics, fmt.Errorf("parse yaml: unable to recover")
 }
 
 func (d *Document) ContentRoot() *yaml.Node {
@@ -125,5 +160,60 @@ func NodeRange(node *yaml.Node) protocol.Range {
 			Line:      start.Line,
 			Character: start.Character + width,
 		},
+	}
+}
+
+func parseYAMLParseErrorLine(err error) (int, bool) {
+	message := err.Error()
+	index := strings.Index(message, "line ")
+	if index == -1 {
+		return 0, false
+	}
+	index += len("line ")
+	end := index
+	for end < len(message) && message[end] >= '0' && message[end] <= '9' {
+		end++
+	}
+	if end == index {
+		return 0, false
+	}
+	line, convErr := strconv.Atoi(message[index:end])
+	if convErr != nil || line <= 0 {
+		return 0, false
+	}
+	return line, true
+}
+
+func blankYAMLLines(content []byte, lineNumber int) []byte {
+	lines := strings.Split(string(content), "\n")
+	if lineNumber < 1 || lineNumber > len(lines) {
+		return content
+	}
+	lines[lineNumber-1] = blankYAMLLine(lines[lineNumber-1])
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func blankYAMLLine(line string) string {
+	trimmedLeft := strings.TrimLeft(line, " \t")
+	indent := line[:len(line)-len(trimmedLeft)]
+	if indent == "" {
+		return "# eirctl parse recovery"
+	}
+	return indent + "# eirctl parse recovery"
+}
+
+func emptyDocument(uri string, content []byte) *Document {
+	root := yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	return &Document{URI: uri, Source: append([]byte(nil), content...), Root: &root}
+}
+
+func parseDiagnostic(uri string, line int, message string) protocol.Diagnostic {
+	return protocol.Diagnostic{
+		URI:      uri,
+		Range:    protocol.Range{Start: protocol.Position{Line: line - 1}, End: protocol.Position{Line: line - 1, Character: 1}},
+		Code:     "yaml-parse-error",
+		Source:   diagnosticSource,
+		Severity: protocol.SeverityError,
+		Message:  message,
 	}
 }

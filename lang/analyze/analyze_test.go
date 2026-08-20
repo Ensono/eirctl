@@ -181,11 +181,14 @@ tasks:
 	}
 
 	refsAtDefinition := result.ReferencesAt(testDefs[0].Location.URI, testDefs[0].Location.Range.Start)
-	if len(refsAtDefinition) != 1 {
-		t.Fatalf("ReferencesAt(definition) = %d, want 1", len(refsAtDefinition))
+	if len(refsAtDefinition) != 2 {
+		t.Fatalf("ReferencesAt(definition) = %d, want 2", len(refsAtDefinition))
 	}
-	if refsAtDefinition[0].Location.URI != "/repo/eirctl.yaml" {
-		t.Fatalf("ReferencesAt(definition) uri = %q, want /repo/eirctl.yaml", refsAtDefinition[0].Location.URI)
+	if refsAtDefinition[0].Field != "import" || refsAtDefinition[0].Location.URI != "/repo/eirctl.yaml" {
+		t.Fatalf("ReferencesAt(definition)[0] = %+v, want import reference in /repo/eirctl.yaml", refsAtDefinition[0])
+	}
+	if refsAtDefinition[1].Location.URI != "/repo/eirctl.yaml" {
+		t.Fatalf("ReferencesAt(definition)[1] uri = %q, want /repo/eirctl.yaml", refsAtDefinition[1].Location.URI)
 	}
 }
 
@@ -272,7 +275,7 @@ tasks:
 	}
 }
 
-func TestAnalyzeWorkspaceReturnsFuzzyDefinitionCandidates(t *testing.T) {
+func TestAnalyzeWorkspaceReportsUnresolvedReferenceAndOffersExactOptions(t *testing.T) {
 	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
   build:
     command: echo build
@@ -298,19 +301,31 @@ pipelines:
 		}
 	}
 	if !ok {
-		t.Fatal("missing test reference for fuzzy lookup")
+		t.Fatal("missing test reference for unresolved lookup")
 	}
 
 	definitions := result.DefinitionsAt(reference.Location.URI, reference.Location.Range.Start)
-	if len(definitions) != 2 {
-		t.Fatalf("DefinitionsAt(fuzzy reference) = %d, want 2", len(definitions))
+	if len(definitions) != 0 {
+		t.Fatalf("DefinitionsAt(unresolved reference) = %d, want 0", len(definitions))
 	}
-	seen := map[string]bool{}
-	for _, definition := range definitions {
-		seen[definition.Name] = true
+
+	completions := result.CompletionsAt(reference.Location.URI, reference.Location.Range.Start)
+	if len(completions) != 2 {
+		t.Fatalf("CompletionsAt(unresolved reference) = %d, want 2", len(completions))
 	}
-	if !seen["build"] || !seen["bold"] {
-		t.Fatalf("fuzzy definitions = %v, want build and bold", seen)
+	if completions[0].Label != "bold" || completions[1].Label != "build" {
+		t.Fatalf("completion labels = [%q, %q], want [bold, build]", completions[0].Label, completions[1].Label)
+	}
+
+	hasUnresolvedDiagnostic := false
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "unresolved-reference" && diagnostic.Range == reference.Location.Range {
+			hasUnresolvedDiagnostic = true
+			break
+		}
+	}
+	if !hasUnresolvedDiagnostic {
+		t.Fatal("missing unresolved-reference diagnostic for bld")
 	}
 }
 
@@ -362,6 +377,201 @@ tasks:
 	}
 	if completions[0].Match != analyze.MatchKindExact {
 		t.Fatalf("completion match = %q, want exact", completions[0].Match)
+	}
+}
+
+func TestAnalyzeWorkspaceCompletesDependsOnFromParentPipelineStages(t *testing.T) {
+	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
+  build:
+    command: echo build
+  test:
+    command: echo test
+  publish:
+    command: echo publish
+pipelines:
+  ci:
+    - task: build
+    - task: test
+      depends_on: [build]
+    - task: publish
+      depends_on:
+        - tst
+  release:
+    - task: publish
+    - task: build
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	result := analyze.AnalyzeWorkspace(root, analyze.Options{HomeDir: "/home/tester"})
+
+	var buildRef analyze.Reference
+	var testRef analyze.Reference
+	for _, candidate := range result.References {
+		if candidate.Field != "pipelines.depends_on" {
+			continue
+		}
+		switch candidate.Name {
+		case "build":
+			buildRef = candidate
+		case "tst":
+			testRef = candidate
+		}
+	}
+
+	if buildRef.Name == "" {
+		t.Fatal("missing depends_on reference for build")
+	}
+	if testRef.Name == "" {
+		t.Fatal("missing depends_on reference for tst")
+	}
+
+	buildDefinitions := result.DefinitionsAt(buildRef.Location.URI, buildRef.Location.Range.Start)
+	if len(buildDefinitions) != 1 {
+		t.Fatalf("DefinitionsAt(build depends_on) = %d, want 1", len(buildDefinitions))
+	}
+	if buildDefinitions[0].Kind != protocol.SymbolKindStage {
+		t.Fatalf("build depends_on definition kind = %q, want stage", buildDefinitions[0].Kind)
+	}
+	if buildDefinitions[0].Name != "build" {
+		t.Fatalf("build depends_on definition name = %q, want build", buildDefinitions[0].Name)
+	}
+
+	testCompletions := result.CompletionsAt(testRef.Location.URI, testRef.Location.Range.Start)
+	if len(testCompletions) != 3 {
+		t.Fatalf("CompletionsAt(test depends_on) = %d, want 3", len(testCompletions))
+	}
+	if testCompletions[0].Label != "build" || testCompletions[1].Label != "publish" || testCompletions[2].Label != "test" {
+		t.Fatalf("depends_on completion labels = [%q, %q, %q], want [build, publish, test]", testCompletions[0].Label, testCompletions[1].Label, testCompletions[2].Label)
+	}
+	if testCompletions[0].Kind != protocol.SymbolKindStage {
+		t.Fatalf("depends_on completion kind = %q, want stage", testCompletions[0].Kind)
+	}
+	for _, completion := range testCompletions {
+		if completion.Source.Label != "/repo/eirctl.yaml" {
+			t.Fatalf("depends_on completion source = %q, want /repo/eirctl.yaml", completion.Source.Label)
+		}
+	}
+
+	hasUnresolvedDiagnostic := false
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "unresolved-reference" && diagnostic.Range == testRef.Location.Range {
+			if diagnostic.Message != `unknown pipeline stage "tst" in depends_on for pipeline "ci"` {
+				t.Fatalf("depends_on diagnostic message = %q", diagnostic.Message)
+			}
+			hasUnresolvedDiagnostic = true
+			break
+		}
+	}
+	if !hasUnresolvedDiagnostic {
+		t.Fatal("missing unresolved-reference diagnostic for depends_on tst")
+	}
+
+	refsAtBuildStage := result.ReferencesAt(buildDefinitions[0].Location.URI, buildDefinitions[0].Location.Range.Start)
+	if len(refsAtBuildStage) != 1 {
+		t.Fatalf("ReferencesAt(build stage) = %d, want 1", len(refsAtBuildStage))
+	}
+	if refsAtBuildStage[0].Name != "build" {
+		t.Fatalf("ReferencesAt(build stage) name = %q, want build", refsAtBuildStage[0].Name)
+	}
+}
+
+func TestAnalyzeWorkspaceReportsSpecificUnknownReferenceMessages(t *testing.T) {
+	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
+  build:
+    context: missing-context
+    command: echo build
+pipelines:
+  ci:
+    - task: missing-task
+    - pipeline: missing-pipeline
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	result := analyze.AnalyzeWorkspace(root, analyze.Options{HomeDir: "/home/tester"})
+
+	messages := map[string]bool{}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "unresolved-reference" {
+			messages[diagnostic.Message] = true
+		}
+	}
+
+	if !messages[`unknown context "missing-context" in tasks.context`] {
+		t.Fatal("missing specific context diagnostic")
+	}
+	if !messages[`unknown task "missing-task" in pipelines.task`] {
+		t.Fatal("missing specific task diagnostic")
+	}
+	if !messages[`unknown pipeline "missing-pipeline" in pipelines.pipeline`] {
+		t.Fatal("missing specific pipeline diagnostic")
+	}
+}
+
+func TestAnalyzeWorkspaceShowsTaskAndPipelineCompletionsByKeyword(t *testing.T) {
+	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
+  build:
+    command: echo build
+  test:
+    command: echo test
+pipelines:
+  deploy:
+    - task: build
+    - pipeline: deploy
+  release:
+    - task: test
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	result := analyze.AnalyzeWorkspace(root, analyze.Options{HomeDir: "/home/tester"})
+
+	var taskRef analyze.Reference
+	var pipelineRef analyze.Reference
+	for _, candidate := range result.References {
+		switch {
+		case candidate.Field == "pipelines.task" && candidate.Name == "build":
+			taskRef = candidate
+		case candidate.Field == "pipelines.pipeline" && candidate.Name == "deploy":
+			pipelineRef = candidate
+		}
+	}
+
+	if taskRef.Name == "" {
+		t.Fatal("missing task reference")
+	}
+	if pipelineRef.Name == "" {
+		t.Fatal("missing pipeline reference")
+	}
+
+	taskCompletions := result.CompletionsAt(taskRef.Location.URI, taskRef.Location.Range.Start)
+	if len(taskCompletions) != 2 {
+		t.Fatalf("CompletionsAt(task) = %d, want 2", len(taskCompletions))
+	}
+	if taskCompletions[0].Label != "build" || taskCompletions[1].Label != "test" {
+		t.Fatalf("task completion labels = [%q, %q], want [build, test]", taskCompletions[0].Label, taskCompletions[1].Label)
+	}
+	for _, completion := range taskCompletions {
+		if completion.Kind != protocol.SymbolKindTask {
+			t.Fatalf("task completion kind = %q, want task", completion.Kind)
+		}
+	}
+
+	pipelineCompletions := result.CompletionsAt(pipelineRef.Location.URI, pipelineRef.Location.Range.Start)
+	if len(pipelineCompletions) != 2 {
+		t.Fatalf("CompletionsAt(pipeline) = %d, want 2", len(pipelineCompletions))
+	}
+	if pipelineCompletions[0].Label != "deploy" || pipelineCompletions[1].Label != "release" {
+		t.Fatalf("pipeline completion labels = [%q, %q], want [deploy, release]", pipelineCompletions[0].Label, pipelineCompletions[1].Label)
+	}
+	for _, completion := range pipelineCompletions {
+		if completion.Kind != protocol.SymbolKindPipeline {
+			t.Fatalf("pipeline completion kind = %q, want pipeline", completion.Kind)
+		}
 	}
 }
 

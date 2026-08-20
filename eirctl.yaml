@@ -9,6 +9,7 @@ output: prefixed
 import:
   - shared/build/go/eirctl.yaml
   - shared/security/eirctl.yaml
+  - git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
 
 contexts:
   bash:
@@ -38,9 +39,11 @@ pipelines:
   gha:unit:test:
     - pipeline: test:unit
     - task: sonar:coverage:prep
-      depends_on: test:unit
+      depends_on:
+        - test:unit
 
   lints:
+    - task:
     - task: go:lint
     - task: go:vuln:check
       variables:
@@ -55,6 +58,12 @@ pipelines:
         - gen:docs:pdf
 
 tasks:
+  aws:command:
+    context: awscli
+    command:
+      - |
+        aws --version
+
   gen:docs:html:
     context: asciidoc
     description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.

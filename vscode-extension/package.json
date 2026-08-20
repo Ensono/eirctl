@@ -1,0 +1,98 @@
+{
+    "name": "eirctl",
+    "displayName": "eirctl",
+    "description": "VS Code support for eirctl YAML configuration files",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.125.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onStartupFinished",
+        "onLanguage:yaml",
+        "workspaceContains:**/eirctl.yaml",
+        "workspaceContains:**/eirctl/**/*.yaml"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "configuration": {
+            "title": "eirctl",
+            "properties": {
+                "eirctl.languageServer.transport": {
+                    "type": "string",
+                    "default": "tcp",
+                    "enum": [
+                        "process",
+                        "tcp"
+                    ],
+                    "markdownDescription": "How the eirctl language server is reached. Use `process` to spawn the server command, or `tcp` to connect to an already-running server socket."
+                },
+                "eirctl.languageServer.command": {
+                    "type": "string",
+                    "default": "/home/dnitsch/git/ensono/eirctl/cmd/eirctl-lsp/eirctl-lsp",
+                    "markdownDescription": "Command used to start the eirctl language server when `eirctl.languageServer.transport` is `process`."
+                },
+                "eirctl.languageServer.args": {
+                    "type": "array",
+                    "default": [],
+                    "items": {
+                        "type": "string"
+                    },
+                    "markdownDescription": "Arguments passed to the eirctl language server command when `eirctl.languageServer.transport` is `process`."
+                },
+                "eirctl.languageServer.cwd": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "Working directory used to start the eirctl language server when `eirctl.languageServer.transport` is `process`. Leave empty to use the repository root above the extension folder."
+                },
+                "eirctl.languageServer.tcpHost": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "markdownDescription": "Host name used when `eirctl.languageServer.transport` is `tcp`."
+                },
+                "eirctl.languageServer.tcpPort": {
+                    "type": "number",
+                    "default": 11103,
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "markdownDescription": "TCP port used when `eirctl.languageServer.transport` is `tcp`."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "npm run check-types && npm run lint && node esbuild.js",
+        "watch": "npm-run-all -p watch:*",
+        "watch:esbuild": "node esbuild.js --watch",
+        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+        "package": "npm run check-types && npm run lint && node esbuild.js --production",
+        "compile-tests": "tsc -p . --outDir out",
+        "watch-tests": "tsc -p . -w --outDir out",
+        "pretest": "npm run compile-tests && npm run compile && npm run lint",
+        "check-types": "tsc --noEmit",
+        "lint": "eslint src",
+        "test": "vscode-test"
+    },
+    "devDependencies": {
+        "@types/mocha": "^10.0.10",
+        "@types/node": "24.x",
+        "@types/vscode": "^1.125.0",
+        "@vscode/test-cli": "^0.0.15",
+        "@vscode/test-electron": "^3.0.0",
+        "esbuild": "^0.28.1",
+        "eslint": "^10.5.0",
+        "npm-run-all": "^4.1.5",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.61.1"
+    },
+    "overrides": {
+        "diff": "^8.0.4",
+        "serialize-javascript": "^7.0.6"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^10.1.0"
+    }
+}

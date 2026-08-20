@@ -96,11 +96,12 @@ func LoadDocuments(root *ast.Document, opts LoadOptions) Snapshot {
 
 			visited[path] = true
 			snapshot.Sources[path] = protocol.DocumentSource{
-				URI:       path,
-				Path:      path,
-				Original:  ref.Raw,
-				Label:     sourceLabel(path, ref.Raw),
-				FromCache: ref.Resolved.FromCache,
+				URI:          path,
+				Path:         path,
+				Original:     ref.Raw,
+				Label:        sourceLabel(path, ref.Raw),
+				FromCache:    ref.Resolved.FromCache,
+				ImportedFrom: &ref.Location,
 			}
 			snapshot.Documents = append(snapshot.Documents, child)
 			queue = append(queue, child)

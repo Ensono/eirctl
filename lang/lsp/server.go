@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,12 +19,15 @@ import (
 )
 
 type Server struct {
-	reader   *bufio.Reader
-	writer   io.Writer
-	homeDir  string
-	rootPath string
-	docs     map[string]string
-	closed   bool
+	reader                      *bufio.Reader
+	writer                      io.Writer
+	homeDir                     string
+	rootPath                    string
+	docs                        map[string]string
+	debug                       bool
+	configPathDiscoveryComplete bool
+	discoveredConfigPath        string
+	closed                      bool
 }
 
 func NewServer(in io.Reader, out io.Writer) (*Server, error) {
@@ -36,6 +40,7 @@ func NewServer(in io.Reader, out io.Writer) (*Server, error) {
 		writer:  out,
 		homeDir: homeDir,
 		docs:    map[string]string{},
+		debug:   envBool("EIRCTL_LSP_DEBUG"),
 	}, nil
 }
 
@@ -65,7 +70,7 @@ type requestEnvelope struct {
 type responseEnvelope struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
-	Result  any             `json:"result,omitempty"`
+	Result  any             `json:"result"`
 	Error   *responseError  `json:"error,omitempty"`
 }
 
@@ -205,6 +210,9 @@ func (s *Server) handleMessage(payload []byte) error {
 		var params initializeParams
 		_ = json.Unmarshal(req.Params, &params)
 		s.rootPath = deriveRootPath(params)
+		s.configPathDiscoveryComplete = false
+		s.discoveredConfigPath = ""
+		s.logDebugf("initialize rootPath=%q rootUri=%q workspaceFolders=%d", s.rootPath, params.RootURI, len(params.WorkspaceFolders))
 		return s.respond(req.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync":       1,
@@ -258,7 +266,7 @@ func (s *Server) handleMessage(payload []byte) error {
 			return err
 		}
 		delete(s.docs, path)
-		return s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: params.TextDocument.URI, Diagnostics: nil})
+		return s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: params.TextDocument.URI, Diagnostics: []lspDiagnostic{}})
 	case "textDocument/definition":
 		var params textDocumentPositionParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -311,6 +319,11 @@ func (s *Server) handleMessage(payload []byte) error {
 			return s.respondError(req.ID, -32603, err.Error())
 		}
 		items := result.CompletionsAt(path, toProtocolPosition(params.Position))
+		if len(items) == 0 {
+			if content, readErr := s.readFile(path); readErr == nil {
+				items = s.dependsOnFallbackCompletions(path, content, params.Position, result)
+			}
+		}
 		return s.respond(req.ID, toLSPCompletionItems(items))
 	case "textDocument/documentSymbol":
 		var params documentSymbolParams
@@ -335,24 +348,166 @@ func (s *Server) analyze(uri string) (analyze.Result, string, error) {
 	if err != nil {
 		return analyze.Result{}, "", err
 	}
-	content, err := s.readFile(path)
+	entryPath := s.analysisEntryPath(path)
+	s.logDebugf("analyze uri=%q currentPath=%q entryPath=%q rootPath=%q", uri, path, entryPath, s.rootPath)
+	content, err := s.readFile(entryPath)
 	if err != nil {
+		s.logDebugf("analyze read error entryPath=%q error=%v", entryPath, err)
 		return analyze.Result{}, "", err
 	}
-	doc, err := ast.Parse(path, content)
-	if err != nil {
+	doc, parseDiagnostics, err := ast.ParseRecovering(entryPath, content)
+	if err != nil && doc == nil {
+		s.logDebugf("analyze parse fatal entryPath=%q error=%v", entryPath, err)
 		return analyze.Result{}, "", err
 	}
-	result := analyze.AnalyzeWorkspace(doc, analyze.Options{HomeDir: s.homeDir, ReadFile: s.readFile, BaseDir: filepath.Dir(path)})
+	if err != nil {
+		s.logDebugf("analyze parse recovered entryPath=%q diagnostics=%d error=%v", entryPath, len(parseDiagnostics), err)
+	}
+	result := analyze.AnalyzeWorkspace(doc, analyze.Options{HomeDir: s.homeDir, ReadFile: s.readFile, BaseDir: filepath.Dir(entryPath)})
+	result.Diagnostics = append(result.Diagnostics, parseDiagnostics...)
+	s.logDebugf("analyze complete symbols=%d diagnostics=%d", len(result.Symbols), len(result.Diagnostics))
 	return result, path, nil
+}
+
+func (s *Server) analysisEntryPath(currentPath string) string {
+	if s.rootPath == "" {
+		return currentPath
+	}
+
+	rootConfigPath := filepath.Join(s.rootPath, "eirctl.yaml")
+	if _, err := s.readFile(rootConfigPath); err == nil {
+		return rootConfigPath
+	}
+
+	if strings.HasSuffix(s.rootPath, ".yaml") {
+		if _, err := s.readFile(s.rootPath); err == nil {
+			return s.rootPath
+		}
+	}
+
+	if discovered := s.resolveWorkspaceConfigPath(); discovered != "" {
+		return discovered
+	}
+
+	return currentPath
+}
+
+func (s *Server) resolveWorkspaceConfigPath() string {
+	if s.configPathDiscoveryComplete {
+		return s.discoveredConfigPath
+	}
+
+	s.configPathDiscoveryComplete = true
+	if s.rootPath == "" {
+		return ""
+	}
+
+	rootInfo, err := os.Stat(s.rootPath)
+	if err != nil || !rootInfo.IsDir() {
+		return ""
+	}
+
+	candidates := make([]string, 0, 4)
+	const maxDepth = 4
+
+	_ = filepath.WalkDir(s.rootPath, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+
+		rel, err := filepath.Rel(s.rootPath, path)
+		if err != nil {
+			return nil
+		}
+		if rel == "." {
+			return nil
+		}
+
+		depth := strings.Count(rel, string(os.PathSeparator)) + 1
+		if entry.IsDir() {
+			name := entry.Name()
+			if name == ".git" || name == "node_modules" || depth > maxDepth {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if depth > maxDepth {
+			return nil
+		}
+
+		if entry.Name() == "eirctl.yaml" {
+			candidates = append(candidates, filepath.Clean(path))
+		}
+		return nil
+	})
+
+	if len(candidates) == 0 {
+		s.logDebugf("config discovery root=%q found=0", s.rootPath)
+		return ""
+	}
+
+	selected := s.selectPreferredWorkspaceConfig(candidates)
+	if len(candidates) > 1 {
+		s.logDebugf("config discovery root=%q found=%d selected=%q", s.rootPath, len(candidates), selected)
+	} else {
+		s.logDebugf("config discovery root=%q selected=%q", s.rootPath, selected)
+	}
+
+	s.discoveredConfigPath = selected
+	return s.discoveredConfigPath
+}
+
+func (s *Server) selectPreferredWorkspaceConfig(candidates []string) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	bestPath := candidates[0]
+	bestDepth := s.workspaceConfigDepth(bestPath)
+	for _, candidate := range candidates[1:] {
+		depth := s.workspaceConfigDepth(candidate)
+		if depth < bestDepth {
+			bestPath = candidate
+			bestDepth = depth
+		}
+	}
+
+	return bestPath
+}
+
+func (s *Server) workspaceConfigDepth(candidate string) int {
+	rel, err := filepath.Rel(s.rootPath, candidate)
+	if err != nil {
+		return 1 << 30
+	}
+	return strings.Count(rel, string(os.PathSeparator)) + 1
 }
 
 func (s *Server) readFile(path string) ([]byte, error) {
 	path = filepath.Clean(path)
 	if content, ok := s.docs[path]; ok {
+		s.logDebugf("readFile overlay path=%q", path)
 		return []byte(content), nil
 	}
 	return os.ReadFile(path)
+}
+
+func (s *Server) logDebugf(format string, args ...any) {
+	if !s.debug {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "[eirctl-lsp] "+format+"\n", args...)
+}
+
+func envBool(name string) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) publishDiagnostics(path string) error {
@@ -366,7 +521,7 @@ func (s *Server) publishDiagnostics(path string) error {
 		byURI[uri] = append(byURI[uri], toLSPDiagnostic(diagnostic))
 	}
 	if _, ok := byURI[pathToURI(path)]; !ok {
-		byURI[pathToURI(path)] = nil
+		byURI[pathToURI(path)] = []lspDiagnostic{}
 	}
 	for uri, diagnostics := range byURI {
 		if err := s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: uri, Diagnostics: diagnostics}); err != nil {
@@ -377,11 +532,11 @@ func (s *Server) publishDiagnostics(path string) error {
 }
 
 func (s *Server) respond(id json.RawMessage, result any) error {
-	return s.write(responseEnvelope{JSONRPC: "2.0", ID: id, Result: result})
+	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 
 func (s *Server) respondError(id json.RawMessage, code int, message string) error {
-	return s.write(responseEnvelope{JSONRPC: "2.0", ID: id, Error: &responseError{Code: code, Message: message}})
+	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "error": &responseError{Code: code, Message: message}})
 }
 
 func (s *Server) notify(method string, params any) error {
@@ -526,6 +681,63 @@ func toLSPDocumentSymbols(result analyze.Result, path string) []lspDocumentSymbo
 		symbols = append(symbols, item)
 	}
 	return symbols
+}
+
+func (s *Server) dependsOnFallbackCompletions(path string, content []byte, position lspPosition, result analyze.Result) []analyze.CompletionItem {
+	scope, ok := dependsOnScopeAt(path, content, position)
+	if !ok {
+		return nil
+	}
+	return result.StageCompletionsForScope(scope)
+}
+
+func dependsOnScopeAt(path string, content []byte, position lspPosition) (string, bool) {
+	lines := strings.Split(string(content), "\n")
+	if position.Line < 0 || position.Line >= len(lines) {
+		return "", false
+	}
+
+	for lineIndex := position.Line; lineIndex >= 0; lineIndex-- {
+		trimmed := strings.TrimSpace(lines[lineIndex])
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "depends_on:") {
+			return pipelineScopeFromLines(path, lines, lineIndex)
+		}
+	}
+
+	return "", false
+}
+
+func pipelineScopeFromLines(path string, lines []string, dependsOnLine int) (string, bool) {
+	for lineIndex := dependsOnLine - 1; lineIndex >= 0; lineIndex-- {
+		line := lines[lineIndex]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "pipelines:" {
+			return "", false
+		}
+		if countLeadingSpaces(line) == 2 && strings.HasSuffix(trimmed, ":") && !strings.HasPrefix(trimmed, "-") {
+			pipelineName := strings.TrimSuffix(trimmed, ":")
+			return pipelineScopeForPath(path, pipelineName), true
+		}
+	}
+	return "", false
+}
+
+func pipelineScopeForPath(path string, pipelineName string) string {
+	return filepath.Clean(path) + "\x00" + pipelineName
+}
+
+func countLeadingSpaces(value string) int {
+	count := 0
+	for count < len(value) && value[count] == ' ' {
+		count++
+	}
+	return count
 }
 
 func symbolKindToCompletionKind(kind langprotocol.SymbolKind) int {

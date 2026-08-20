@@ -3,6 +3,8 @@ coverage.out
 # Dependencies
 vendor/
 bin/
+node_modules
+
 
 # IDEs
 .idea
@@ -20,6 +22,8 @@ outputs/
 .taskctl/
 .eirctl/
 .deps/
+vscode-extension/dist
+
 # local env files
 *.env
 # prof outputs

@@ -29,11 +29,12 @@ type Location struct {
 }
 
 type DocumentSource struct {
-	URI       string
-	Path      string
-	Original  string
-	Label     string
-	FromCache bool
+	URI          string
+	Path         string
+	Original     string
+	Label        string
+	FromCache    bool
+	ImportedFrom *Location
 }
 
 type RelatedInformation struct {
@@ -79,6 +80,7 @@ type Symbol struct {
 	Name     string
 	Kind     SymbolKind
 	Detail   string
+	Scope    string
 	Location Location
 	Source   DocumentSource
 }
