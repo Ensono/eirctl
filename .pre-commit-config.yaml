@@ -10,6 +10,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: go-version-consistency
+        name: Check maintained Go versions
+        entry: scripts/check-go-version.sh
+        language: system
+        pass_filenames: false
+        files: '(^go\.mod$|^Dockerfile(\.pwsh)?$|^README\.md$|^shared/build/go/eirctl\.yaml$|^\.github/workflows/.*\.ya?ml$|^scripts/check-go-version\.sh$)'
       - id: go-vet
         name: Go vet
         entry: go vet ./...
