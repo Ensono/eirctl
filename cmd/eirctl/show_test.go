@@ -39,7 +39,7 @@ func Test_showCommand(t *testing.T) {
 		defer os.Unsetenv("EIRCTL_CONFIG_FILE")
 		cmdRunTestHelper(t, &cmdRunTestInput{
 			args:   []string{"-c", "testdata/graph.yaml", "show", "foo"},
-			output: []string{"Context: foo", "Image: golang:1.26.6-trixie"},
+			output: []string{"Context: foo", "Image: foo.io/bar/baz:1.2.3"},
 		})
 	})
 	t.Run("imports show correctly with sources in task", func(t *testing.T) {
