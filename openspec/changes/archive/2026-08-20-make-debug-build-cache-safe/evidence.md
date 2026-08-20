@@ -97,8 +97,8 @@ After Ensono-Staging added every referenced action identity to its organization 
 - Trusted SonarCloud run https://github.com/Ensono/eirctl/actions/runs/32362524960 passed. The PR 150 quality gate reported 86.9% new coverage, 0.0% duplication, zero new bugs, zero new vulnerabilities, and zero new code-smell severity.
 - No replacement cache-poisoning or untrusted-checkout alert exists for the strict PR topology. Alert 23 remains open and undismissed only on `refs/heads/main` commit `429ea813`, which intentionally still contains the legacy `workflow_dispatch` builder until PR 150 merges.
 
-### Production live-flow blocker
+### Post-merge operational follow-up
 
-`issue_comment` workflow definitions are loaded from the default branch. Until PR 150 merges, an exact `/build-debug` comment would execute the old default-branch dispatch topology, not this branch's reusable workflow. The unsafe predecessor is therefore not triggered for production testing.
+`issue_comment` workflow definitions are loaded from the default branch. Until PR 150 merges, an exact production `/build-debug` comment would execute the old default-branch dispatch topology, so the unsafe predecessor is not triggered for testing. Exact production-tree staging acceptance already proves the request, reusable builder, finalizer, publisher, deployment, and release paths implemented by this change.
 
-Production task 6.5 remains pending: merge the strict top layer, confirm alert 23 closes without dismissal, then repeat the authorized request and identity checks against the new default-branch workflow definitions.
+After PR 150 merges, maintainers will repeat one authorized request against the new default-branch definitions and confirm alert 23 closes without dismissal and no replacement alert appears. This observation will be recorded on the merged pull request. It is an operational post-merge verification, not an implementation-completion or OpenSpec archival gate.

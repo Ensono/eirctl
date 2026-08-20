@@ -106,11 +106,11 @@ A short prominent historical-outcome notice will be added to the top-level archi
 
 Current `docs/ci-security.adoc` will explain the new topology, the June 26, 2026 GitHub change, the exact write-capable event set, the reusable inheritance assumption, the reason disabled `setup-go` caching is only defense in depth, operator instructions, and rollback criteria.
 
-### 7. Require both local and live acceptance evidence
+### 7. Require local, pre-merge, and staging acceptance evidence
 
-Local validation will cover workflow YAML, action pins, permissions, policy fixtures, unit tests, documentation, and strict OpenSpec validation. Post-push validation will use an authorized comment on a test pull request to prove one request run invokes one reusable build, produces the intermediate and trusted final artifacts, and can be selected by the publisher without executing it. The exact pushed SHA must have a successful CodeQL Actions analysis where alert 23 is fixed without dismissal and no replacement high-severity workflow finding appears.
+Local validation will cover workflow YAML, action pins, permissions, policy fixtures, unit tests, documentation, and strict OpenSpec validation. Pre-merge validation requires successful protected policy, CodeQL Actions analysis, and no replacement high-severity workflow finding for the exact cutover SHA. Live validation uses an exact production-tree staging repository and an authorized comment to prove one request run invokes one reusable build, produces the intermediate and trusted final artifacts, passes publisher provenance checks, completes a successful deployment, and publishes only the seven expected binaries.
 
-The implementation will record run URLs, run/event/workflow identities, artifact names, CodeQL version, alert state, and cleanup actions in change evidence. Static alert closure alone is not acceptance.
+The implementation records run URLs, run/event/workflow identities, artifact names, CodeQL version, alert state, cleanup actions, and the exact staging/production tree identity in change evidence. After merge, maintainers repeat the default-branch request and confirm alert 23 closes without dismissal. Because that observation is only possible after the implementing pull request has merged, it is an operational verification recorded on the merged pull request rather than an implementation-completion or archival gate.
 
 ### 8. Deliver the protected-policy bootstrap as a native GitHub PR stack
 
@@ -128,7 +128,7 @@ The transition rule must compare the complete legacy workflow envelope rather th
 
 ## Risks / Trade-offs
 
-- **[Risk] GitHub changes cache-token policy or CodeQL's event model.** → Keep the documented event set in one policy function with source references and tests; require CodeQL and a live request run before merge; fail closed and disable the debug path if the platform no longer guarantees read-only `issue_comment` cache access.
+- **[Risk] GitHub changes cache-token policy or CodeQL's event model.** → Keep the documented event set in one policy function with source references and tests; require pre-merge CodeQL and an exact production-tree staging request before archival; repeat both against the default branch after merge and disable the debug path if the platform no longer guarantees read-only `issue_comment` cache access.
 - **[Risk] A new writable caller invokes the reusable builder.** → Structural policy resolves reusable callers and rejects any cache-write-capable or privileged call path; `debug-build.yml` exposes no manual trigger.
 - **[Risk] A pull request advances between authorization and build.** → Revalidate immediately before checkout and fail stale requests rather than substituting a revision.
 - **[Risk] Pull-request code tampers with artifacts or attempts denial of service.** → Treat binaries as untrusted, use run-specific immutable artifact names, generate provenance on a fresh runner, never execute artifacts in trusted jobs, and accept that an authorized hostile build may consume its bounded job resources or make its own run fail.
@@ -146,11 +146,11 @@ The transition rule must compare the complete legacy workflow envelope rather th
 3. Require the bottom PR's old protected-base policy check, local policy tests, workflow lint, and broader validation to pass; merge it first.
 4. Keep the top layer atomic: convert `debug-build.yml` to `workflow_call`, split authorization/call/finalization, update publisher identity/provenance, update documentation and archives, and remove the legacy transition allowance.
 5. After GitHub retargets the top PR to `main`, rerun protected policy and CodeQL for the exact top SHA. Require no replacement high-severity workflow finding; alert 23 remains undismissed until the fixing topology reaches the default branch.
-6. Merge the top layer, then exercise one exact authorized `/build-debug` against the new default-branch definitions. Record request/called jobs, permissions, runner, run attempt, intermediate and final artifacts, provenance, and negative request behavior.
-7. Exercise stale-head and malformed publisher selection without approving or publishing a prerelease solely for testing. Confirm alert 23 closes without dismissal, clean up test state, and record repository prerequisites and residual risks.
+6. Before merge, mirror the exact top-layer tree into the staging repository; exercise authorized, non-exact, stale-head, malformed-publisher, and successful publication paths; record request/called jobs, permissions, runner, artifacts, provenance, deployment, release contents, and cleanup.
+7. After merge and archival, repeat one exact authorized `/build-debug` against the new default-branch definitions and confirm alert 23 closes without dismissal. Record this operational verification on the merged pull request; disable the request path rather than restoring either predecessor if it fails.
 
 Rollback is to disable the request job or remove the reusable build call while retaining the protected publisher. Do not roll back to `workflow_dispatch` execution of pull-request code or the `GITHUB_TOKEN` label signal.
 
 ## Open Questions
 
-The stacked rollout decision is resolved. Implementation must still verify the exact Actions API fields, reusable caller behavior, artifact association, and CodeQL result against GitHub after the strict cutover reaches the default branch.
+No implementation decision remains open. Exact Actions API fields, reusable caller behavior, artifact association, publisher behavior, and pre-merge CodeQL were verified locally and in staging. Default-branch request and alert-closure checks remain an explicitly non-blocking post-merge operational verification.
