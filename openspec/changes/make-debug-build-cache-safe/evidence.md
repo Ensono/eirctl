@@ -57,7 +57,7 @@ These broad checks were run and were not weakened or bypassed:
 
 ### Staging end-to-end acceptance — 2026-08-19
 
-Repository: https://github.com/Ensono-Staging/eirctl-test (internal). No production secret or credential was copied. Actions were disabled during default-branch bootstrap and re-enabled afterward. The protected `debug-release` environment required review and prevented self-approval. Because the staging organization's Actions allowlist excludes `gittools/actions`, staging alone replaced the two pinned GitVersion steps with a fixed `0.0.0-staging` output; production retains the reviewed pinned actions. All trust-boundary, checkout, build, artifact, provenance, and publisher code was otherwise the production topology.
+Repository: https://github.com/Ensono-Staging/eirctl-test (internal). No production secret or credential was copied. Actions were disabled during default-branch bootstrap and re-enabled afterward. During the first acceptance pass, the staging organization allowlist excluded `gittools/actions`, so staging alone used a fixed `0.0.0-staging` output and a guarded release step. After the organization allowlist was updated, the exact unmodified production tree was synchronized and revalidated as recorded below.
 
 The GitHub cache-policy sources were rechecked on 2026-08-19: the [June 26, 2026 changelog](https://github.blog/changelog/2026-06-26-read-only-actions-cache-for-untrusted-triggers/) and [cache access documentation](https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows#cache-access-for-low-trust-workflow-triggers). The staging jobs used GitHub Actions runner `2.336.0`, `ubuntu-24.04`, image release `ubuntu24/20260810.271`.
 
@@ -73,7 +73,21 @@ The GitHub cache-policy sources were rechecked on 2026-08-19: the [June 26, 2026
 - Malformed publisher selection: https://github.com/Ensono-Staging/eirctl-test/actions/runs/32253750305 used an all-zero SHA. Validation failed before download/provenance handling; `publish` was skipped.
 - Stale-head run: https://github.com/Ensono-Staging/eirctl-test/actions/runs/32253904582. Authorization captured the old head, staging advanced the PR during a deterministic pre-validation window, and builder revalidation failed with `The pull request is not open at the authorized current commit SHA in this repository.` Checkout, setup, build, upload, and finalization were skipped.
 - Clean deployment rerun: request https://github.com/Ensono-Staging/eirctl-test/actions/runs/32355050335 rebuilt and finalized head `f1a226e65c8ba403b27051a3fc49d946b2d07324`. Publisher https://github.com/Ensono-Staging/eirctl-test/actions/runs/32355955777 completed both `validate-build` and `publish`; the publish runner downloaded only the validated artifact and rechecked provenance. Staging alone guarded the final release-action step with unset repository variable `STAGING_ENABLE_RELEASE`, so it was skipped rather than creating a release. Deployment `5999855783` completed with status `success`, and the repository still had no release.
-- Cleanup: all artifacts from both successful builds were deleted; the obsolete error deployment was deleted; no release existed; the test PR was closed and its branch deleted; the artificial stale-head delay was reverted; Actions were re-enabled. Staging `main` retains only the fixed SemVer and disabled-release adaptations required for safe staging acceptance.
+- Cleanup: all artifacts from both successful builds were deleted; the obsolete error deployment was deleted; no release existed; the test PR was closed and its branch deleted; the artificial stale-head delay was reverted; Actions were re-enabled.
+
+### Exact production-tree staging revalidation — 2026-08-20
+
+After Ensono-Staging added every referenced action identity to its organization allowlist, staging `main` was replaced with the exact production stack tree at `6cf7d9d6c0667303b7cc2fe0e03b8c8f83ed8674`. `git diff` confirmed zero tree differences and the action audit reported `NOT_ALLOWED_COUNT 0`; no GitVersion or publisher guard adaptation remained.
+
+- Local validation against the exact tree passed: full pre-commit (including Go-version consistency, vet, build, and tests), Actionlint for the three debug workflows, workflow security policy, and strict OpenSpec validation.
+- Test PR: https://github.com/Ensono-Staging/eirctl-test/pull/3, immutable head `4b5236316cb806de1be9193850c7aca26cf4e766`.
+- Exact authorized request: https://github.com/Ensono-Staging/eirctl-test/actions/runs/32359186129, root event `issue_comment`, run attempt `1`, default-branch workflow SHA `6cf7d9d6c0667303b7cc2fe0e03b8c8f83ed8674`.
+- `authorize`, reusable `build / build`, and `finalize` succeeded. The unmodified pinned GitVersion setup and execution actions both ran successfully, followed by exact-SHA checkout, build, intermediate upload, bounded finalization, provenance creation, and immutable final upload.
+- Intermediate artifact ID `9403214039`, name `debug-build-intermediate-32359186129-1`, digest `sha256:cc0c259deb1925c29283bcd7a03dc4ab05fd270db80880305cf472fc949d7ad8`.
+- Final artifact ID `9403224709`, name `debug-build-32359186129`, digest `sha256:2d92ee6efb351c26d391bbd9e09070c610465e64e7f8d97471b775c95f082795`.
+- Exact publisher: https://github.com/Ensono-Staging/eirctl-test/actions/runs/32360353390. Both `validate-build` and `publish` succeeded; the publish runner downloaded only the validated artifact, rechecked provenance, and executed the unmodified pinned release action.
+- Deployment `6000625955` completed with status `success`. Prerelease tag `debug-pr-3-4b5236316cb8` contained exactly the seven expected binaries.
+- Cleanup: the prerelease and tag, both artifacts, the validation PR, and its branch were deleted. Staging Actions remained enabled, no run required approval, and no release remained. At validation completion, staging `main` matched the production workflow tree at `6cf7d9d`.
 
 ### Production live-flow blocker
 
