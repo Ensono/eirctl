@@ -1,16 +1,20 @@
 name: Debug build
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       pull_request:
-        description: Pull request number authorized by the request broker
+        description: Pull request number authorized by the request workflow
         required: true
         type: string
       commit_sha:
-        description: Immutable current pull-request head SHA authorized by the request broker
+        description: Immutable current pull-request head SHA authorized by the request workflow
         required: true
         type: string
+    outputs:
+      semver:
+        description: GitVersion SemVer recorded by trusted finalization
+        value: ${{ jobs.build.outputs.semver }}
 
 permissions:
   contents: read
@@ -18,8 +22,13 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      semver: ${{ steps.gitversion.outputs.semVer }}
     steps:
-      - name: Validate dispatched pull-request identity before checkout
+      - name: Revalidate pull-request identity before checkout
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PULL_REQUEST: ${{ inputs.pull_request }}
@@ -38,8 +47,8 @@ jobs:
               repo: context.repo.repo,
               pull_number: pullNumber,
             });
-            if (pullRequest.base.repo.full_name !== repository || pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()) {
-              core.setFailed('The dispatched pull request does not resolve to the requested current commit SHA in this repository.');
+            if (pullRequest.state !== 'open' || pullRequest.base.repo.full_name !== repository || pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()) {
+              core.setFailed('The pull request is not open at the authorized current commit SHA in this repository.');
               return;
             }
 
@@ -63,7 +72,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
           cache: false
 
       - name: Build debug binaries
@@ -75,29 +84,10 @@ jobs:
             --set Version="v${SEMVER}" \
             --set Revision="${HEAD_SHA}"
 
-      - name: Record build provenance
-        env:
-          PULL_REQUEST: ${{ inputs.pull_request }}
-          HEAD_SHA: ${{ inputs.commit_sha }}
-          SEMVER: ${{ steps.gitversion.outputs.semVer }}
-        run: |
-          jq -n \
-            --arg repository "$GITHUB_REPOSITORY" \
-            --arg event "$GITHUB_EVENT_NAME" \
-            --arg pull_request "$PULL_REQUEST" \
-            --arg commit_sha "$HEAD_SHA" \
-            --arg workflow_run_id "$GITHUB_RUN_ID" \
-            --arg workflow_run_attempt "$GITHUB_RUN_ATTEMPT" \
-            --arg semver "$SEMVER" \
-            '{repository: $repository, event: $event, pull_request: $pull_request, commit_sha: $commit_sha, workflow_run_id: $workflow_run_id, workflow_run_attempt: $workflow_run_attempt, semver: $semver}' \
-            > debug-build-provenance.json
-
-      - name: Upload debug build artifact
+      - name: Upload run-specific intermediate binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: debug-build-${{ github.run_id }}
-          path: |
-            bin/
-            debug-build-provenance.json
+          name: debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bin/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1

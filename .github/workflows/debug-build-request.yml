@@ -7,24 +7,29 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: debug-build-request-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
-  request:
+  authorize:
     if: >-
       github.event.issue.pull_request != null &&
       github.event.comment.body == '/build-debug'
     runs-on: ubuntu-24.04
-    concurrency:
-      group: debug-build-request-${{ github.event.issue.number }}
-      cancel-in-progress: false
     permissions:
-      actions: write
       pull-requests: read
+    outputs:
+      pull_request: ${{ steps.authorize.outputs.pull_request }}
+      commit_sha: ${{ steps.authorize.outputs.commit_sha }}
     steps:
-      - name: Authorize and dispatch debug build
+      - name: Authorize exact debug-build request
+        id: authorize
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const pullNumber = context.issue.number;
+            const repository = context.repo.owner + '/' + context.repo.repo;
             const permission = await github.rest.repos.getCollaboratorPermissionLevel({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -40,13 +45,133 @@ jobs:
               repo: context.repo.repo,
               pull_number: pullNumber,
             });
-            await github.rest.actions.createWorkflowDispatch({
+            if (pullRequest.state !== 'open' || pullRequest.base.repo.full_name !== repository || !/^[0-9a-f]{40}$/i.test(pullRequest.head.sha)) {
+              core.setFailed('The request must identify an open pull request in this repository with a full current head SHA.');
+              return;
+            }
+            core.setOutput('pull_request', String(pullNumber));
+            core.setOutput('commit_sha', pullRequest.head.sha.toLowerCase());
+
+  build:
+    needs: authorize
+    uses: ./.github/workflows/debug-build.yml
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      pull_request: ${{ needs.authorize.outputs.pull_request }}
+      commit_sha: ${{ needs.authorize.outputs.commit_sha }}
+
+  finalize:
+    needs: [authorize, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Revalidate immutable identity before finalization
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PULL_REQUEST: ${{ needs.authorize.outputs.pull_request }}
+          COMMIT_SHA: ${{ needs.authorize.outputs.commit_sha }}
+        with:
+          script: |
+            const pullNumber = Number(process.env.PULL_REQUEST);
+            const commitSHA = process.env.COMMIT_SHA;
+            const repository = context.repo.owner + '/' + context.repo.repo;
+            if (!Number.isSafeInteger(pullNumber) || pullNumber < 1 || !/^[0-9a-f]{40}$/i.test(commitSHA)) {
+              core.setFailed('Trusted authorization outputs are malformed.');
+              return;
+            }
+            const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'debug-build.yml',
-              ref: 'main',
-              inputs: {
-                pull_request: String(pullNumber),
-                commit_sha: pullRequest.head.sha,
-              },
+              pull_number: pullNumber,
             });
+            if (pullRequest.state !== 'open' || pullRequest.base.repo.full_name !== repository || pullRequest.head.sha.toLowerCase() !== commitSHA.toLowerCase()) {
+              core.setFailed('The pull request changed after authorization; refusing to finalize stale binaries.');
+              return;
+            }
+
+      - name: Download only the run-specific intermediate artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: intermediate/bin
+
+      - name: Validate bounded binary layout without execution
+        env:
+          ARTIFACT_ROOT: intermediate
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import stat
+
+          root = Path(os.environ['ARTIFACT_ROOT'])
+          expected_files = {
+              Path('bin/eirctl-windows-amd64.exe'),
+              Path('bin/eirctl-windows-386.exe'),
+              Path('bin/eirctl-windows-arm64.exe'),
+              Path('bin/eirctl-darwin-amd64'),
+              Path('bin/eirctl-darwin-arm64'),
+              Path('bin/eirctl-linux-arm64'),
+              Path('bin/eirctl-linux-amd64'),
+          }
+          actual_files = set()
+          actual_dirs = set()
+          total_size = 0
+          for directory, names, files in os.walk(root, followlinks=False):
+              base = Path(directory)
+              for name in names + files:
+                  path = base / name
+                  relative = path.relative_to(root)
+                  mode = path.lstat().st_mode
+                  if stat.S_ISDIR(mode):
+                      actual_dirs.add(relative)
+                  elif stat.S_ISREG(mode):
+                      size = path.stat().st_size
+                      if size < 1 or size > 128 * 1024 * 1024:
+                          raise SystemExit(f'unsafe debug binary size: {relative}')
+                      total_size += size
+                      actual_files.add(relative)
+                  else:
+                      raise SystemExit(f'non-regular artifact entry: {relative}')
+          if actual_dirs != {Path('bin')} or actual_files != expected_files:
+              raise SystemExit(f'unexpected debug artifact layout: directories={sorted(map(str, actual_dirs))}, files={sorted(map(str, actual_files))}')
+          if total_size > 512 * 1024 * 1024:
+              raise SystemExit('debug artifact exceeds aggregate size bound')
+          PY
+
+      - name: Create trusted clean-runner provenance
+        env:
+          PULL_REQUEST: ${{ needs.authorize.outputs.pull_request }}
+          HEAD_SHA: ${{ needs.authorize.outputs.commit_sha }}
+          SEMVER: ${{ needs.build.outputs.semver }}
+          INTERMEDIATE_ARTIFACT: debug-build-intermediate-${{ github.run_id }}-${{ github.run_attempt }}
+          FINAL_ARTIFACT: debug-build-${{ github.run_id }}
+        run: |
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg workflow_path ".github/workflows/debug-build-request.yml" \
+            --arg pull_request "$PULL_REQUEST" \
+            --arg commit_sha "$HEAD_SHA" \
+            --arg workflow_run_id "$GITHUB_RUN_ID" \
+            --arg workflow_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg intermediate_artifact "$INTERMEDIATE_ARTIFACT" \
+            --arg final_artifact "$FINAL_ARTIFACT" \
+            --arg semver "$SEMVER" \
+            '{repository: $repository, event: $event, workflow_path: $workflow_path, pull_request: $pull_request, commit_sha: $commit_sha, workflow_run_id: $workflow_run_id, workflow_run_attempt: $workflow_run_attempt, intermediate_artifact: $intermediate_artifact, final_artifact: $final_artifact, semver: $semver, finalized_by: "finalize"}' \
+            > intermediate/debug-build-provenance.json
+
+      - name: Upload immutable final debug build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: debug-build-${{ github.run_id }}
+          path: |
+            intermediate/bin/
+            intermediate/debug-build-provenance.json
+          if-no-files-found: error
+          retention-days: 14

@@ -12,7 +12,7 @@ The current on-demand debug builder executes pull-request-controlled code from a
 - Update CI security documentation with the June 26, 2026 GitHub cache-control change, why `issue_comment` is suitable for this narrowly constrained builder, and why `workflow_dispatch` and token-generated label events are unsuitable.
 - Clarify the two archived debug-build changes with prominent historical-status notes that distinguish the statically clean but non-functional label attempt from the functional but cache-write-capable dispatch replacement, and point readers to this corrective change. Preserve the archived record rather than rewriting its original decisions or completion history.
 - Deliver the protected-policy migration and workflow cutover as a native GitHub stacked pull request: a bottom transition-policy layer accepts only the exact reviewed legacy and target topologies, while the top layer switches workflows and removes the legacy allowance. GitHub's `pull_request_target` policy workflow continues to execute checker code from the default branch; the stack makes the required bottom-first merge order explicit so that checker reaches `main` before the cutover is evaluated there.
-- Require live post-cutover verification that `/build-debug` starts exactly one reusable builder, the artifact can be selected by the publisher, CodeQL alert 23 closes without dismissal, and no replacement workflow alert appears.
+- Complete live end-to-end validation against an exact production-tree staging repository before archival. After merge, repeat the default-branch `/build-debug` and CodeQL checks as an operational verification recorded on the merged pull request; that follow-up is not an implementation or archival gate.
 
 ## Capabilities
 

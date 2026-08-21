@@ -37,9 +37,6 @@ const (
 	debugPublishValidateSHA256      = "1627ebea3c9c742051dfa75dee11fc125ed9c12617eb6622c73c73aeec22002c"
 	debugProvenanceValidateSHA256   = "e3bd42f55585329e0b0003d67dc4e375198b913004d9a0d76f8b8ab15d146e49"
 	debugProvenanceRecheckSHA256    = "948040e50d7d7b07589b449c9649d13bfdf5333a8954703503f2f94ba5d044dc"
-	legacyDebugRequestSHA256        = "335f46155d347ce80d2fd22b74b7afcb8cb9932bcba9dcca5d2481bea4557d87"
-	legacyDebugBuilderSHA256        = "52035aa6741a6f9f518e8ff36b88e9f440165e213fefd09f69db18731d6b77e5"
-	legacyDebugPublisherSHA256      = "9fd0a519c99dcf01e55cd1eb8dc1960601beac09283b94fadc3f75360b13874e"
 	debugBuilderWorkflowPath        = ".github/workflows/debug-build.yml"
 	debugRequestWorkflowPath        = ".github/workflows/debug-build-request.yml"
 	debugPublisherWorkflowPath      = ".github/workflows/publish-debug-release.yml"
@@ -58,8 +55,7 @@ var pinnedAction = regexp.MustCompile(`@[0-9a-f]{40}$`)
 // Policy validation consumes schema.GithubWorkflow, GithubJob, and GithubStep
 // directly instead of maintaining a second representation of workflow YAML.
 type Workflow struct {
-	Path         string
-	SourceSHA256 string
+	Path string
 	schema.GithubWorkflow
 }
 
@@ -106,11 +102,7 @@ func Validate(root string) error {
 		}
 	}
 	effectiveEvents := resolveEffectiveRootEvents(workflows)
-	legacyDebugTopology := isExactLegacyDebugTopology(workflows)
 	for path, workflow := range workflows {
-		if legacyDebugTopology && path == debugBuilderWorkflowPath && legacyBuilderHasNoAdditionalCallers(effectiveEvents[path]) {
-			continue
-		}
 		if err := validatePrivilegedFlow(workflows, workflow, effectiveEvents[path]); err != nil {
 			return err
 		}
@@ -151,8 +143,7 @@ func parseWorkflow(path string, content []byte) (Workflow, error) {
 	if definition.Jobs.Values == nil {
 		return Workflow{}, fmt.Errorf("%s needs jobs", path)
 	}
-	digest := sha256.Sum256(content)
-	return Workflow{Path: path, SourceSHA256: fmt.Sprintf("%x", digest), GithubWorkflow: definition}, nil
+	return Workflow{Path: path, GithubWorkflow: definition}, nil
 }
 
 func hasTrigger(workflow Workflow, name string) bool {
@@ -612,15 +603,6 @@ func expectedWorkflowPermissions(path string) Permissions {
 }
 
 func expectedJobPermissions(workflow Workflow, job string) Permissions {
-	if workflow.Path == debugRequestWorkflowPath && workflow.SourceSHA256 == legacyDebugRequestSHA256 && job == "request" {
-		return Permissions{"actions": "write", pullRequestsPermission: "read"}
-	}
-	if workflow.Path == debugBuilderWorkflowPath && workflow.SourceSHA256 == legacyDebugBuilderSHA256 && job == "build" {
-		return Permissions{"contents": "read"}
-	}
-	if workflow.Path == debugPublisherWorkflowPath && workflow.SourceSHA256 == legacyDebugPublisherSHA256 && job == debugReleaseValidateJob {
-		return Permissions{"actions": "read", "contents": "read"}
-	}
 	allowed := map[string]map[string]Permissions{
 		debugRequestWorkflowPath: {
 			"authorize": {pullRequestsPermission: "read"},
@@ -659,9 +641,6 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 	if err := validateProtectedPolicyTopology(workflows); err != nil {
 		return err
 	}
-	if isExactLegacyDebugTopology(workflows) {
-		return validateNonDebugRepositoryTopology(workflows)
-	}
 	if err := validateDebugBrokerTopology(workflows); err != nil {
 		return err
 	}
@@ -672,31 +651,6 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 		return err
 	}
 	return validateNonDebugRepositoryTopology(workflows)
-}
-
-func legacyBuilderHasNoAdditionalCallers(events map[effectiveRootEvent]struct{}) bool {
-	if len(events) != 1 {
-		return false
-	}
-	for event := range events {
-		return event.Name == "workflow_dispatch" && event.SourcePath == debugBuilderWorkflowPath
-	}
-	return false
-}
-
-func isExactLegacyDebugTopology(workflows map[string]Workflow) bool {
-	expected := map[string]string{
-		debugRequestWorkflowPath:   legacyDebugRequestSHA256,
-		debugBuilderWorkflowPath:   legacyDebugBuilderSHA256,
-		debugPublisherWorkflowPath: legacyDebugPublisherSHA256,
-	}
-	for path, digest := range expected {
-		workflow, ok := workflows[path]
-		if !ok || workflow.SourceSHA256 != digest {
-			return false
-		}
-	}
-	return true
 }
 
 func validateNonDebugRepositoryTopology(workflows map[string]Workflow) error {
