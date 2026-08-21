@@ -212,7 +212,7 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 
 			gs, err := NewGitSource(file)
 			if err != nil {
-				return false, nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
+				return false, nil, fmt.Errorf("loader error: %v", err)
 			}
 
 			if err := gs.Clone(); err != nil {
