@@ -375,21 +375,10 @@ func (r Result) ReferencesFor(name string, kind protocol.SymbolKind) []Reference
 }
 
 func (r Result) ReferencesForSymbol(symbol protocol.Symbol) []Reference {
-	var matches []Reference
-	if symbol.Source.ImportedFrom != nil {
-		importSource := documentSource(r.Sources, symbol.Source.ImportedFrom.URI)
-		matches = append(matches, Reference{
-			Name:     symbol.Name,
-			Kind:     symbol.Kind,
-			Field:    "import",
-			Location: *symbol.Source.ImportedFrom,
-			Source:   importSource,
-		})
-	}
 	if symbol.Kind == protocol.SymbolKindStage {
-		return append(matches, r.stageReferencesFor(symbol.Name, symbol.Scope)...)
+		return r.stageReferencesFor(symbol.Name, symbol.Scope)
 	}
-	return append(matches, r.ReferencesFor(symbol.Name, symbol.Kind)...)
+	return r.ReferencesFor(symbol.Name, symbol.Kind)
 }
 
 func (r Result) DefinitionCandidatesFor(reference Reference) []protocol.Symbol {

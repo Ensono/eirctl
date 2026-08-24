@@ -1,16 +1,18 @@
-import { context } from 'esbuild';
+import { BuildResult, Message, PluginBuild, context } from 'esbuild';
 import { exit } from 'node:process';
+
 /**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
     name: 'esbuild-problem-matcher',
-    setup(build) {
+
+    setup(build: PluginBuild) {
         build.onStart(() => {
             console.log('[watch] build started');
         });
-        build.onEnd((result) => {
-            result.errors.forEach((message) => {
+        build.onEnd((result: BuildResult) => {
+            result.errors.forEach((message: Message) => {
                 console.error(`✘ [ERROR] ${message.text}`);
                 console.error(`    ${message?.location?.file}:${message?.location?.line}:${message?.location?.column}:`);
             });
@@ -18,6 +20,7 @@ const esbuildProblemMatcherPlugin = {
         });
     },
 };
+
 (async () => {
     const production = process.argv.includes('--production');
     const watch = process.argv.includes('--watch');
@@ -41,8 +44,7 @@ const esbuildProblemMatcherPlugin = {
     });
     if (watch) {
         await ctx.watch();
-    }
-    else {
+    } else {
         await ctx.rebuild();
         await ctx.dispose();
     }

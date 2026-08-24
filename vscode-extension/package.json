@@ -4,7 +4,8 @@
     "description": "VS Code support for eirctl YAML configuration files",
     "version": "0.0.1",
     "engines": {
-        "vscode": "^1.125.0"
+        "vscode": "^1.125.0",
+        "node": "^24"
     },
     "categories": [
         "Programming Languages"

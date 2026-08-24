@@ -16,32 +16,65 @@ import (
 	"github.com/Ensono/eirctl/lang/analyze"
 	"github.com/Ensono/eirctl/lang/ast"
 	langprotocol "github.com/Ensono/eirctl/lang/protocol"
+	"github.com/rs/zerolog"
 )
 
+// Server defines the language server that implements the Language Server Protocol (LSP) for eirctl.
 type Server struct {
-	reader                      *bufio.Reader
-	writer                      io.Writer
-	homeDir                     string
+	reader *bufio.Reader
+	writer io.Writer
+
+	transportConfig TransportConfig
+	// homeDir is the user's home directory, used for resolving cache files referenced in imports.
+	homeDir string
+	// rootPath is the root path of the workspace, derived from the initialize request.
+	//
+	// all analysis is performed relative to this path.
+	//
+	// Currently, this is used to determine the entry point for analysis and to discover workspace configuration files.
 	rootPath                    string
 	docs                        map[string]string
 	debug                       bool
 	configPathDiscoveryComplete bool
 	discoveredConfigPath        string
 	closed                      bool
+	// structured logger
+	log zerolog.Logger
 }
 
-func NewServer(in io.Reader, out io.Writer) (*Server, error) {
+type ServerOpt func(*Server)
+
+func NewServer(in io.Reader, out io.Writer, opts ...ServerOpt) (*Server, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
-		reader:  bufio.NewReader(in),
-		writer:  out,
-		homeDir: homeDir,
-		docs:    map[string]string{},
-		debug:   envBool("EIRCTL_LSP_DEBUG"),
-	}, nil
+	s := &Server{
+		reader:          bufio.NewReader(in),
+		writer:          out,
+		homeDir:         homeDir,
+		docs:            map[string]string{},
+		log:             zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.ErrorLevel),
+		transportConfig: TransportConfig{},
+	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s, nil
+}
+
+func WithLogger(logger zerolog.Logger) ServerOpt {
+	return func(s *Server) {
+		s.log = logger
+	}
+}
+
+func WithTransportConfig(config TransportConfig) ServerOpt {
+	return func(s *Server) {
+		s.transportConfig = config
+	}
 }
 
 func (s *Server) Serve() error {
@@ -60,145 +93,6 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-type requestEnvelope struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type responseEnvelope struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Result  any             `json:"result"`
-	Error   *responseError  `json:"error,omitempty"`
-}
-
-type responseError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type initializeParams struct {
-	RootURI          string `json:"rootUri"`
-	RootPath         string `json:"rootPath"`
-	WorkspaceFolders []struct {
-		URI string `json:"uri"`
-	} `json:"workspaceFolders"`
-}
-
-type textDocumentIdentifier struct {
-	URI string `json:"uri"`
-}
-
-type versionedTextDocumentIdentifier struct {
-	URI     string `json:"uri"`
-	Version int    `json:"version"`
-}
-
-type textDocumentItem struct {
-	URI        string `json:"uri"`
-	LanguageID string `json:"languageId"`
-	Version    int    `json:"version"`
-	Text       string `json:"text"`
-}
-
-type didOpenTextDocumentParams struct {
-	TextDocument textDocumentItem `json:"textDocument"`
-}
-
-type textDocumentContentChangeEvent struct {
-	Text string `json:"text"`
-}
-
-type didChangeTextDocumentParams struct {
-	TextDocument   versionedTextDocumentIdentifier  `json:"textDocument"`
-	ContentChanges []textDocumentContentChangeEvent `json:"contentChanges"`
-}
-
-type didCloseTextDocumentParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-}
-
-type textDocumentPositionParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-	Position     lspPosition            `json:"position"`
-}
-
-type referenceParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-	Position     lspPosition            `json:"position"`
-	Context      struct {
-		IncludeDeclaration bool `json:"includeDeclaration"`
-	} `json:"context"`
-}
-
-type completionParams = textDocumentPositionParams
-type documentSymbolParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-}
-
-type lspPosition struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
-}
-
-type lspRange struct {
-	Start lspPosition `json:"start"`
-	End   lspPosition `json:"end"`
-}
-
-type lspLocation struct {
-	URI   string   `json:"uri"`
-	Range lspRange `json:"range"`
-}
-
-type lspDiagnosticRelatedInformation struct {
-	Location lspLocation `json:"location"`
-	Message  string      `json:"message"`
-}
-
-type lspDiagnostic struct {
-	Range              lspRange                          `json:"range"`
-	Severity           int                               `json:"severity,omitempty"`
-	Code               string                            `json:"code,omitempty"`
-	Source             string                            `json:"source,omitempty"`
-	Message            string                            `json:"message"`
-	RelatedInformation []lspDiagnosticRelatedInformation `json:"relatedInformation,omitempty"`
-}
-
-type publishDiagnosticsParams struct {
-	URI         string          `json:"uri"`
-	Diagnostics []lspDiagnostic `json:"diagnostics"`
-}
-
-type lspHover struct {
-	Contents markupContent `json:"contents"`
-	Range    *lspRange     `json:"range,omitempty"`
-}
-
-type markupContent struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
-}
-
-type lspCompletionItem struct {
-	Label         string         `json:"label"`
-	Kind          int            `json:"kind,omitempty"`
-	Detail        string         `json:"detail,omitempty"`
-	InsertText    string         `json:"insertText,omitempty"`
-	Documentation *markupContent `json:"documentation,omitempty"`
-	SortText      string         `json:"sortText,omitempty"`
-}
-
-type lspDocumentSymbol struct {
-	Name           string   `json:"name"`
-	Detail         string   `json:"detail,omitempty"`
-	Kind           int      `json:"kind"`
-	Range          lspRange `json:"range"`
-	SelectionRange lspRange `json:"selectionRange"`
-}
-
 func (s *Server) handleMessage(payload []byte) error {
 	var req requestEnvelope
 	if err := json.Unmarshal(payload, &req); err != nil {
@@ -212,7 +106,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		s.rootPath = deriveRootPath(params)
 		s.configPathDiscoveryComplete = false
 		s.discoveredConfigPath = ""
-		s.logDebugf("initialize rootPath=%q rootUri=%q workspaceFolders=%d", s.rootPath, params.RootURI, len(params.WorkspaceFolders))
+		s.log.Debug().Msgf("initialize rootPath=%q rootUri=%q workspaceFolders=%d", s.rootPath, params.RootURI, len(params.WorkspaceFolders))
 		return s.respond(req.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync":       1,
@@ -349,23 +243,23 @@ func (s *Server) analyze(uri string) (analyze.Result, string, error) {
 		return analyze.Result{}, "", err
 	}
 	entryPath := s.analysisEntryPath(path)
-	s.logDebugf("analyze uri=%q currentPath=%q entryPath=%q rootPath=%q", uri, path, entryPath, s.rootPath)
+	s.log.Debug().Msgf("analyze uri=%q currentPath=%q entryPath=%q rootPath=%q", uri, path, entryPath, s.rootPath)
 	content, err := s.readFile(entryPath)
 	if err != nil {
-		s.logDebugf("analyze read error entryPath=%q error=%v", entryPath, err)
+		s.log.Debug().Msgf("analyze read error entryPath=%q error=%v", entryPath, err)
 		return analyze.Result{}, "", err
 	}
 	doc, parseDiagnostics, err := ast.ParseRecovering(entryPath, content)
 	if err != nil && doc == nil {
-		s.logDebugf("analyze parse fatal entryPath=%q error=%v", entryPath, err)
+		s.log.Debug().Msgf("analyze parse fatal entryPath=%q error=%v", entryPath, err)
 		return analyze.Result{}, "", err
 	}
 	if err != nil {
-		s.logDebugf("analyze parse recovered entryPath=%q diagnostics=%d error=%v", entryPath, len(parseDiagnostics), err)
+		s.log.Debug().Msgf("analyze parse recovered entryPath=%q diagnostics=%d error=%v", entryPath, len(parseDiagnostics), err)
 	}
 	result := analyze.AnalyzeWorkspace(doc, analyze.Options{HomeDir: s.homeDir, ReadFile: s.readFile, BaseDir: filepath.Dir(entryPath)})
 	result.Diagnostics = append(result.Diagnostics, parseDiagnostics...)
-	s.logDebugf("analyze complete symbols=%d diagnostics=%d", len(result.Symbols), len(result.Diagnostics))
+	s.log.Debug().Msgf("analyze complete symbols=%d diagnostics=%d", len(result.Symbols), len(result.Diagnostics))
 	return result, path, nil
 }
 
@@ -443,15 +337,15 @@ func (s *Server) resolveWorkspaceConfigPath() string {
 	})
 
 	if len(candidates) == 0 {
-		s.logDebugf("config discovery root=%q found=0", s.rootPath)
+		s.log.Debug().Msgf("config discovery root=%q found=0", s.rootPath)
 		return ""
 	}
 
 	selected := s.selectPreferredWorkspaceConfig(candidates)
 	if len(candidates) > 1 {
-		s.logDebugf("config discovery root=%q found=%d selected=%q", s.rootPath, len(candidates), selected)
+		s.log.Debug().Msgf("config discovery root=%q found=%d selected=%q", s.rootPath, len(candidates), selected)
 	} else {
-		s.logDebugf("config discovery root=%q selected=%q", s.rootPath, selected)
+		s.log.Debug().Msgf("config discovery root=%q selected=%q", s.rootPath, selected)
 	}
 
 	s.discoveredConfigPath = selected
@@ -487,17 +381,10 @@ func (s *Server) workspaceConfigDepth(candidate string) int {
 func (s *Server) readFile(path string) ([]byte, error) {
 	path = filepath.Clean(path)
 	if content, ok := s.docs[path]; ok {
-		s.logDebugf("readFile overlay path=%q", path)
+		s.log.Debug().Msgf("readFile overlay path=%q", path)
 		return []byte(content), nil
 	}
 	return os.ReadFile(path)
-}
-
-func (s *Server) logDebugf(format string, args ...any) {
-	if !s.debug {
-		return
-	}
-	_, _ = fmt.Fprintf(os.Stderr, "[eirctl-lsp] "+format+"\n", args...)
 }
 
 func envBool(name string) bool {
@@ -550,6 +437,14 @@ func (s *Server) write(value any) error {
 	}
 	_, err = fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n%s", len(payload), payload)
 	return err
+}
+
+func (s *Server) dependsOnFallbackCompletions(path string, content []byte, position lspPosition, result analyze.Result) []analyze.CompletionItem {
+	scope, ok := dependsOnScopeAt(path, content, position)
+	if !ok {
+		return nil
+	}
+	return result.StageCompletionsForScope(scope)
 }
 
 func readMessage(reader *bufio.Reader) ([]byte, error) {
@@ -681,14 +576,6 @@ func toLSPDocumentSymbols(result analyze.Result, path string) []lspDocumentSymbo
 		symbols = append(symbols, item)
 	}
 	return symbols
-}
-
-func (s *Server) dependsOnFallbackCompletions(path string, content []byte, position lspPosition, result analyze.Result) []analyze.CompletionItem {
-	scope, ok := dependsOnScopeAt(path, content, position)
-	if !ok {
-		return nil
-	}
-	return result.StageCompletionsForScope(scope)
 }
 
 func dependsOnScopeAt(path string, content []byte, position lspPosition) (string, bool) {
