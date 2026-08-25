@@ -23,6 +23,7 @@ outputs/
 .eirctl/
 .deps/
 vscode-extension/dist
+vscode-extension/.tools-dist
 
 # local env files
 *.env

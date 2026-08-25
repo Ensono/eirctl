@@ -1,5 +1,5 @@
 import { BuildResult, Message, PluginBuild, context } from 'esbuild';
-import { exit } from 'node:process';
+import { exit, argv } from 'node:process';
 
 /**
  * @type {import('esbuild').Plugin}
@@ -21,9 +21,12 @@ const esbuildProblemMatcherPlugin = {
     },
 };
 
+/**
+ * main entry point for the esbuild script. This script is used to build the vscode extension using esbuild.
+ */
 (async () => {
-    const production = process.argv.includes('--production');
-    const watch = process.argv.includes('--watch');
+    const production = argv.includes('--production');
+    const watch = argv.includes('--watch');
     const ctx = await context({
         entryPoints: [
             'src/extension.ts'
