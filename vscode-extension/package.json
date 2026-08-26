@@ -3,12 +3,30 @@
     "displayName": "eirctl",
     "description": "VS Code support for eirctl YAML configuration files",
     "version": "0.0.2",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ensono/eirctl.git"
+    },
+    "author": {
+        "name": "digital-tools-maintainers (Ensono)"
+    },
     "engines": {
         "vscode": "^1.125.0",
         "node": "^24"
     },
+    "os": [
+        "linux",
+        "darwin",
+        "win32"
+    ],
+    "cpu": [
+        "x64",
+        "arm64"
+    ],
     "categories": [
-        "Programming Languages"
+        "Programming Languages",
+        "Linters",
+        "Other"
     ],
     "activationEvents": [
         "onStartupFinished",
@@ -79,6 +97,7 @@
         "@types/vscode": "^1.125.0",
         "@vscode/test-cli": "^0.0.15",
         "@vscode/test-electron": "^3.0.0",
+        "@vscode/vsce": "^3.9.2",
         "esbuild": "^0.28.1",
         "eslint": "^10.5.0",
         "typescript": "^6.0.3",

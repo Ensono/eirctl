@@ -67,6 +67,33 @@ tasks:
         npm run esbuild:config
         npm run compile
 
+  build:lsp:server:
+    description: Builds the LSP server
+    context: go1x
+    command:
+      - |
+        go build -o vscode-extension/.bin/eirctl-lsp cmd/eirctl-lsp/main.go
+        mkdir -p .deps
+        unset GOTOOLCHAIN
+        GOPATH=$PWD/.deps GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build \
+          -mod=readonly -buildvcs=false \
+          -ldflags="-s -w -extldflags -static" \
+          -o vscode-extension/.bin/eirctl-lsp${BINARY_SUFFIX} \
+          cmd/eirctl-lsp/main.go
+    required:
+      env:
+        - BUILD_GOOS
+        - BUILD_GOARCH
+
+  package:vscode:extension:
+    description: Publishes the VSCode extension
+    dir: vscode-extension
+    context: node24
+    command:
+      - |
+        cp -f ../LICENSE .
+        node_modules/.bin/vsce package --baseContentUrl https://github.com/Ensono/eirctl/raw/HEAD --baseImagesUrl https://github.com/Ensono/eirctl/raw/HEAD
+
   gen:docs:html:
     context: asciidoc
     description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.

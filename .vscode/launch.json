@@ -61,7 +61,8 @@
             "configurations": [
                 "debug eirctl-lsp server",
                 "Run Extension With eirctl Workspace"
-            ]
+            ],
+            "stopAll": true
         }
     ]
 }

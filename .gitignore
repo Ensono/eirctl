@@ -26,6 +26,8 @@ outputs/
 vscode-extension/dist
 vscode-extension/.tools-dist
 vscode-extension/.bin
+# extension package
+*.vsix
 
 # local env files
 *.env
@@ -39,3 +41,4 @@ __debug_bin*
 .pi-subagents/
 .github/skills/openspec-*
 .github/prompts/opsx-*
+vscode-extension/LICENSE
