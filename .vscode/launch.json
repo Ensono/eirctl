@@ -1,0 +1,67 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "go",
+            "name": "debug run",
+            "request": "launch",
+            "debugAdapter": "dlv-dap",
+            "mode": "debug",
+            "logOutput": "debugger",
+            "showLog": true,
+            "trace": "error",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "validate"
+            ],
+            "env": {
+                "EIRCTL_DEBUG": "true ",
+                "DOCKER_HOST": "unix:///run/user/1000/podman/podman.sock"
+            },
+        },
+        {
+            "type": "go",
+            "name": "debug eirctl-lsp server",
+            "request": "launch",
+            "debugAdapter": "dlv-dap",
+            "mode": "debug",
+            "logOutput": "debugger",
+            "showLog": true,
+            "trace": "error",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/cmd/eirctl-lsp/main.go",
+            "args": [
+                "-use-tcp"
+            ],
+            "env": {
+                "EIRCTL_LSP_DEBUG": "1"
+            },
+        },
+        {
+            "name": "Run Extension With eirctl Workspace",
+            "type": "extensionHost",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/vscode-extension",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}",
+                "${workspaceFolder}/.."
+            ],
+            "outFiles": [
+                "${workspaceFolder}/vscode-extension/dist/**/*.js"
+            ],
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug Extension",
+            "configurations": [
+                "debug eirctl-lsp server",
+                "Run Extension With eirctl Workspace"
+            ]
+        }
+    ]
+}
