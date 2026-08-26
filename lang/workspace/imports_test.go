@@ -1,6 +1,8 @@
 package workspace_test
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
@@ -8,6 +10,13 @@ import (
 )
 
 func TestResolveImport(t *testing.T) {
+	absRaw := "/opt/eirctl/shared.yaml"
+	absWant := filepath.FromSlash("/opt/eirctl/shared.yaml")
+	if runtime.GOOS == "windows" {
+		absRaw = `C:\opt\eirctl\shared.yaml`
+		absWant = `C:\opt\eirctl\shared.yaml`
+	}
+
 	testCases := map[string]struct {
 		baseDir string
 		homeDir string
@@ -21,14 +30,14 @@ func TestResolveImport(t *testing.T) {
 			homeDir: "/home/tester",
 			raw:     "shared/eirctl.yaml",
 			kind:    workspace.ImportKindLocal,
-			path:    "/repo/shared/eirctl.yaml",
+			path:    filepath.FromSlash("/repo/shared/eirctl.yaml"),
 		},
 		"absolute local import": {
 			baseDir: "/repo",
 			homeDir: "/home/tester",
-			raw:     "/opt/eirctl/shared.yaml",
+			raw:     absRaw,
 			kind:    workspace.ImportKindLocal,
-			path:    "/opt/eirctl/shared.yaml",
+			path:    absWant,
 		},
 		"https import": {
 			baseDir: "/repo",

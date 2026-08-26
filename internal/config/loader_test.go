@@ -192,6 +192,7 @@ func TestLoader_Load_task_check(t *testing.T) {
 	_, _ = f.Write([]byte(`tasks:
   task:check:default:vars:
     command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"`))
+	f.Close()
 
 	cl := config.NewConfigLoader(config.NewConfig())
 	cfg, err := cl.Load(f.Name())
@@ -211,7 +212,7 @@ func Test_LoadImport(t *testing.T) {
 	defer os.RemoveAll(tmpFile.Name())
 	testSrv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/x-yaml")
-		_, err := writer.Write([]byte(fmt.Sprintf(`
+		_, err := fmt.Fprintf(writer, `
 import:
   - %s
   - %s
@@ -219,7 +220,7 @@ tasks:
   task1:
     command:
       - true
-`, tmpFile.Name(), tmpFile.Name())))
+`, tmpFile.Name(), tmpFile.Name())
 		if err != nil {
 			t.Errorf("failed to write bytes to response stream")
 		}

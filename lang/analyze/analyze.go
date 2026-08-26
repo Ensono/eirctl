@@ -378,7 +378,18 @@ func (r Result) ReferencesForSymbol(symbol protocol.Symbol) []Reference {
 	if symbol.Kind == protocol.SymbolKindStage {
 		return r.stageReferencesFor(symbol.Name, symbol.Scope)
 	}
-	return r.ReferencesFor(symbol.Name, symbol.Kind)
+	var refs []Reference
+	if symbol.Source.ImportedFrom != nil {
+		refs = append(refs, Reference{
+			Name:     symbol.Name,
+			Kind:     symbol.Kind,
+			Field:    "import",
+			Location: *symbol.Source.ImportedFrom,
+			Source:   r.Sources[filepath.Clean(symbol.Source.ImportedFrom.URI)],
+		})
+	}
+	refs = append(refs, r.ReferencesFor(symbol.Name, symbol.Kind)...)
+	return refs
 }
 
 func (r Result) DefinitionCandidatesFor(reference Reference) []protocol.Symbol {

@@ -467,6 +467,7 @@ func (cl *Loader) readFile(entry schema.ImportEntry) (*ConfigDefinition, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", entry.Src, err)
 	}
+	defer data.Close()
 
 	cm := &ConfigDefinition{}
 

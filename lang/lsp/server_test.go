@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -101,15 +102,16 @@ pipelines:
   release:
     - task: publish
 `)
+	repoFile := filepath.FromSlash("/repo/eirctl.yaml")
 	result := analyze.Result{
 		StageSymbols: []langprotocol.Symbol{
-			{Name: "build", Kind: langprotocol.SymbolKindStage, Scope: "/repo/eirctl.yaml\x00ci", Source: langprotocol.DocumentSource{Label: "/repo/eirctl.yaml"}},
-			{Name: "publish", Kind: langprotocol.SymbolKindStage, Scope: "/repo/eirctl.yaml\x00ci", Source: langprotocol.DocumentSource{Label: "/repo/eirctl.yaml"}},
-			{Name: "publish", Kind: langprotocol.SymbolKindStage, Scope: "/repo/eirctl.yaml\x00release", Source: langprotocol.DocumentSource{Label: "/repo/eirctl.yaml"}},
+			{Name: "build", Kind: langprotocol.SymbolKindStage, Scope: repoFile + "\x00ci", Source: langprotocol.DocumentSource{Label: repoFile}},
+			{Name: "publish", Kind: langprotocol.SymbolKindStage, Scope: repoFile + "\x00ci", Source: langprotocol.DocumentSource{Label: repoFile}},
+			{Name: "publish", Kind: langprotocol.SymbolKindStage, Scope: repoFile + "\x00release", Source: langprotocol.DocumentSource{Label: repoFile}},
 		},
 	}
 
-	items := server.dependsOnFallbackCompletions("/repo/eirctl.yaml", content, lspPosition{Line: 9, Character: 10}, result)
+	items := server.dependsOnFallbackCompletions(repoFile, content, lspPosition{Line: 9, Character: 10}, result)
 	if len(items) != 2 {
 		t.Fatalf("dependsOnFallbackCompletions() = %d, want 2", len(items))
 	}
@@ -117,8 +119,8 @@ pipelines:
 		t.Fatalf("dependsOnFallbackCompletions labels = [%q, %q], want [build, publish]", items[0].Label, items[1].Label)
 	}
 	for _, item := range items {
-		if item.Source.Label != "/repo/eirctl.yaml" {
-			t.Fatalf("completion source = %q, want /repo/eirctl.yaml", item.Source.Label)
+		if item.Source.Label != repoFile {
+			t.Fatalf("completion source = %q, want %s", item.Source.Label, repoFile)
 		}
 	}
 }
@@ -280,3 +282,70 @@ func TestResolveWorkspaceConfigPathPrefersProjectRootOverTestdata(t *testing.T) 
 }
 
 func jsonRaw(value string) []byte { return []byte(value) }
+
+func TestUriToPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		uri     string
+		want    string
+		wantErr bool
+	}{
+		{name: "unix path", uri: "file:///tmp/eirctl.yaml", want: filepath.FromSlash("/tmp/eirctl.yaml")},
+		{name: "unix bare path", uri: "/tmp/eirctl.yaml", want: filepath.FromSlash("/tmp/eirctl.yaml")},
+		{name: "windows drive URI", uri: "file:///c:/src/eirctl.yaml", want: filepath.FromSlash("c:/src/eirctl.yaml")},
+		{name: "windows encoded colon", uri: "file:///c%3A/src/eirctl.yaml", want: filepath.FromSlash("c:/src/eirctl.yaml")},
+		{name: "unsupported scheme", uri: "http://example.com", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := uriToPath(tc.uri)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("uriToPath(%q) error = %v, wantErr %v", tc.uri, err, tc.wantErr)
+			}
+			if err == nil && got != tc.want {
+				t.Errorf("uriToPath(%q) = %q, want %q", tc.uri, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPathToURI(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+		goos string
+	}{
+		{name: "unix path", path: "/tmp/eirctl.yaml", want: "file:///tmp/eirctl.yaml"},
+		{name: "windows path", path: `c:\src\eirctl.yaml`, want: "file:///c:/src/eirctl.yaml", goos: "windows"},
+		{name: "windows forward slash", path: "c:/src/eirctl.yaml", want: "file:///c:/src/eirctl.yaml", goos: "windows"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.goos != "" && runtime.GOOS != tc.goos {
+				t.Skipf("test requires %s", tc.goos)
+			}
+			got := pathToURI(tc.path)
+			if got != tc.want {
+				t.Errorf("pathToURI(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPathToURIRoundTrip(t *testing.T) {
+	var path string
+	if runtime.GOOS == "windows" {
+		path = `c:\src\eirctl\eirctl.yaml`
+	} else {
+		path = "/tmp/eirctl.yaml"
+	}
+	uri := pathToURI(path)
+	got, err := uriToPath(uri)
+	if err != nil {
+		t.Fatalf("uriToPath(pathToURI(%q)) error = %v", path, err)
+	}
+	if got != filepath.Clean(path) {
+		t.Errorf("round-trip: got %q, want %q", got, filepath.Clean(path))
+	}
+}
