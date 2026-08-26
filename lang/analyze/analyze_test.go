@@ -2,6 +2,7 @@ package analyze_test
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/Ensono/eirctl/internal/config"
@@ -66,8 +67,8 @@ watchers:
 	if result.Imports[0].Resolved.Path != config.GetCachePath("/home/tester", "https://example.invalid/shared.yaml") {
 		t.Fatalf("first import path = %q", result.Imports[0].Resolved.Path)
 	}
-	if result.Imports[1].Resolved.Path != "/repo/local.yaml" {
-		t.Fatalf("second import path = %q, want /repo/local.yaml", result.Imports[1].Resolved.Path)
+	if result.Imports[1].Resolved.Path != filepath.FromSlash("/repo/local.yaml") {
+		t.Fatalf("second import path = %q, want %s", result.Imports[1].Resolved.Path, filepath.FromSlash("/repo/local.yaml"))
 	}
 	if result.Imports[2].Resolved.Kind != workspace.ImportKindGit {
 		t.Fatalf("third import kind = %q, want %q", result.Imports[2].Resolved.Kind, workspace.ImportKindGit)
@@ -123,7 +124,7 @@ pipelines:
 	result := analyze.AnalyzeWorkspace(root, analyze.Options{
 		HomeDir: "/home/tester",
 		ReadFile: func(path string) ([]byte, error) {
-			if path != "/repo/shared.yaml" {
+			if path != filepath.FromSlash("/repo/shared.yaml") {
 				return nil, errors.New("unexpected path")
 			}
 			return []byte(`contexts:
@@ -153,11 +154,12 @@ tasks:
 	if testDefs[0].Source.Original != "./shared.yaml" {
 		t.Fatalf("definition source original = %q, want ./shared.yaml", testDefs[0].Source.Original)
 	}
-	if testDefs[0].Source.Path != "/repo/shared.yaml" {
-		t.Fatalf("definition source path = %q, want /repo/shared.yaml", testDefs[0].Source.Path)
+	if testDefs[0].Source.Path != filepath.FromSlash("/repo/shared.yaml") {
+		t.Fatalf("definition source path = %q, want %s", testDefs[0].Source.Path, filepath.FromSlash("/repo/shared.yaml"))
 	}
-	if testDefs[0].Source.Label != "./shared.yaml -> /repo/shared.yaml" {
-		t.Fatalf("definition source label = %q, want ./shared.yaml -> /repo/shared.yaml", testDefs[0].Source.Label)
+	wantLabel := "./shared.yaml -> " + filepath.FromSlash("/repo/shared.yaml")
+	if testDefs[0].Source.Label != wantLabel {
+		t.Fatalf("definition source label = %q, want %s", testDefs[0].Source.Label, wantLabel)
 	}
 
 	refs := result.ReferencesFor("test", protocol.SymbolKindTask)
@@ -176,8 +178,8 @@ tasks:
 	if len(defsAtReference) != 1 {
 		t.Fatalf("DefinitionsAt(reference) = %d, want 1", len(defsAtReference))
 	}
-	if defsAtReference[0].Location.URI != "/repo/shared.yaml" {
-		t.Fatalf("DefinitionsAt(reference) uri = %q, want /repo/shared.yaml", defsAtReference[0].Location.URI)
+	if defsAtReference[0].Location.URI != filepath.FromSlash("/repo/shared.yaml") {
+		t.Fatalf("DefinitionsAt(reference) uri = %q, want %s", defsAtReference[0].Location.URI, filepath.FromSlash("/repo/shared.yaml"))
 	}
 
 	refsAtDefinition := result.ReferencesAt(testDefs[0].Location.URI, testDefs[0].Location.Range.Start)
@@ -206,7 +208,7 @@ tasks:
 	result := analyze.AnalyzeWorkspace(root, analyze.Options{
 		HomeDir: "/home/tester",
 		ReadFile: func(path string) ([]byte, error) {
-			if path != "/repo/shared.yaml" {
+			if path != filepath.FromSlash("/repo/shared.yaml") {
 				return nil, errors.New("unexpected path")
 			}
 			return []byte(`tasks:
@@ -449,8 +451,8 @@ pipelines:
 		t.Fatalf("depends_on completion kind = %q, want stage", testCompletions[0].Kind)
 	}
 	for _, completion := range testCompletions {
-		if completion.Source.Label != "/repo/eirctl.yaml" {
-			t.Fatalf("depends_on completion source = %q, want /repo/eirctl.yaml", completion.Source.Label)
+		if completion.Source.Label != filepath.FromSlash("/repo/eirctl.yaml") {
+			t.Fatalf("depends_on completion source = %q, want %s", completion.Source.Label, filepath.FromSlash("/repo/eirctl.yaml"))
 		}
 	}
 

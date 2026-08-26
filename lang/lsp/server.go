@@ -661,12 +661,19 @@ func uriToPath(value string) (string, error) {
 		if path == "" {
 			path = value
 		}
+		if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
 		return filepath.Clean(path), nil
 	}
 	return "", fmt.Errorf("unsupported URI scheme: %s", parsed.Scheme)
 }
 
 func pathToURI(path string) string {
-	path = filepath.Clean(path)
-	return (&url.URL{Scheme: "file", Path: path}).String()
+	path = filepath.ToSlash(filepath.Clean(path))
+	if len(path) > 0 && path[0] != '/' {
+		path = "/" + path
+	}
+	u := url.URL{Scheme: "file", Path: path}
+	return u.String()
 }

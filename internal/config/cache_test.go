@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -60,9 +61,10 @@ func Test_StoreInCache(t *testing.T) {
 		"successfully stores in path": {
 			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
 				m := mockfo{}
+				want := filepath.Join("/foo", ".eirctl", "cache", utils.EncodeBase62("some-path"))
 				m.c = func(n string) (io.Writer, error) {
-					if n != "/foo/.eirctl/cache/"+utils.EncodeBase62("some-path") {
-						t.Errorf("got %s, want: '%s'", n, "/foo/.eirctl/cache/"+utils.EncodeBase62("some-path"))
+					if n != want {
+						t.Errorf("got %s, want: '%s'", n, want)
 					}
 					return mw, nil
 				}
@@ -83,9 +85,10 @@ func Test_StoreInCache(t *testing.T) {
 		"fails to create cache dir structure": {
 			mockFsOp: func(t *testing.T, mw io.Writer) mockfo {
 				m := mockfo{}
+				want := filepath.Join("/foo", ".eirctl", "cache", utils.EncodeBase62("some-path"))
 				m.c = func(n string) (io.Writer, error) {
-					if n != "/foo/.eirctl/cache/"+utils.EncodeBase62("some-path") {
-						t.Errorf("got %s, want: '%s'", n, "/foo/.eirctl/cache/"+utils.EncodeBase62("some-path"))
+					if n != want {
+						t.Errorf("got %s, want: '%s'", n, want)
 					}
 					return mw, nil
 				}

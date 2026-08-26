@@ -391,8 +391,8 @@ func configuredKnownHosts(paths []string, legacy string) []string {
 	if legacy == "" {
 		return nil
 	}
-	fields, err := shell.Fields(legacy, nil)
-	if err != nil {
+	fields, ok := splitSSHConfigPaths(legacy)
+	if !ok {
 		return []string{legacy}
 	}
 	return fields
@@ -443,7 +443,7 @@ func knownHostsFiles(sshConf *SSHConfigAuth) []string {
 func parseGitSshCommandEnv() *SSHConfigAuth {
 	sshConf := &SSHConfigAuth{}
 	gsc := os.Getenv(GitSshCommandVar)
-	args, err := shell.Fields(gsc, nil)
+	args, err := shell.Fields(preserveSSHPathBackslashes(gsc), nil)
 	if err != nil {
 		logrus.Debugf("unable to parse %s: %v", GitSshCommandVar, err)
 		return sshConf
