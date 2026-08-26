@@ -10,6 +10,7 @@
     "author": {
         "name": "digital-tools-maintainers (Ensono)"
     },
+    "publisher": "ensono-digital-tools",
     "engines": {
         "vscode": "^1.125.0",
         "node": "^24"
@@ -41,7 +42,7 @@
             "properties": {
                 "eirctl.languageServer.transport": {
                     "type": "string",
-                    "default": "tcp",
+                    "default": "process",
                     "enum": [
                         "process",
                         "tcp"

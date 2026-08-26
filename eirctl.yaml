@@ -56,6 +56,15 @@ pipelines:
         - gen:docs:html
         - gen:docs:pdf
 
+  build:package:vscode:extension:
+    - task: build:vscode:extension
+    - task: build:lsp:server
+      depends_on:
+        - build:vscode:extension
+    - task: package:vscode:extension
+      depends_on:
+        - build:lsp:server
+
 tasks:
   build:vscode:extension:
     description: Builds the VSCode extension
