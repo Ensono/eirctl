@@ -43,7 +43,6 @@ pipelines:
         - test:unit
 
   lints:
-    - task:
     - task: go:lint
     - task: go:vuln:check
       variables:
@@ -57,19 +56,16 @@ pipelines:
         - gen:docs:html
         - gen:docs:pdf
 
-  new:pipeline:
-    - pipeline: build:docs
-    - pipeline: build:binary
-      depends_on:
-        - build:docs
-    - task: go:lint
-
 tasks:
-  aws:command:
-    context: awscli
+  build:vscode:extension:
+    description: Builds the VSCode extension
+    dir: vscode-extension
+    context: node24
     command:
       - |
-        aws --version
+        npm install
+        npm run esbuild:config
+        npm run compile
 
   gen:docs:html:
     context: asciidoc
