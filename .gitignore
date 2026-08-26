@@ -24,6 +24,7 @@ outputs/
 .deps/
 vscode-extension/dist
 vscode-extension/.tools-dist
+vscode-extension/.bin
 
 # local env files
 *.env

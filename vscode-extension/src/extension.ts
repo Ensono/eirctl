@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as net from 'node:net';
-import * as path from 'node:path';
+import { resolve } from 'node:path';
 import { LanguageClient, LanguageClientOptions, ServerOptions, StreamInfo } from 'vscode-languageclient/node';
 
 let client: LanguageClient | undefined;
@@ -59,13 +59,14 @@ export async function deactivate(): Promise<void> {
 
 function getServerExecutable(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('eirctl');
-    const defaultCwd = path.resolve(context.extensionPath, '..');
+    const defaultCwd = resolve(context.extensionPath, '.bin');
     const configuredCwd = config.get<string>('languageServer.cwd');
-    const command = config.get<string>('languageServer.command', 'go');
-    const args = config.get<string[]>('languageServer.args', ['run', '/home/dnitsch/git/ensono/eirctl/cmd/eirctl-lsp/main.go']);
+    const command = config.get<string>('languageServer.command', '');
+    const args = config.get<string[]>('languageServer.args', []);
 
+    const fullCommand = resolve(configuredCwd && configuredCwd.trim() !== '' ? configuredCwd : defaultCwd, command);
     return {
-        command,
+        command: fullCommand,
         args,
         options: {
             cwd: configuredCwd && configuredCwd.trim() !== '' ? configuredCwd : defaultCwd,

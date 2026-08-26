@@ -32,7 +32,7 @@
                 },
                 "eirctl.languageServer.command": {
                     "type": "string",
-                    "default": "/home/dnitsch/git/ensono/eirctl/cmd/eirctl-lsp/eirctl-lsp",
+                    "default": "eirctl-lsp",
                     "markdownDescription": "Command used to start the eirctl language server when `eirctl.languageServer.transport` is `process`."
                 },
                 "eirctl.languageServer.args": {
@@ -65,28 +65,22 @@
     },
     "scripts": {
         "esbuild:config": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json",
+        "watch:esbuild": "npm run esbuild:config && node .tools-dist/esbuild.js --watch",
         "vscode:prepublish": "npm run package",
-        "compile": "npm run check-types && npm run lint && node esbuild.js",
-        "watch": "tsc --watch",
-        "watch:esbuild": "node esbuild.js --watch",
-        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-        "package": "npm run check-types && npm run lint && node esbuild.js --production",
-        "compile-tests": "tsc -p . --outDir out",
-        "watch-tests": "tsc -p . -w --outDir out",
+        "compile": "npm run check-types && npm run lint && node .tools-dist/esbuild.js",
+        "package": "npm run check-types && npm run lint && node .tools-dist/esbuild.js --production",
         "pretest": "npm run compile-tests && npm run compile && npm run lint",
         "check-types": "tsc --noEmit",
         "lint": "eslint src",
         "test": "vscode-test"
     },
     "devDependencies": {
-        "@types/mocha": "^10.0.10",
         "@types/node": "24.x",
         "@types/vscode": "^1.125.0",
         "@vscode/test-cli": "^0.0.15",
         "@vscode/test-electron": "^3.0.0",
         "esbuild": "^0.28.1",
         "eslint": "^10.5.0",
-        "npm-run-all": "^4.1.5",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.61.1"
     },
@@ -96,5 +90,8 @@
     },
     "dependencies": {
         "vscode-languageclient": "^10.1.0"
+    },
+    "allowScripts": {
+        "esbuild@0.28.2": true
     }
 }

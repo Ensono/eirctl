@@ -8,8 +8,8 @@ output: prefixed
 
 import:
   - shared/build/go/eirctl.yaml
-  - shared/security/eirctl.yaml
   - git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
+  - git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/security/eirctl.yaml?ref=fix/initial-lib-import
 
 contexts:
   bash:
@@ -56,6 +56,13 @@ pipelines:
       depends_on:
         - gen:docs:html
         - gen:docs:pdf
+
+  new:pipeline:
+    - pipeline: build:docs
+    - pipeline: build:binary
+      depends_on:
+        - build:docs
+    - task: go:lint
 
 tasks:
   aws:command:
