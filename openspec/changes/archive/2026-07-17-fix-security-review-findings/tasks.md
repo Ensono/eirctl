@@ -1,3 +1,5 @@
+> **Historical outcome:** Direct dispatch restored the command path but retained default-branch cache-write authority and led to CodeQL alert 23. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## 1. Structural Workflow Policy
 
 - [x] 1.1 Refactor `scripts/check-workflow-policy` into error-returning validation functions plus a thin CLI, and add an explicit candidate-root option so trusted code can validate another tree.

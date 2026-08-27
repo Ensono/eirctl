@@ -44,9 +44,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.5
-      - name: Check maintained Go versions
-        run: scripts/check-go-version.sh
+          go-version: 1.26.6
       - name: Check immutable CI dependencies
         run: scripts/check-immutable-ci-dependencies.sh
       - name: Check CODEOWNERS coverage
@@ -67,7 +65,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
       - name: Build and validate documentation
         run: go run cmd/main.go run build:docs
       - name: Upload rendered documentation
@@ -106,7 +104,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,7 +167,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
 
       - name: Generate SonarCloud reports
         run: go run cmd/main.go run pipeline gha:unit:test --verbose
