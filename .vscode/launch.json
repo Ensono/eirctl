@@ -48,7 +48,7 @@
             "cwd": "${workspaceFolder}/vscode-extension",
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}",
-                "${workspaceFolder}/.."
+                "${workspaceFolder}/eirctl-extension.code-workspace"
             ],
             "outFiles": [
                 "${workspaceFolder}/vscode-extension/dist/**/*.js"

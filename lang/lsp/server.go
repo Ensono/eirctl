@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,6 +19,12 @@ import (
 	langprotocol "github.com/Ensono/eirctl/lang/protocol"
 	"github.com/rs/zerolog"
 )
+
+// errUnsupportedURIScheme is returned by uriToPath when the URI has a scheme
+// that the LSP server does not handle (e.g. "git", "untitled"). Callers
+// that receive this error from a notification handler should silently ignore
+// the request rather than terminating the server.
+var errUnsupportedURIScheme = fmt.Errorf("unsupported URI scheme")
 
 // Server defines the language server that implements the Language Server Protocol (LSP) for eirctl.
 type Server struct {
@@ -133,6 +140,10 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		path, err := uriToPath(params.TextDocument.URI)
 		if err != nil {
+			if errors.Is(err, errUnsupportedURIScheme) {
+				s.log.Debug().Msgf("textDocument/didOpen: skipping unsupported URI %q", params.TextDocument.URI)
+				return nil
+			}
 			return err
 		}
 		s.docs[path] = params.TextDocument.Text
@@ -144,6 +155,10 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		path, err := uriToPath(params.TextDocument.URI)
 		if err != nil {
+			if errors.Is(err, errUnsupportedURIScheme) {
+				s.log.Debug().Msgf("textDocument/didChange: skipping unsupported URI %q", params.TextDocument.URI)
+				return nil
+			}
 			return err
 		}
 		if len(params.ContentChanges) > 0 {
@@ -157,6 +172,10 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		path, err := uriToPath(params.TextDocument.URI)
 		if err != nil {
+			if errors.Is(err, errUnsupportedURIScheme) {
+				s.log.Debug().Msgf("textDocument/didClose: skipping unsupported URI %q", params.TextDocument.URI)
+				return nil
+			}
 			return err
 		}
 		delete(s.docs, path)
@@ -666,7 +685,7 @@ func uriToPath(value string) (string, error) {
 		}
 		return filepath.Clean(path), nil
 	}
-	return "", fmt.Errorf("unsupported URI scheme: %s", parsed.Scheme)
+	return "", fmt.Errorf("%w: %s", errUnsupportedURIScheme, parsed.Scheme)
 }
 
 func pathToURI(path string) string {

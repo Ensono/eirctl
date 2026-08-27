@@ -65,6 +65,12 @@ pipelines:
       depends_on:
         - build:lsp:server
 
+  trivy:scan:fs:
+    - task: trivy:filesystem:scan
+
+  sonar:scan:
+    - task: sonar:scanner:cli
+
 tasks:
   build:vscode:extension:
     description: Builds the VSCode extension
