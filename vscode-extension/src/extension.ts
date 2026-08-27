@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as net from 'node:net';
 import { resolve } from 'node:path';
-import { LanguageClient, LanguageClientOptions, ServerOptions, StreamInfo } from 'vscode-languageclient/node';
+import { LanguageClient, LanguageClientOptions, ServerOptions, State, StreamInfo } from 'vscode-languageclient/node';
 
 let client: LanguageClient | undefined;
 
@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     client = new LanguageClient('eirctl', 'eirctl Language Server', serverOptions, clientOptions);
     context.subscriptions.push({ dispose: () => void client?.stop() });
     context.subscriptions.push(client.onDidChangeState((event) => {
-        outputChannel.info(`Language client state changed: ${event.oldState} -> ${event.newState}`);
+        outputChannel.info(`Language client state changed: ${State[event.oldState]} -> ${State[event.newState]}`);
     }));
 
     try {
