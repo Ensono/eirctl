@@ -28,7 +28,7 @@ For local testing you can use the `Debug Extension`
 
 If you want to install a locally published extension and test that way you can install it locally via this command
 
-`BUILD_GOARCH=amd64 BUILD_GOOS=linux eirctl build:package:vscode:extension`
+`BUILD_GOARCH=$(go env GOARCH) BUILD_GOOS=$(go env GOOS) eirctl build:package:vscode:extension`
 
 and then `code --install-extension ./vscode-extension/eirctl-0.0.4.vsix`
 

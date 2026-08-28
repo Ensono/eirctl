@@ -78,6 +78,20 @@
                     "minimum": 1,
                     "maximum": 65535,
                     "markdownDescription": "TCP port used when `eirctl.languageServer.transport` is `tcp`."
+                },
+                "eirctl.languageServer.tcpRetryAttempts": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 0,
+                    "maximum": 10,
+                    "markdownDescription": "TCP retryAttempts used when `eirctl.languageServer.transport` is `tcp`. If the connection fails, the extension will retry this many times before giving up."
+                },
+                "eirctl.languageServer.tcpRetryDelayMs": {
+                    "type": "number",
+                    "default": 500,
+                    "minimum": 500,
+                    "maximum": 10000,
+                    "markdownDescription": "TCP retryDelayMs used when `eirctl.languageServer.transport` is `tcp`. If the connection fails, the extension will wait this many milliseconds before retrying."
                 }
             }
         }
