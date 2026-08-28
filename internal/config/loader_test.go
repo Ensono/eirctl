@@ -18,12 +18,9 @@ import (
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/filesystem"
 )
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
@@ -32,23 +29,21 @@ var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
 func createFilesystemTestRepo(t *testing.T, files map[string]string, branch string) (repo *git.Repository, dir string) {
 	t.Helper()
 
-	// Create temp directory for the repo
+	// Create temp directory for the git init repo
 	dir, err := os.MkdirTemp("", "testrepo")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 
-	fs := osfs.New(dir)
-	dot := osfs.New(filepath.Join(dir, ".git"))
-	storer := filesystem.NewStorage(dot, &cache.ObjectLRU{})
-
-	repo, err = git.Init(storer, fs)
+	repo, err = git.PlainInit(dir, false)
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Fatalf("failed to init repo: %v", err)
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Fatalf("failed to get worktree: %v", err)
 	}
 

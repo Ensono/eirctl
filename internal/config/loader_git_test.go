@@ -74,8 +74,6 @@ func createTestRepo(t *testing.T, files map[string]string, branch string, refNam
 	return repo
 }
 
-var oh = os.Getenv("HOME")
-
 func createDummySshConf(t *testing.T) func() {
 	t.Helper()
 	tmpHomeDir, _ := os.MkdirTemp("", "ssh-conf-*")

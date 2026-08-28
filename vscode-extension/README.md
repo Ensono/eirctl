@@ -22,15 +22,15 @@ This extension adds YAML support for eirctl configuration files and workspace di
 2. Open a workspace containing an eirctl.yaml file or eirctl configuration directories.
 3. Use the default settings or customize the language server behavior in VS Code settings.
 
-For local testing you can use the `Debug Extension` 
+For local testing you can use the `Debug Extension`
 
 > There might be a race condition before the tcp server is ready and the extension starts (temp work around)
 
-If you want to install a locally published extension and test that way you can 
+If you want to install a locally published extension and test that way you can install it locally via this command
 
 `BUILD_GOARCH=amd64 BUILD_GOOS=linux eirctl build:package:vscode:extension`
 
-and then `code --install-extension ./vscode-extension/eirctl-0.0.3.vsix`
+and then `code --install-extension ./vscode-extension/eirctl-0.0.4.vsix`
 
 Uninstall: `code --uninstall-extension ensono-digital-tools.eirctl`
 

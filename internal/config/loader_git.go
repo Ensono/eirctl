@@ -38,9 +38,10 @@ const (
 
 var (
 	// GitRegExp must begin with git::
-	// must include a protocol to use
+	// must include a protocol to use such as ssh, https, http or file
+	// can optionally include a user for ssh protocol
 	// must have a repo url and path to file specified
-	gitRegexp                    = regexp.MustCompile(`^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`)
+	gitRegexp                    = regexp.MustCompile(`^git::(ssh|https?|file)://(?:([^/@]+)@)?(.+?)//([^?]+)(?:\?ref=([^&]+))?$`)
 	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import, must satisfy this regex `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\\?ref=([^&]+))?$`")
 	ErrGitTagBranchRevisionWrong = errors.New("tag or branch or revision was not found")
 	ErrGitOperation              = errors.New("git operation failed")
@@ -92,30 +93,34 @@ func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
 
 	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitImportParts)
 
-	if len(gitImportParts) != 5 {
+	if len(gitImportParts) != 6 {
 		return gs, fmt.Errorf("import %s, %w", entry.Src, ErrIncorrectlyFormattedGit)
 	}
 
 	switch gitImportParts[1] {
 	case "ssh":
-		p1 := strings.Split(gitImportParts[2], "/")
+		p1 := strings.Split(gitImportParts[3], "/")
+
 		// auth using ssh_config
 		auth, err := gs.getGitSSHAuth(p1[0])
 		if err != nil {
 			return nil, err
 		}
+		if gitImportParts[2] != "" {
+			gs.SshConfig.User = gitImportParts[2]
+		}
 		gs.gcOpts.URL = fmt.Sprintf(sshGitConnectionString, gs.SshConfig.User, gs.SshConfig.Hostname, gs.SshConfig.Port, strings.Join(p1[1:], "/"))
 		gs.gcOpts.Auth = auth
 	case "http", "https":
-		gs.gcOpts.URL = "https://" + gitImportParts[2]
+		gs.gcOpts.URL = "https://" + gitImportParts[3]
 	case "file":
-		gs.gcOpts.URL = gitImportParts[2]
+		gs.gcOpts.URL = gitImportParts[3]
 	default:
 		return nil, fmt.Errorf("must specify a protocol (ssh|https|file)\n%w", ErrIncorrectlyFormattedGit)
 	}
 
-	gs.yamlPath = gitImportParts[3]
-	gs.tag = gitImportParts[4]
+	gs.yamlPath = gitImportParts[4]
+	gs.tag = gitImportParts[5]
 
 	return gs, nil
 }

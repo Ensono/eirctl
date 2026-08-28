@@ -8,7 +8,7 @@ output: prefixed
 
 import:
   - shared/build/go/eirctl.yaml
-  - git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
+  - git::ssh://github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
   - git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/security/eirctl.yaml?ref=fix/initial-lib-import
 
 contexts:
@@ -106,6 +106,7 @@ tasks:
     context: node24
     command:
       - |
+        npm run package
         cp -f ../LICENSE .
         node_modules/.bin/vsce package --baseContentUrl https://github.com/Ensono/eirctl/raw/HEAD --baseImagesUrl https://github.com/Ensono/eirctl/raw/HEAD
 
