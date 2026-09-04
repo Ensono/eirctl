@@ -107,9 +107,10 @@ tasks:
     command:
       - |
         rm -rf dist/
+        npm version from-git --no-git-tag-version
         npm run package
         cp -f ../LICENSE .
-        node_modules/.bin/vsce package --baseContentUrl https://github.com/Ensono/eirctl/raw/HEAD --baseImagesUrl https://github.com/Ensono/eirctl/raw/HEAD
+        node_modules/.bin/vsce package --baseContentUrl https://github.com/Ensono/eirctl/raw/HEAD --baseImagesUrl https://github.com/Ensono/eirctl/raw/HEAD --out eirctl-latest.vsix
 
   gen:docs:html:
     context: asciidoc

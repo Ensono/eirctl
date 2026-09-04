@@ -30,7 +30,7 @@ If you want to install a locally published extension and test that way you can i
 
 `BUILD_GOARCH=$(go env GOARCH) BUILD_GOOS=$(go env GOOS) eirctl build:package:vscode:extension`
 
-and then `code --install-extension ./vscode-extension/eirctl-0.0.4.vsix`
+and then `code --install-extension ./vscode-extension/eirctl-latest.vsix`
 
 Uninstall: `code --uninstall-extension ensono-digital-tools.eirctl`
 
