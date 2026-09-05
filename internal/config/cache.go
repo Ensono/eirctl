@@ -51,13 +51,15 @@ func (f filesystemOps) MkdirAll(path string, perm os.FileMode) error {
 type Cache struct {
 	fo          fsOps
 	writeImport func(entry schema.ImportEntry, content io.ReadCloser) error
+	homedir     string
 }
 
 type CacheOpt func(*Cache)
 
-func NewCache() *Cache {
+func NewCache(homedir string) *Cache {
 	return &Cache{
-		fo: filesystemOps{},
+		fo:      filesystemOps{},
+		homedir: homedir,
 	}
 }
 
@@ -91,7 +93,7 @@ func (c *Cache) Store(fullPath string, content io.Reader) error {
 // Get returns a successful io.Reader if content exists else an error
 func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 
-	contents, err := c.fo.Open(getCachePath(file.Src))
+	contents, err := c.fo.Open(GetCachePath(c.homedir, file.Src))
 	if err != nil {
 		// custom error file not found
 		// caller needs to handle creation and subsequent content update
@@ -126,7 +128,7 @@ func (c *Cache) Get(file schema.ImportEntry) (*ConfigDefinition, error) {
 }
 
 func (c *Cache) createCacheWriter(fullPath string) (io.Writer, error) {
-	cp := getCachePath(fullPath)
+	cp := GetCachePath(c.homedir, fullPath)
 	// Ensure the cache directory exists
 	if err := c.fo.MkdirAll(filepath.Dir(cp), 0744); err != nil {
 		return nil, fmt.Errorf("%w, %s", ErrCacheDirCreationFailed, err)
@@ -138,7 +140,7 @@ func (c *Cache) createCacheWriter(fullPath string) (io.Writer, error) {
 	return f, nil
 }
 
-// getCachePath always returns to path to the file in the cache directory
-func getCachePath(fullPath string) string {
-	return filepath.Join(utils.MustGetUserHomeDir(), ".eirctl", "cache", utils.EncodeBase62(fullPath))
+// GetCachePath always returns to path to the file in the cache directory
+func GetCachePath(homedir, fullPath string) string {
+	return filepath.Join(homedir, ".eirctl", "cache", utils.EncodeBase62(fullPath))
 }

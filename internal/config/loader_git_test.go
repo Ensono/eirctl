@@ -74,8 +74,6 @@ func createTestRepo(t *testing.T, files map[string]string, branch string, refNam
 	return repo
 }
 
-var oh = os.Getenv("HOME")
-
 func createDummySshConf(t *testing.T) func() {
 	t.Helper()
 	tmpHomeDir, _ := os.MkdirTemp("", "ssh-conf-*")
@@ -413,7 +411,7 @@ func TestGitSource_Config_FromHead(t *testing.T) {
 		"config.yaml": cfgWriter.String(),
 	}, "", "")
 
-	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://bar.org//config.yaml"})
+	gs, err := config.NewGitSource(schema.ImportEntry{Src: "git::ssh://bar.org/repo//config.yaml"})
 	if err != nil {
 		t.Fatalf("NewGitSource error: %v", err)
 	}
@@ -654,4 +652,69 @@ func Test_GitSource_FileContent(t *testing.T) {
 			t.Errorf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
 		}
 	})
+}
+
+func Test_GitUrlParser(t *testing.T) {
+
+	ttests := map[string]struct {
+		input    string
+		expected config.GitConnection
+	}{
+		"file test": {
+			input: "git::file:///dummy//scripts/deploy.sh",
+			expected: config.GitConnection{
+				YamlPath: "scripts/deploy.sh",
+				Repo:     "dummy",
+				Tag:      "",
+				Scheme:   "file",
+			},
+		},
+		"ssh test without user": {
+			input: "git::ssh://example.com/repo.git//path/123/abc?ref=v1.23.4",
+			expected: config.GitConnection{
+				YamlPath: "path/123/abc",
+				Host:     "example.com",
+				Repo:     "repo.git",
+				Tag:      "v1.23.4",
+				Scheme:   "ssh",
+			},
+		},
+		"ssh test with user": {
+			input: "git::ssh://user@example.com/repo.git//path/123/abc?ref=v1.23.4",
+			expected: config.GitConnection{
+				User:     "user",
+				Host:     "example.com",
+				YamlPath: "path/123/abc",
+				Repo:     "repo.git",
+				Tag:      "v1.23.4",
+				Scheme:   "ssh",
+			},
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			got, err := config.ParseGitUrl(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Host != tt.expected.Host {
+				t.Errorf("got host %v, wanted %v", got.Host, tt.expected.Host)
+			}
+			if got.User != tt.expected.User {
+				t.Errorf("got user %v, wanted %v", got.User, tt.expected.User)
+			}
+			if got.Repo != tt.expected.Repo {
+				t.Errorf("got repo %v, wanted %v", got.Repo, tt.expected.Repo)
+			}
+			if got.YamlPath != tt.expected.YamlPath {
+				t.Errorf("got yaml path %v, wanted %v", got.YamlPath, tt.expected.YamlPath)
+			}
+			if got.Tag != tt.expected.Tag {
+				t.Errorf("got tag %v, wanted %v", got.Tag, tt.expected.Tag)
+			}
+			if got.Scheme != tt.expected.Scheme {
+				t.Errorf("got scheme %v, wanted %v", got.Scheme, tt.expected.Scheme)
+			}
+		})
+	}
 }

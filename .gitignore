@@ -3,11 +3,14 @@ coverage.out
 # Dependencies
 vendor/
 bin/
+node_modules
+
 
 # IDEs
-.idea
-.vscode
 .DS_Store
+.idea
+.vscode/*
+!.vscode/launch.json
 
 # Random
 local/
@@ -20,6 +23,12 @@ outputs/
 .taskctl/
 .eirctl/
 .deps/
+vscode-extension/dist
+vscode-extension/.tools-dist
+vscode-extension/.bin
+# extension package
+*.vsix
+
 # local env files
 *.env
 # prof outputs
@@ -32,3 +41,4 @@ __debug_bin*
 .pi-subagents/
 .github/skills/openspec-*
 .github/prompts/opsx-*
+vscode-extension/LICENSE
