@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 
@@ -29,11 +29,11 @@ import (
 )
 
 const (
-	gitPrefix              = "git::"
-	sshGitConnectionString = "ssh://%s@%s:%s/%s" // user@host:port/org/repo
-	remoteRef              = "origin"
-	GitSshCommandVar       = "GIT_SSH_COMMAND"
-	GitSshPassphrase       = "GIT_SSH_PASSPHRASE"
+	gitPrefix        string = "git::"
+	gitPathSplitter  string = "//"
+	remoteRef        string = "origin"
+	GitSshCommandVar string = "GIT_SSH_COMMAND"
+	GitSshPassphrase string = "GIT_SSH_PASSPHRASE"
 )
 
 var (
@@ -41,7 +41,6 @@ var (
 	// must include a protocol to use such as ssh, https, http or file
 	// can optionally include a user for ssh protocol
 	// must have a repo url and path to file specified
-	gitRegexp                    = regexp.MustCompile(`^git::(ssh|https?|file)://(?:([^/@]+)@)?(.+?)//([^?]+)(?:\?ref=([^&]+))?$`)
 	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import, must satisfy this regex `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\\?ref=([^&]+))?$`")
 	ErrGitTagBranchRevisionWrong = errors.New("tag or branch or revision was not found")
 	ErrGitOperation              = errors.New("git operation failed")
@@ -89,38 +88,42 @@ func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
 		entry: entry,
 	}
 
-	gitImportParts := gitRegexp.FindStringSubmatch(entry.Src)
+	gitConn, err := ParseGitUrl(entry.Src)
+	if err != nil {
+		return nil, err
+	}
 
-	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitImportParts)
+	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitConn)
 
-	if len(gitImportParts) != 6 {
+	if gitConn.Scheme == "" || gitConn.Repo == "" || gitConn.YamlPath == "" {
 		return gs, fmt.Errorf("import %s, %w", entry.Src, ErrIncorrectlyFormattedGit)
 	}
 
-	switch gitImportParts[1] {
+	switch gitConn.Scheme {
 	case "ssh":
-		p1 := strings.Split(gitImportParts[3], "/")
-
 		// auth using ssh_config
-		auth, err := gs.getGitSSHAuth(p1[0])
+		auth, err := gs.getGitSSHAuth(gitConn.Host)
 		if err != nil {
 			return nil, err
 		}
-		if gitImportParts[2] != "" {
-			gs.SshConfig.User = gitImportParts[2]
+		if gitConn.User != "" {
+			gs.SshConfig.User = gitConn.User
 		}
-		gs.gcOpts.URL = fmt.Sprintf(sshGitConnectionString, gs.SshConfig.User, gs.SshConfig.Hostname, gs.SshConfig.Port, strings.Join(p1[1:], "/"))
+		gitConn.url.User = url.User(gs.SshConfig.User)
+		gitConn.url.Host = gs.SshConfig.Hostname + ":" + gs.SshConfig.Port
+		gitConn.url.Path = gitConn.Repo
+		gs.gcOpts.URL = gitConn.url.String()
 		gs.gcOpts.Auth = auth
 	case "http", "https":
-		gs.gcOpts.URL = "https://" + gitImportParts[3]
+		gs.gcOpts.URL = gitConn.url.String()
 	case "file":
-		gs.gcOpts.URL = gitImportParts[3]
+		gs.gcOpts.URL = strings.Replace(gitConn.url.String(), "file://", "", 1)
 	default:
 		return nil, fmt.Errorf("must specify a protocol (ssh|https|file)\n%w", ErrIncorrectlyFormattedGit)
 	}
 
-	gs.yamlPath = gitImportParts[4]
-	gs.tag = gitImportParts[5]
+	gs.yamlPath = gitConn.YamlPath
+	gs.tag = gitConn.Tag
 
 	return gs, nil
 }
@@ -199,6 +202,51 @@ func (gs *GitSource) Config(writeImport func(entry schema.ImportEntry, content i
 		return nil, err
 	}
 	return cm, nil
+}
+
+type GitConnection struct {
+	User     string
+	Scheme   string
+	Host     string
+	Repo     string
+	YamlPath string
+	Tag      string
+	url      *url.URL
+}
+
+func ParseGitUrl(input string) (urlParts GitConnection, err error) {
+	gitStripped := strings.Replace(input, gitPrefix, "", 1)
+
+	splitterIndex := strings.LastIndex(gitStripped, gitPathSplitter)
+	if splitterIndex == -1 {
+		return GitConnection{}, fmt.Errorf("%w, must specify the '//' in the path to point to the specific file: %s", ErrIncorrectlyFormattedGit, input)
+	}
+	// take everything before the last occurrence of gitPathSplitter as the repo URL
+	repoUrl, err := url.Parse(gitStripped[:splitterIndex])
+	if err != nil {
+		return GitConnection{}, err
+	}
+	// take everything after the last occurrence of gitPathSplitter as the path within the repository
+	// use a temporary/discardable/dummy URL to parse the path and query parameters correctly
+	pathUrl, err := url.Parse("https://dummy.io/" + gitStripped[splitterIndex+2:])
+	if err != nil {
+		return GitConnection{}, err
+	}
+
+	g := GitConnection{
+		url:      repoUrl,
+		User:     repoUrl.User.Username(),
+		Scheme:   repoUrl.Scheme,
+		Host:     repoUrl.Host,
+		Repo:     strings.TrimPrefix(repoUrl.Path, "/"),
+		YamlPath: strings.TrimPrefix(pathUrl.Path, "/"),
+	}
+
+	if pathUrl.Query()["ref"] != nil && len(pathUrl.Query()["ref"]) > 0 {
+		g.Tag = pathUrl.Query()["ref"][0]
+	}
+
+	return g, nil
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
