@@ -18,12 +18,9 @@ import (
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/filesystem"
 )
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
@@ -32,23 +29,21 @@ var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
 func createFilesystemTestRepo(t *testing.T, files map[string]string, branch string) (repo *git.Repository, dir string) {
 	t.Helper()
 
-	// Create temp directory for the repo
+	// Create temp directory for the git init repo
 	dir, err := os.MkdirTemp("", "testrepo")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 
-	fs := osfs.New(dir)
-	dot := osfs.New(filepath.Join(dir, ".git"))
-	storer := filesystem.NewStorage(dot, &cache.ObjectLRU{})
-
-	repo, err = git.Init(storer, fs)
+	repo, err = git.PlainInit(dir, false)
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Fatalf("failed to init repo: %v", err)
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Fatalf("failed to get worktree: %v", err)
 	}
 
@@ -192,6 +187,7 @@ func TestLoader_Load_task_check(t *testing.T) {
 	_, _ = f.Write([]byte(`tasks:
   task:check:default:vars:
     command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"`))
+	f.Close()
 
 	cl := config.NewConfigLoader(config.NewConfig())
 	cfg, err := cl.Load(f.Name())
@@ -211,7 +207,7 @@ func Test_LoadImport(t *testing.T) {
 	defer os.RemoveAll(tmpFile.Name())
 	testSrv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/x-yaml")
-		_, err := writer.Write([]byte(fmt.Sprintf(`
+		_, err := fmt.Fprintf(writer, `
 import:
   - %s
   - %s
@@ -219,7 +215,7 @@ tasks:
   task1:
     command:
       - true
-`, tmpFile.Name(), tmpFile.Name())))
+`, tmpFile.Name(), tmpFile.Name())
 		if err != nil {
 			t.Errorf("failed to write bytes to response stream")
 		}

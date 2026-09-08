@@ -8,7 +8,8 @@ output: prefixed
 
 import:
   - shared/build/go/eirctl.yaml
-  - shared/security/eirctl.yaml
+  - git::ssh://github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
+  - "git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/security/eirctl.yaml?ref=fix/initial-lib-import"
 
 contexts:
   bash:
@@ -38,7 +39,8 @@ pipelines:
   gha:unit:test:
     - pipeline: test:unit
     - task: sonar:coverage:prep
-      depends_on: test:unit
+      depends_on:
+        - test:unit
 
   lints:
     - task: go:lint
@@ -54,7 +56,62 @@ pipelines:
         - gen:docs:html
         - gen:docs:pdf
 
+  build:package:vscode:extension:
+    - task: build:vscode:extension
+    - task: build:lsp:server
+      depends_on:
+        - build:vscode:extension
+    - task: package:vscode:extension
+      depends_on:
+        - build:lsp:server
+
+  trivy:scan:fs:
+    - task: trivy:filesystem:scan
+
+  sonar:scan:
+    - task: sonar:scanner:cli
+
 tasks:
+  build:vscode:extension:
+    description: Builds the VSCode extension
+    dir: vscode-extension
+    context: node24
+    command:
+      - |
+        npm install
+        npm run esbuild:config
+        npm run compile
+
+  build:lsp:server:
+    description: Builds the LSP server
+    context: go1x
+    command:
+      - |
+        go build -o vscode-extension/.bin/eirctl-lsp cmd/eirctl-lsp/main.go
+        mkdir -p .deps
+        unset GOTOOLCHAIN
+        GOPATH=$PWD/.deps GOOS=${BUILD_GOOS} GOARCH=${BUILD_GOARCH} CGO_ENABLED=0 go build \
+          -mod=readonly -buildvcs=false \
+          -ldflags="-s -w -extldflags -static" \
+          -o vscode-extension/.bin/eirctl-lsp${BINARY_SUFFIX} \
+          cmd/eirctl-lsp/main.go
+    required:
+      env:
+        - BUILD_GOOS
+        - BUILD_GOARCH
+
+  package:vscode:extension:
+    description: Publishes the VSCode extension
+    dir: vscode-extension
+    context: node24
+    command:
+      - |
+        rm -rf dist/
+        npm version from-git --no-git-tag-version
+        npm run package
+        cp -f ../LICENSE .
+        node_modules/.bin/vsce package --baseContentUrl https://github.com/Ensono/eirctl/raw/HEAD --baseImagesUrl https://github.com/Ensono/eirctl/raw/HEAD --out eirctl-latest.vsix
+
   gen:docs:html:
     context: asciidoc
     description: Renders docs/index.adoc as HTML beneath .eirctl/outputs/docs.
