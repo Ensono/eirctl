@@ -1,7 +1,7 @@
 ARG Version
 ARG Revision
 
-FROM docker.io/golang:1.26.5-trixie@sha256:4ee9ffa999b4583ce281939cdff828763083610292f252279a0cee77473bd9a7 AS builder
+FROM docker.io/golang:1.27.1-trixie@sha256:9baa6b4187bbb98d240372a8a235ac0bb6b5ddd52bba1431dc2f7c0705862728 AS builder
 
 ARG Version=0.0.1
 ARG Revision=beta01

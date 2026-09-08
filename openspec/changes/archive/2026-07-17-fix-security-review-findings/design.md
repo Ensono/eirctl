@@ -1,3 +1,5 @@
+> **Historical outcome:** Direct dispatch restored the command path but retained default-branch cache-write authority and led to CodeQL alert 23. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## Context
 
 The current debug flow uses an `issue_comment` broker to remove and re-add a label with the repository `GITHUB_TOKEN`, expecting the resulting `pull_request:labeled` event to start the builder. GitHub suppresses workflow runs for most events created by `GITHUB_TOKEN`, so the signal changes repository state but does not start the build. The publisher is manually dispatchable from repository refs and therefore needs an independently enforced default-branch boundary.

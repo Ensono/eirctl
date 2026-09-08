@@ -1,3 +1,5 @@
+> **Historical outcome:** This design closed the static finding but its `GITHUB_TOKEN` label signal did not start the builder. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## Context
 
 PR #102 replaces a single issue-comment-triggered debug release workflow with separate build and publication workflows. Publication is now isolated behind `workflow_dispatch`, a protected environment, provenance validation, and job-scoped `contents: write`; that part of the trust split is sound.

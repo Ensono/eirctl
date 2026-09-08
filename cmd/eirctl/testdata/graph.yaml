@@ -1,8 +1,9 @@
-# Historical image tag used only by graph-rendering tests; it is not a maintained build selector.
+# Placeholder image used only by static graph and show-command tests.
+# It is not a real image, is never executed, and does not need dependency updates.
 contexts:
   foo:
     container:
-      name: golang:1.24.3-bookworm
+      name: foo.io/bar/baz:1.2.3
       enable_dind: true
     envfile:
       exclude:

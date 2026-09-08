@@ -5,7 +5,7 @@ TBD: Define the project's Go toolchain and dependency security baseline.
 # Requirements
 
 ## Requirement: Maintained builds use the latest stable Go patch release
-The project SHALL use the latest stable Go patch release available at implementation time across module toolchain metadata, active CI workflows, maintained builder images, and contributor instructions. The baseline identified for this change is Go 1.26.5.
+The project SHALL use the latest stable Go patch release available at implementation time across module toolchain metadata, active CI workflows, maintained builder images, and contributor instructions. The baseline identified for this change is Go 1.26.6.
 
 ### Scenario: Implementation baseline is selected
 - **WHEN** implementation begins

@@ -1,3 +1,5 @@
+> **Historical outcome:** Direct dispatch restored the command path but retained default-branch cache-write authority and led to CodeQL alert 23. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## Why
 
 The security-hardening branch still contains a broken debug-build signal and several trust-boundary, supply-chain, policy-enforcement, and SSH portability gaps. These issues should be resolved before relying on the new debug publication flow or treating the repository checks as authoritative.

@@ -41,6 +41,7 @@ done
 release=.github/workflows/release.yml
 container=.github/workflows/release_container.yml
 debug=.github/workflows/debug-build.yml
+debug_request=.github/workflows/debug-build-request.yml
 
 # Binary metadata and Git/GitHub Release tags own one presentation v.
 require_text '--set Version=v${SEMVER}' "$release"
@@ -53,8 +54,8 @@ pwsh_tag='eirctl:pwsh-${{ needs.set-version-tag.outputs.semVer }}'
 require_text "$pwsh_tag" "$container"
 
 # Debug artifacts retain their independent run/provenance identity.
-require_text 'name: debug-build-${{ github.run_id }}' "$debug"
-require_text '--arg semver "$SEMVER"' "$debug"
+require_text 'name: debug-build-${{ github.run_id }}' "$debug_request"
+require_text '--arg semver "$SEMVER"' "$debug_request"
 
 if [[ $policy_only == false ]]; then
 	semver=${SEMVER:-}

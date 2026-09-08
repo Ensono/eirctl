@@ -1,0 +1,32 @@
+# Time-bounded exceptions for findings in module code that eirctl does not invoke.
+# Reassess on expiry or if the relevant Docker/OpenPGP usage changes.
+
+[[IgnoredVulns]]
+id = "GO-2026-4883"
+ignoreUntil = 2027-02-19
+reason = "Docker plugin privilege validation is daemon-side; eirctl neither installs nor manages Docker plugins. Tracked in #95."
+
+[[IgnoredVulns]]
+id = "GO-2026-4887"
+ignoreUntil = 2027-02-19
+reason = "Docker AuthZ-plugin body inspection is daemon-side; eirctl neither configures nor relies on Docker AuthZ plugins. Tracked in #95."
+
+[[IgnoredVulns]]
+id = "GO-2026-5617"
+ignoreUntil = 2027-02-19
+reason = "Docker archive-copy race is daemon-side; eirctl does not use Docker archive or copy APIs. Tracked in #95."
+
+[[IgnoredVulns]]
+id = "GO-2026-5668"
+ignoreUntil = 2027-02-19
+reason = "Docker archive-copy race is daemon-side; eirctl does not use Docker archive or copy APIs. Tracked in #95."
+
+[[IgnoredVulns]]
+id = "GO-2026-5746"
+ignoreUntil = 2027-02-19
+reason = "Docker archive extraction is daemon-side; eirctl does not upload archives to containers. Tracked in #95."
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-02-19
+reason = "eirctl imports golang.org/x/crypto/ssh but does not import or use the unsafe openpgp package. Tracked in #149."

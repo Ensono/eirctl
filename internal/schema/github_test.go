@@ -70,6 +70,93 @@ func assertGithubTriggers(t *testing.T, events *GithubTriggerEvents, triggers []
 	}
 }
 
+func TestGithubWorkflowUnmarshalAliasesMergesAndUnknownEvents(t *testing.T) {
+	contents := []byte(`
+trigger: &trigger [future_cache_event]
+base: &base
+  runs-on:
+    group: trusted-runners
+    labels: [linux, x64]
+  permissions: {contents: read}
+  steps:
+    - run: echo test
+      continue-on-error: true
+      timeout-minutes: 5
+on: *trigger
+jobs:
+  build:
+    <<: *base
+    name: Merged
+`)
+	var workflow GithubWorkflow
+	if err := yaml.Unmarshal(contents, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if !workflow.On.Has("future_cache_event") || len(workflow.On.ConfiguredNames()) != 1 {
+		t.Fatalf("unknown aliased trigger was not retained: %#v", workflow.On.ConfiguredNames())
+	}
+	job := workflow.Jobs.Values["build"]
+	if len(job.RunsOn) != 3 || job.RunsOn[0] != "group:trusted-runners" || len(job.Steps) != 1 ||
+		!job.Steps[0].ContinueOnError || job.Steps[0].TimeoutMinutes != 5 {
+		t.Fatalf("merged job fields were not normalized: %#v", job)
+	}
+	workflow.Jobs.Add("second", GithubJob{})
+	if _, ok := workflow.Jobs.Values["second"]; !ok {
+		t.Fatal("Add failed after OrderedMap unmarshalling")
+	}
+}
+
+func TestGithubWorkflowUnmarshalTriggerAndJobsMapMerges(t *testing.T) {
+	contents := []byte(`
+trigger-map: &trigger-map
+  workflow_dispatch: {}
+job-set: &job-set
+  merged-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo merged
+on:
+  <<: *trigger-map
+jobs:
+  <<: *job-set
+  direct:
+    runs-on: ubuntu-24.04
+`)
+	var workflow GithubWorkflow
+	if err := yaml.Unmarshal(contents, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if !workflow.On.Has("workflow_dispatch") {
+		t.Fatal("merged trigger mapping was not expanded")
+	}
+	merged, ok := workflow.Jobs.Values["merged-build"]
+	if !ok || len(merged.Steps) != 1 {
+		t.Fatalf("merged jobs mapping was not expanded: %#v", workflow.Jobs.Values)
+	}
+	if _, ok := workflow.Jobs.Values["<<"]; ok {
+		t.Fatal("merge key was decoded as an empty job")
+	}
+}
+
+func TestGithubWorkflowCallRetainsSecretDeclarations(t *testing.T) {
+	contents := []byte(`on:
+  workflow_call:
+    secrets:
+      deployment_token:
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+`)
+	var workflow GithubWorkflow
+	if err := yaml.Unmarshal(contents, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := workflow.On.WorkflowCall.Secrets["deployment_token"]; !ok {
+		t.Fatalf("workflow_call secret declaration was discarded: %#v", workflow.On.WorkflowCall.Secrets)
+	}
+}
+
 func TestGithubJobUnmarshalPolicyFields(t *testing.T) {
 	contents := []byte(`on: [push]
 jobs:

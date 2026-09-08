@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=1.26.5
+version=1.26.6
 language_version=1.26
 
 fail() {
@@ -10,7 +10,7 @@ fail() {
 }
 
 # Check each authoritative location rather than searching for a version anywhere
-# in a file. Historical fixture versions are intentionally outside this list.
+# in a file. Test-fixture versions are intentionally outside this list.
 go_language=$(awk '$1 == "go" { print $2; exit }' go.mod)
 [[ "$go_language" == "$language_version" ]] || fail "go.mod language version is $go_language, want $language_version"
 go_toolchain=$(awk '$1 == "toolchain" { print $2; exit }' go.mod)

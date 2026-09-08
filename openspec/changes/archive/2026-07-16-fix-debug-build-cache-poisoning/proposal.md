@@ -1,3 +1,5 @@
+> **Historical outcome:** This design closed the static finding but its `GITHUB_TOKEN` label signal did not start the builder. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## Why
 
 PR #102 fixes the repository's original privileged checkout and release-authority findings, but its replacement debug-build workflow still executes pull-request-controlled code under the privileged `issue_comment` event. CodeQL reports this as a new high-severity cache-poisoning path, so the trust boundary must move the build itself into an unprivileged pull-request context before the branch can be considered clean.

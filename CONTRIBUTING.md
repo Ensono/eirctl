@@ -10,7 +10,7 @@ Do **not** report suspected security vulnerabilities in a public issue. Follow t
 
 ## Before you start
 
-Read the project [README](README.md) and the canonical documentation entry point at [docs/index.adoc](docs/index.adoc). Local builds and validation use Go 1.26.5; the documentation build also requires Docker Engine or a Docker-API-compatible OCI runtime, as described in [docs/building.adoc](docs/building.adoc).
+Read the project [README](README.md) and the canonical documentation entry point at [docs/index.adoc](docs/index.adoc). Local builds and validation use Go 1.26.6; the documentation build also requires Docker Engine or a Docker-API-compatible OCI runtime, as described in [docs/building.adoc](docs/building.adoc).
 
 ## Submit a pull request
 

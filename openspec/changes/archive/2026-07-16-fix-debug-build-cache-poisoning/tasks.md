@@ -1,3 +1,5 @@
+> **Historical outcome:** This design closed the static finding but its `GITHUB_TOKEN` label signal did not start the builder. See [outcome.md](outcome.md); use [`make-debug-build-cache-safe`](../../make-debug-build-cache-safe/) for the current recommendation.
+
 ## 1. Split the Debug-Build Trust Domains
 
 - [x] 1.1 Refactor the `issue_comment` path into a command broker that accepts only exact `/build-debug` requests on pull requests, verifies `write`/`maintain`/`admin` repository permission, serializes requests per PR, and performs no checkout or PR-controlled execution.
