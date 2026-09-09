@@ -20,7 +20,7 @@ require (
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/pflag v1.0.10
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.14.0
 )
@@ -114,7 +114,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/huh v1.0.0
 	github.com/coryb/templatecolor v0.0.0-20230911044230-5d137a83f1e3
-	github.com/docker/cli v29.7.2+incompatible
+	github.com/docker/cli v29.8.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/emicklei/dot v1.11.0
 	github.com/fatih/color v1.19.0 // indirect
@@ -124,6 +124,6 @@ require (
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.45.0
 )
