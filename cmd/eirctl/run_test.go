@@ -25,8 +25,17 @@ func Test_runCommand(t *testing.T) {
 	t.Run("correct with task specified", func(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "task", "graph:task1", "--raw"}, exactOutput: "hello, world!\n"})
 	})
+	t.Run("overrides the context for an implicit task", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task:context:override", "--context", "context:env", "--raw"}, exactOutput: "supplied-by-context\n"})
+	})
+	t.Run("overrides the context for an explicit task", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:context:override", "--context", "context:env", "--raw"}, exactOutput: "supplied-by-context\n"})
+	})
 	t.Run("correct with pipeline specified", func(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "pipeline", "graph:pipeline1", "--raw"}, output: []string{"hello, world!\n"}})
+	})
+	t.Run("rejects a context override for a pipeline", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "pipeline", "graph:pipeline1", "--context", "context:env", "--raw"}, errored: true, output: []string{"context flag can only be used when running a task"}})
 	})
 	t.Run("correct prefixed output", func(t *testing.T) {
 		t.Setenv("EIRCTL_CONFIG_FILE", "testdata/graph.yaml")

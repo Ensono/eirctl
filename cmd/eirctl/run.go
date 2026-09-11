@@ -21,6 +21,7 @@ var (
 
 type runFlags struct {
 	showGraphOnly, detailedSummary bool
+	contextName                    string
 }
 
 type runCmd struct {
@@ -92,6 +93,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			if argsStringer.pipelineName == nil {
 				return fmt.Errorf("pipeline: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
 			}
+			if runner.flags.contextName != "" {
+				return errors.New("the context flag can only be used when running a task")
+			}
 			return runner.runPipeline(argsStringer.pipelineName, taskRunner, conf.Summary)
 		},
 	})
@@ -116,7 +120,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			if argsStringer.taskName == nil {
 				return fmt.Errorf("task: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
 			}
-			return runner.runTask(argsStringer.taskName, taskRunner)
+			return runner.runTask(runner.taskWithContext(argsStringer.taskName), taskRunner)
 		},
 	})
 
@@ -138,6 +142,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 
 	rc.PersistentFlags().BoolVarP(&f.showGraphOnly, "graph-only", "", false, "Show only the denormalized graph")
 	rc.PersistentFlags().BoolVarP(&f.detailedSummary, "detailed", "", false, "Show detailed summary, otherwise will be summarised by top level stages only")
+	rc.PersistentFlags().StringVarP(&f.contextName, "context", "", "", "override the context used when running a task")
 
 	rootCmd.Cmd.AddCommand(rc)
 }
@@ -145,16 +150,29 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 func (r *runCmd) runTarget(taskRunner *runner.TaskRunner, conf *config.Config, argsStringer *argsToStringsMapper) (err error) {
 
 	if argsStringer.pipelineName != nil {
+		if r.flags.contextName != "" {
+			return errors.New("the context flag can only be used when running a task")
+		}
 		return r.runPipeline(argsStringer.pipelineName, taskRunner, conf.Summary)
 	}
 
 	if argsStringer.taskName != nil {
-		if err := r.runTask(argsStringer.taskName, taskRunner); err != nil {
+		if err := r.runTask(r.taskWithContext(argsStringer.taskName), taskRunner); err != nil {
 			return fmt.Errorf("task `%s` failed: %w", argsStringer.taskOrPipelineName, err)
 		}
 	}
 
 	return nil
+}
+
+func (r *runCmd) taskWithContext(t *task.Task) *task.Task {
+	if r.flags.contextName == "" {
+		return t
+	}
+
+	taskWithContext := *t
+	taskWithContext.Context = r.flags.contextName
+	return &taskWithContext
 }
 
 func (r *runCmd) runPipeline(g *scheduler.ExecutionGraph, taskRunner *runner.TaskRunner, summary bool) error {
