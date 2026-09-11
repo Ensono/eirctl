@@ -31,6 +31,15 @@ func Test_runCommand(t *testing.T) {
 	t.Run("overrides the context for an explicit task", func(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:context:override", "--context", "context:env", "--raw"}, exactOutput: "supplied-by-context\n"})
 	})
+	t.Run("import flag overrides an existing context on clash", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:context:override", "--context", "context:env", "--import", "testdata/cli-import-override.yaml", "--raw"}, exactOutput: "supplied-by-cli-import\n"})
+	})
+	t.Run("import flag adds a new task", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:from:cli:import", "--import", "testdata/cli-import-override.yaml", "--raw"}, exactOutput: "hello from cli import\n"})
+	})
+	t.Run("import flag not supplied does not affect existing behaviour", func(t *testing.T) {
+		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/task.yaml", "run", "task", "task:context:override", "--context", "context:env", "--raw"}, exactOutput: "supplied-by-context\n"})
+	})
 	t.Run("correct with pipeline specified", func(t *testing.T) {
 		cmdRunTestHelper(t, &cmdRunTestInput{args: []string{"-c", "testdata/graph.yaml", "run", "pipeline", "graph:pipeline1", "--raw"}, output: []string{"hello, world!\n"}})
 	})

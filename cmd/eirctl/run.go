@@ -22,6 +22,7 @@ var (
 type runFlags struct {
 	showGraphOnly, detailedSummary bool
 	contextName                    string
+	imports                        []string
 }
 
 type runCmd struct {
@@ -51,6 +52,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			conf, err := rootCmd.initConfig()
 			if err != nil {
+				return err
+			}
+			if err := runner.applyImports(conf); err != nil {
 				return err
 			}
 			// display selector if nothing is supplied
@@ -86,6 +90,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			if err != nil {
 				return err
 			}
+			if err := runner.applyImports(conf); err != nil {
+				return err
+			}
 			taskRunner, argsStringer, err := rootCmd.buildTaskRunner(args, conf)
 			if err != nil {
 				return err
@@ -110,6 +117,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			conf, err := rootCmd.initConfig()
 			if err != nil {
+				return err
+			}
+			if err := runner.applyImports(conf); err != nil {
 				return err
 			}
 			runner.conf = conf
@@ -143,6 +153,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 	rc.PersistentFlags().BoolVarP(&f.showGraphOnly, "graph-only", "", false, "Show only the denormalized graph")
 	rc.PersistentFlags().BoolVarP(&f.detailedSummary, "detailed", "", false, "Show detailed summary, otherwise will be summarised by top level stages only")
 	rc.PersistentFlags().StringVarP(&f.contextName, "context", "", "", "override the context used when running a task")
+	rc.PersistentFlags().StringArrayVarP(&f.imports, "import", "", nil, "import an additional config file, can be repeated; entries in imported files take precedence over any existing ones with the same name")
 
 	rootCmd.Cmd.AddCommand(rc)
 }
@@ -162,6 +173,19 @@ func (r *runCmd) runTarget(taskRunner *runner.TaskRunner, conf *config.Config, a
 		}
 	}
 
+	return nil
+}
+
+// applyImports merges any files supplied via the repeatable --import flag into
+// conf, with entries in those files taking precedence over any name clashes.
+func (r *runCmd) applyImports(conf *config.Config) error {
+	if len(r.flags.imports) == 0 {
+		return nil
+	}
+	cl := config.NewConfigLoader(conf)
+	if _, err := cl.LoadImports(r.flags.imports); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -130,6 +130,39 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	return cl.Validate()
 }
 
+// LoadImports loads additional standalone config files, e.g. supplied via the
+// `--import` CLI flag, and merges them into the already loaded config.
+//
+// Unlike the `import:` directive in a config file, entries in these files take
+// precedence over any existing entries with the same name (contexts, tasks,
+// pipelines etc.), allowing CLI supplied imports to override the loaded config.
+func (cl *Loader) LoadImports(files []string) (*Config, error) {
+	for _, file := range files {
+		if !utils.IsURL(file) && !filepath.IsAbs(file) {
+			file = path.Join(cl.dir, file)
+		}
+
+		def, err := cl.load(schema.ImportEntry{Src: file})
+		if err != nil {
+			return nil, err
+		}
+
+		importedCfg, err := buildFromDefinition(def, &loaderContext{Dir: cl.dir})
+		if err != nil {
+			return nil, err
+		}
+
+		if err := cl.dst.mergeOverride(importedCfg); err != nil {
+			return nil, err
+		}
+		logrus.Debugf("import %s loaded", file)
+	}
+
+	cl.dst.Variables.Set("Root", cl.dir)
+
+	return cl.Validate()
+}
+
 // LoadGlobalConfig load global config file  - ~/.eirctl/config.yaml
 func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 	if cl.homeDir == "" {

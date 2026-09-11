@@ -68,6 +68,25 @@ func (cfg *Config) merge(src *Config) error {
 	return nil
 }
 
+// mergeOverride merges src into cfg, with values in src taking precedence
+// over any existing entries in cfg on a name clash (e.g. contexts, tasks, pipelines).
+//
+// Used when merging config supplied via CLI (e.g. `--import`) on top of the
+// already loaded config.
+func (cfg *Config) mergeOverride(src *Config) error {
+	defer func() {
+		if err := recover(); err != nil {
+			logrus.Error(err)
+		}
+	}()
+
+	if err := mergo.Merge(cfg, src, mergo.WithOverride); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func buildFromDefinition(def *ConfigDefinition, lc *loaderContext) (cfg *Config, err error) {
 	cfg = NewConfig()
 
