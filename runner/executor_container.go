@@ -176,6 +176,17 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	if len(os.Getenv("CI")) > 0 {
 		throttle = 3 * time.Second
 	}
+	containerName := containerConf.Image
+	fromName := strings.LastIndex(containerConf.Image, "/")
+	toSha := strings.Index(containerConf.Image, "@")
+	if fromName >= 0 {
+		containerName = containerConf.Image[fromName+1:]
+	}
+
+	if toSha >= 0 {
+		containerName = containerName[:toSha+8]
+	}
+
 	// container.ImagePull is asynchronous.
 	// The reader needs to be read completely for the pull operation to complete.
 	//
@@ -188,7 +199,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 		progressbar.OptionShowBytes(false),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s[reset]", containerConf.Image)),
+		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s...[reset]", containerName)),
 		progressbar.OptionThrottle(throttle),
 		progressbar.OptionShowTotalBytes(true),
 	)

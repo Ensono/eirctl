@@ -8,8 +8,10 @@ output: prefixed
 
 import:
   - shared/build/go/eirctl.yaml
-  - git::ssh://github.com/Ensono/eirctl-shared-utils.git//eirctl/utils/eirctl.yaml?ref=fix/initial-lib-import
-  - "git::ssh://git@github.com/Ensono/eirctl-shared-utils.git//eirctl/security/eirctl.yaml?ref=fix/initial-lib-import"
+  - shared/utils/eirctl.yaml
+  - shared/security/eirctl.yaml
+  # - git::ssh://github.com/Ensono/eirctl-shared-utils//eirctl/utils/eirctl.yaml?ref=5dda5996dbf8c7f4f072097dd079ab3ebec4ea82
+  # - git::ssh://github.com/Ensono/eirctl-shared-utils//eirctl/security/eirctl.yaml?ref=5dda5996dbf8c7f4f072097dd079ab3ebec4ea82
 
 contexts:
   bash:
