@@ -48,6 +48,7 @@ pipelines:
     - task: go:lint
     - pipeline: trivy-filesystem-scan
       variables:
+        TrivyIgnoreFile: ".trivyignore.yaml"
         TrivyFileSystemScanArgs: "--skip-dirs=.deps;--skip-dirs=local;--skip-dirs=.eirctl"
     - task: go:vuln:check
       condition: exit 1
