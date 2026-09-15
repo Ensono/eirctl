@@ -16,8 +16,6 @@ contexts:
       entrypoint: /usr/bin/env
       enable_mount: true
       container_args:
-        - "-v ~/.aws:/root/.aws"
-        - "-v ~/.ssh:/root/.ssh"
         - "${EIRCTL_CONTAINER_ARG}"
 
   trivy:yq:container:
