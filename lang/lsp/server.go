@@ -41,7 +41,6 @@ type Server struct {
 	// Currently, this is used to determine the entry point for analysis and to discover workspace configuration files.
 	rootPath                    string
 	docs                        map[string]string
-	debug                       bool
 	configPathDiscoveryComplete bool
 	discoveredConfigPath        string
 	closed                      bool
@@ -404,16 +403,6 @@ func (s *Server) readFile(path string) ([]byte, error) {
 		return []byte(content), nil
 	}
 	return os.ReadFile(path)
-}
-
-func envBool(name string) bool {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
-	switch value {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *Server) publishDiagnostics(path string) error {

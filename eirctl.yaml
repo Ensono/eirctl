@@ -46,7 +46,11 @@ pipelines:
 
   lints:
     - task: go:lint
+    - pipeline: trivy-filesystem-scan
+      variables:
+        TrivyFileSystemScanArgs: "--skip-dirs=.deps;--skip-dirs=local;--skip-dirs=.eirctl"
     - task: go:vuln:check
+      condition: exit 1
       variables:
         VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
 

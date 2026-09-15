@@ -26,3 +26,5 @@ include::v2.adoc[]
 include::ci-security.adoc[]
 
 include::building.adoc[]
+
+include::troubleshooting.adoc[]

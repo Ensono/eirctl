@@ -12,7 +12,7 @@ contexts:
 
   trivy:container:
     container:
-      name: public.ecr.aws/aquasecurity/trivy:0.72.0
+      name: public.ecr.aws/aquasecurity/trivy:0.74.0
       entrypoint: /usr/bin/env
       container_args:
         - "-v ~/.aws:/root/.aws"
@@ -51,6 +51,12 @@ pipelines:
     - task: trivy:filesystem:scan
       depends_on:
         - trivy:prep:scan
+    - task: trivy:convert:results
+      depends_on:
+        - trivy:filesystem:scan
+    - task: trivy:display:results
+      depends_on:
+        - trivy:convert:results
 
   trivy-container-scan:
     - task: trivy:prep:scan
@@ -96,10 +102,10 @@ tasks:
     command:
       - |
         mkdir -p .eirctl
-        trivy filesystem \
+        exec trivy filesystem \
           --format json \
           --output .eirctl/trivy-results-filesystem.json \
-          --scanners vuln,secret,misconfig,license \
+          --scanners {{ .TrivyScanners | default "vuln,secret,misconfig,license" }} \
           --exit-code=0 \
           --ignorefile {{ .TrivyIgnoreFile | default ".trivyignore.yaml" }} \
           {{ if .TrivySkipFiles -}}
@@ -109,7 +115,15 @@ tasks:
           {{ end -}}
           --show-suppressed {{ if .TrivyFileSystemScanArgs }}{{ range (.TrivyFileSystemScanArgs | splitList ";") }} {{ . }}{{ end }}{{ end }} \
           {{ .TrivyRoot | default "." }}
-
+  
+  # private 
+  trivy:convert:results:
+    context: trivy:container
+    allow_failure: true
+    description: |
+      Converts Trivy filesystem scan results to a human-readable format.
+    command:
+      - |
         trivy convert \
           --show-suppressed \
           --format {{ .TrivyFormat | default "table" }} \
@@ -119,7 +133,15 @@ tasks:
           --output .eirctl/report.filesystem.{{ .TrivyFormat | default "table" }} \
           ./.eirctl/trivy-results-filesystem.json
 
-          cat .eirctl/report.{{ .TrivyFormat | default "table" }}
+  # private
+  trivy:display:results:
+    context: trivy:container
+    description: |
+      Display Trivy scan results in a human-readable format.
+    command:
+      - |
+        cat .eirctl/report.filesystem.{{ .TrivyFormat | default "table" }}
+
   trivy:container:scan:
     context: trivy:container
     description: |

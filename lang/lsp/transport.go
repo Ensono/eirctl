@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -18,11 +19,16 @@ type TransportConfig struct {
 
 const name string = "eirctl-lsp"
 
+var (
+	ErrFailedToStartTCP   = errors.New(name + ": Failed to start TCP server")
+	ErrFailedToStartStdio = errors.New(name + ": Failed to start stdio server")
+)
+
 func Init(log zerolog.Logger, config TransportConfig) error {
 
 	if config.UseTCP {
 		if err := serveTCP(config.Host, config.Port, log); err != nil {
-			log.Fatal().Err(err).Msg(name + ": Failed to start TCP server")
+			return fmt.Errorf("%w", ErrFailedToStartTCP)
 		}
 		return nil
 	}
@@ -30,7 +36,7 @@ func Init(log zerolog.Logger, config TransportConfig) error {
 	// create stdio/stdout LSP server - in process invocation
 	server, err := NewServer(os.Stdin, os.Stdout, WithLogger(log), WithTransportConfig(config))
 	if err != nil {
-		log.Fatal().Err(err).Msg(name + ": Failed to create LSP server")
+		return fmt.Errorf("%w", ErrFailedToStartStdio)
 	}
 
 	log.Info().Msg(name + ": Starting stdio language server...")

@@ -450,43 +450,6 @@ func (r Result) stageReferencesFor(name string, scope string) []Reference {
 	return matches
 }
 
-func (r Result) fuzzyStageDefinitions(name string, scope string) []DefinitionMatch {
-	query := strings.ToLower(strings.TrimSpace(name))
-	if query == "" {
-		return nil
-	}
-
-	var candidates []DefinitionMatch
-	seen := map[string]bool{}
-	for _, symbol := range r.StageSymbols {
-		if scope != "" && symbol.Scope != scope {
-			continue
-		}
-		key := symbol.Name + "\x00" + symbol.Scope + "\x00" + symbol.Location.URI + fmt.Sprintf(":%d:%d", symbol.Location.Range.Start.Line, symbol.Location.Range.Start.Character)
-		if seen[key] {
-			continue
-		}
-		score, match, ok := fuzzyMatchScore(query, strings.ToLower(symbol.Name))
-		if !ok {
-			continue
-		}
-		seen[key] = true
-		candidates = append(candidates, DefinitionMatch{Symbol: symbol, Score: score, Match: match})
-	}
-
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].Score != candidates[j].Score {
-			return candidates[i].Score > candidates[j].Score
-		}
-		if candidates[i].Symbol.Name != candidates[j].Symbol.Name {
-			return candidates[i].Symbol.Name < candidates[j].Symbol.Name
-		}
-		return candidates[i].Symbol.Location.Range.Start.Character < candidates[j].Symbol.Location.Range.Start.Character
-	})
-
-	return candidates
-}
-
 func (r Result) FuzzyDefinitions(name string, kind protocol.SymbolKind) []DefinitionMatch {
 	type candidate struct {
 		symbol protocol.Symbol
