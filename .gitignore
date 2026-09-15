@@ -21,7 +21,8 @@ outputs/
 .github/workflows/gha__e__infra__e__sample.yml
 .coverage/
 .taskctl/
-.eirctl/
+.eirctl/**
+!.eirctl/.gitkeep
 .deps/
 vscode-extension/dist
 vscode-extension/.tools-dist
