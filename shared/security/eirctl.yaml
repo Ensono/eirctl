@@ -107,7 +107,7 @@ tasks:
           --output .eirctl/trivy-results-filesystem.json \
           --scanners {{ .TrivyScanners | default "vuln,secret,misconfig,license" }} \
           --exit-code=0 \
-          --ignorefile {{ .TrivyIgnoreFile | default ".trivyignore.yaml" }} \
+          --ignorefile {{ .TrivyIgnoreFile | default ".eirctl/.trivyignore.yaml" }} \
           {{ if .TrivySkipFiles -}}
           {{ range (.TrivySkipFiles | splitList ";") -}}
           --skip-files="{{ . }}" \
