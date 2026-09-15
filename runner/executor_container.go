@@ -57,8 +57,11 @@ type ContainerExecutorIface interface {
 }
 
 type ContainerExecutor struct {
-	// containerClient
-	cc          ContainerExecutorIface
+	// containerClient encapsulates the underlying container client used to interact with the container runtime.
+	cc ContainerExecutorIface
+	// execContext holds the execution context for the container executor.
+	// this is supplied by the user via the config for that specific context
+	//  - includes container specific props as well as generic context props such up/down/before/after
 	execContext *ExecutionContext
 	termUtils   *TerminalUtils
 }
@@ -446,8 +449,8 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 func (e *ContainerExecutor) cleanupContainer(ctx context.Context, containerId string) {
 	logrus.Debugf("container clean up (%s) stopping...", containerId)
 	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
-		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
-		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+		Timeout: e.execContext.container.gracefulStopTime, // nil means 10s, can be configurable
+		Signal:  "SIGINT",                                 // this is the default signal - SIGKILL is sent automatically after timeout expired
 	}); err != nil {
 		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
 	}
