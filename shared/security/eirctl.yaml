@@ -1,7 +1,7 @@
 contexts:
   yamllint:
     container:
-      name: mirror.gcr.io/backplane/yamllint:20260427
+      name: mirror.gcr.io/backplane/yamllint:20260914@sha256:95e62950a465db3abb591e04c70e16cdd3f9d32b9491f491b9410c2f2bb739db
       entrypoint: /usr/bin/env
     envfile:
       exclude:
@@ -12,7 +12,7 @@ contexts:
 
   trivy:container:
     container:
-      name: public.ecr.aws/aquasecurity/trivy:0.74.0
+      name: public.ecr.aws/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
       entrypoint: /usr/bin/env
       enable_mount: true
       container_args:
@@ -22,13 +22,13 @@ contexts:
 
   trivy:yq:container:
     container:
-      name: mirror.gcr.io/mikefarah/yq:4.53.2
+      name: mirror.gcr.io/mikefarah/yq:4.53.2@sha256:cfc4eee658595834ef304eadb0c3ea721f3b7cb6404ad8b7cb909cc5b5145b23
       entrypoint: /usr/bin/env
       enable_mount: true
 
   sonar:
     container:
-      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:12.0.0.3214_8.0.1
+      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:12.0.0.3214_8.0.1@sha256:97c145e4f8fe1786906c604272d17901e745051bc6c8173582f31aac8d0eb7fe
       entrypoint: /usr/bin/env
       enable_mount: true
     envfile:
@@ -171,8 +171,6 @@ tasks:
           --output .eirctl/report.image.{{ .TrivyFormat | default "table" }} \
           ./.eirctl/trivy-results-image.json
 
-    # --output stdout \
-# cat .eirctl/report.image.{{ .TrivyFormat | default "table" }}
     required:
       env:
         - IMAGE_REPOSITORY_URI
