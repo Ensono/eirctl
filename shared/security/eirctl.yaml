@@ -182,6 +182,7 @@ tasks:
       e.g. `SONAR_TOKEN=$SONAR_TOKEN eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13 -Dsonar.scm.revision=0.0.13`
     command:
       - |
+        mkdir -p .scannerwork
         sonar-scanner {{ .Args }}
         rm -rf .scannerwork
     required:

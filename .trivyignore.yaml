@@ -7,13 +7,13 @@ vulnerabilities:
     paths:
       - go.mod
     statement: |
-      Currently no fix exists for this and this vulnerability in not in the eirctl callpath itself.
+      This vulnerability is not in the eirctl callpath itself.
       It does not compiled into the eirctl binary.
   - id: CVE-2026-42306
     paths:
       - go.mod
     statement: |
-      Currently no fix exists for this and this vulnerability in not in the eirctl callpath itself.
+      This vulnerability is not in the eirctl callpath itself.
       It does not compiled into the eirctl binary.
 
 misconfigurations:
