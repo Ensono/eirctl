@@ -81,7 +81,7 @@ side of it. In these cases, prefer restructuring the script so the
 final, signal-sensitive process is a standalone statement.
 ====
 
-=== What eirctl guarantees regardless
+==== What eirctl guarantees regardless
 
 Even without `exec`, cancellation is not unbounded:
 
@@ -98,5 +98,5 @@ than being hard-killed after the grace period.
 
 ==== See also
 
-* link:graph-implementation.adoc[Execution Graph Implementation]
+* xref:graph-implementation.adoc#_graph_internals[Execution Graph Implementation]
 * Docker docs: https://docs.docker.com/engine/reference/run/#stopsignal[STOPSIGNAL]
