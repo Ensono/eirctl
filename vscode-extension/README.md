@@ -22,10 +22,9 @@ This extension adds YAML support for eirctl configuration files and workspace di
 2. Open a workspace containing an eirctl.yaml file or eirctl configuration directories.
 3. Use the default settings or customize the language server behavior in VS Code settings.
 
-For local testing you can use the `Debug Extension`
+For local testing you can use the `Debug Extension` configuration.
 
-> There might be a race condition before the tcp server is ready and the extension starts (temp work around)
-
+> There might be a race condition before the TCP server is ready and the extension starts (temporary workaround).
 If you want to install a locally published extension and test that way you can install it locally via this command
 
 `BUILD_GOARCH=$(go env GOARCH) BUILD_GOOS=$(go env GOOS) eirctl build:package:vscode:extension`
