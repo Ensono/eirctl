@@ -8,8 +8,8 @@ export function getServerExecutable(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('eirctl');
     const defaultCwd = resolve(context.extensionPath, '.bin');
     const configuredCwd = config.get<string>('languageServer.cwd');
-    const command = config.get<string>('languageServer.command', '');
-    const args = config.get<string[]>('languageServer.args', []);
+    const command = config.get<string>('languageServer.command') ?? 'eirctl-lsp';
+    const args = config.get<string[]>('languageServer.args') ?? [];
 
     const fullCommand = resolve(configuredCwd && configuredCwd.trim() !== '' ? configuredCwd : defaultCwd, command);
     return {

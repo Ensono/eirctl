@@ -41,7 +41,7 @@ var (
 	// must include a protocol to use such as ssh, https, http or file
 	// can optionally include a user for ssh protocol
 	// must have a repo url and path to file specified
-	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import, must satisfy this regex `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\\?ref=([^&]+))?$`")
+	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import")
 	ErrGitTagBranchRevisionWrong = errors.New("tag or branch or revision was not found")
 	ErrGitOperation              = errors.New("git operation failed")
 )
@@ -96,7 +96,7 @@ func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
 	logrus.Tracef("loader_git.NewGitSource: Git Import Parts: %+v", gitConn)
 
 	if gitConn.Scheme == "" || gitConn.Repo == "" || gitConn.YamlPath == "" {
-		return gs, fmt.Errorf("import %s, %w", entry.Src, ErrIncorrectlyFormattedGit)
+		return gs, fmt.Errorf(" %w: import %s, must include a protocol, repo url, and path to file", ErrIncorrectlyFormattedGit, entry.Src)
 	}
 
 	switch gitConn.Scheme {

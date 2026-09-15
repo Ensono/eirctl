@@ -184,7 +184,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	}
 
 	if toSha >= 0 {
-		containerName = containerName[:toSha+8]
+		containerName = containerName[:8]
 	}
 
 	// container.ImagePull is asynchronous.
