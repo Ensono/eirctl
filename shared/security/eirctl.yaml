@@ -14,6 +14,7 @@ contexts:
     container:
       name: public.ecr.aws/aquasecurity/trivy:0.74.0
       entrypoint: /usr/bin/env
+      enable_mount: true
       container_args:
         - "-v ~/.aws:/root/.aws"
         - "-v ~/.ssh:/root/.ssh"
@@ -23,6 +24,7 @@ contexts:
     container:
       name: mirror.gcr.io/mikefarah/yq:4.53.2
       entrypoint: /usr/bin/env
+      enable_mount: true
 
   sonar:
     container:
