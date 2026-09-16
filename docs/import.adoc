@@ -50,3 +50,20 @@ Set `GIT_SSH_PASSPHRASE` when the selected SSH key is encrypted with a passphras
 === Filesystem
 
 Filesystem imports support relative and absolute paths.
+
+=== Command line
+
+`eirctl run` accepts a repeatable `--import` flag to bring in additional config files at execution time, without editing the project's config file:
+
+[source,bash]
+----
+eirctl run task1 --import ./local/context-overrides.yaml
+eirctl run pipeline pipeline1 --import ./local/context-overrides.yaml --import ./local/extra-tasks.yaml
+----
+
+This is useful when working with new or unverified contexts during development, avoiding the risk of accidentally committing them to the tracked config file.
+
+[IMPORTANT]
+====
+Unlike the `import:` directive in a config file, which errors on a name clash, entries supplied via `--import` on the command line take precedence over any existing tasks, pipelines, or contexts with the same name.
+====

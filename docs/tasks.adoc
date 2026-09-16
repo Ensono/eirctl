@@ -1,0 +1,31 @@
+== Running tasks
+
+Tasks can use a context configured in the eirctl configuration file. When testing
+a task in another context, use the `--context` option with `eirctl run`:
+
+[source,bash]
+----
+eirctl run task task1 --context context:v2
+----
+
+The option also works with the short form of the command, where the task name
+is supplied without the `task` subcommand:
+
+[source,bash]
+----
+eirctl run task1 --context context:v2
+----
+
+`--context` overrides the context configured on the selected task for that
+invocation. The value must be the name of a context defined in the loaded
+configuration, including any files supplied with `--import`.
+
+The option applies only to tasks. It cannot be used when running a pipeline:
+
+[source,bash]
+----
+eirctl run pipeline pipeline1 --context context:v2
+----
+
+The command returns an error when a context override is supplied for a
+pipeline.
