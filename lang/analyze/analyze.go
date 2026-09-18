@@ -271,8 +271,13 @@ func collectPipelineReferences(doc *ast.Document, result *Result, source protoco
 	for _, pipelineEntry := range ast.MappingEntries(pipelinesNode) {
 		scope := pipelineScope(doc.URI, pipelineEntry.Key.Value)
 		for _, stageNode := range ast.SequenceItems(pipelineEntry.Value) {
-			collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "task")
-			collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "pipeline")
+			// A stage's identifier (used by depends_on) is the explicit `name` field
+			// when set, otherwise it falls back to `task` or `pipeline`. Matches the
+			// runtime behaviour in internal/config/pipeline.go.
+			if !collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "name") {
+				collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "task")
+				collectPipelineStageDefinition(doc, result, source, pipelineEntry.Key.Value, scope, stageNode, "pipeline")
+			}
 			collectPipelineStageReference(doc, result, source, stageNode, "task", protocol.SymbolKindTask)
 			collectPipelineStageReference(doc, result, source, stageNode, "pipeline", protocol.SymbolKindPipeline)
 			collectDependsOnReferences(doc, result, source, scope, stageNode)
@@ -280,10 +285,10 @@ func collectPipelineReferences(doc *ast.Document, result *Result, source protoco
 	}
 }
 
-func collectPipelineStageDefinition(doc *ast.Document, result *Result, source protocol.DocumentSource, pipelineName string, scope string, stageNode *yaml.Node, field string) {
+func collectPipelineStageDefinition(doc *ast.Document, result *Result, source protocol.DocumentSource, pipelineName string, scope string, stageNode *yaml.Node, field string) bool {
 	_, valueNode, found := ast.LookupMappingValue(stageNode, field)
 	if !found || valueNode.Kind != yaml.ScalarNode || valueNode.Value == "" {
-		return
+		return false
 	}
 	result.StageSymbols = append(result.StageSymbols, protocol.Symbol{
 		Name:     valueNode.Value,
@@ -293,6 +298,7 @@ func collectPipelineStageDefinition(doc *ast.Document, result *Result, source pr
 		Location: doc.Location(valueNode),
 		Source:   source,
 	})
+	return true
 }
 
 func collectPipelineStageReference(doc *ast.Document, result *Result, source protocol.DocumentSource, stageNode *yaml.Node, field string, kind protocol.SymbolKind) {

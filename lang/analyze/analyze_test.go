@@ -479,6 +479,54 @@ pipelines:
 	}
 }
 
+func TestAnalyzeWorkspaceResolvesDependsOnAgainstStageNameAlias(t *testing.T) {
+	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
+  build:
+    command: echo build
+  test:
+    command: echo test
+pipelines:
+  ci:
+    - task: build
+      name: build-alias
+    - task: test
+      depends_on: [build-alias]
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	result := analyze.AnalyzeWorkspace(root, analyze.Options{HomeDir: "/home/tester"})
+
+	var aliasRef analyze.Reference
+	for _, candidate := range result.References {
+		if candidate.Field == "pipelines.depends_on" && candidate.Name == "build-alias" {
+			aliasRef = candidate
+			break
+		}
+	}
+	if aliasRef.Name == "" {
+		t.Fatal("missing depends_on reference for build-alias")
+	}
+
+	definitions := result.DefinitionsAt(aliasRef.Location.URI, aliasRef.Location.Range.Start)
+	if len(definitions) != 1 {
+		t.Fatalf("DefinitionsAt(build-alias depends_on) = %d, want 1", len(definitions))
+	}
+	if definitions[0].Kind != protocol.SymbolKindStage {
+		t.Fatalf("build-alias depends_on definition kind = %q, want stage", definitions[0].Kind)
+	}
+	if definitions[0].Name != "build-alias" {
+		t.Fatalf("build-alias depends_on definition name = %q, want build-alias", definitions[0].Name)
+	}
+
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "unresolved-reference" && diagnostic.Range == aliasRef.Location.Range {
+			t.Fatalf("unexpected unresolved-reference diagnostic for build-alias: %q", diagnostic.Message)
+		}
+	}
+}
+
 func TestAnalyzeWorkspaceReportsSpecificUnknownReferenceMessages(t *testing.T) {
 	root, err := ast.Parse("/repo/eirctl.yaml", []byte(`tasks:
   build:
