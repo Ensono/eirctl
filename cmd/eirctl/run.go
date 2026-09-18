@@ -172,9 +172,10 @@ func (r *runCmd) taskWithContext(t *task.Task) *task.Task {
 		return t
 	}
 
-	taskWithContext := *t
+	taskWithContext := task.NewTask(t.Name)
+	taskWithContext.FromTask(t)
 	taskWithContext.Context = r.flags.contextName
-	return &taskWithContext
+	return taskWithContext
 }
 
 func (r *runCmd) runPipeline(g *scheduler.ExecutionGraph, taskRunner *runner.TaskRunner, summary bool) error {
