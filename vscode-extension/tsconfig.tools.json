@@ -1,0 +1,17 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "target": "es2025",
+        "module": "NodeNext",
+        "moduleResolution": "nodenext",
+        "types": [
+            "node"
+        ],
+        "noEmit": false,
+        "outDir": ".tools-dist",
+        "skipLibCheck": true
+    },
+    "include": [
+        "esbuild.ts"
+    ]
+}

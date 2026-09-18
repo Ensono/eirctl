@@ -1,8 +1,7 @@
-# This template provides
 contexts:
   yamllint:
     container:
-      name: public.ecr.aws/h4c5c8l1/yamllint:latest
+      name: mirror.gcr.io/backplane/yamllint:20260914@sha256:95e62950a465db3abb591e04c70e16cdd3f9d32b9491f491b9410c2f2bb739db
       entrypoint: /usr/bin/env
     envfile:
       exclude:
@@ -11,32 +10,62 @@ contexts:
         - which_declare
         - BASH_FUNC_
 
-  trufflehog:
-    container:
-      name: mirror.gcr.io/trufflesecurity/trufflehog:3.89.2
-      entrypoint: /usr/bin/env
-      container_args:
-        - "-v ~/.ssh:/root/.ssh"
-        - "${EIRCTL_CONTAINER_ARG}"
-
   trivy:container:
     container:
-      name: public.ecr.aws/aquasecurity/trivy:0.67.0
+      name: public.ecr.aws/aquasecurity/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
       entrypoint: /usr/bin/env
+      enable_mount: true
       container_args:
-        - -v ~/.aws:/root/.aws
-        - -v ~/.ssh:/root/.ssh
+        - "${EIRCTL_CONTAINER_ARG}"
+
+  trivy:yq:container:
+    container:
+      name: mirror.gcr.io/mikefarah/yq:4.53.2@sha256:cfc4eee658595834ef304eadb0c3ea721f3b7cb6404ad8b7cb909cc5b5145b23
+      entrypoint: /usr/bin/env
+      enable_mount: true
+      container_args:
         - "${EIRCTL_CONTAINER_ARG}"
 
   sonar:
     container:
-      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:11.3.1.1910_7.1.0
+      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:12.0.0.3214_8.0.1@sha256:97c145e4f8fe1786906c604272d17901e745051bc6c8173582f31aac8d0eb7fe
       entrypoint: /usr/bin/env
+      enable_mount: true
     envfile:
       exclude:
         - HOME
         - JAVA_HOME
         - PATH
+
+  owasp:
+    container:
+      name: ghcr.io/zaproxy/zaproxy:stable
+      entrypoint: /usr/bin/env
+      shell: bash
+      shell_args:
+        - -c
+      container_args:
+        # NOTE: The helper python scripts assume you're inside this directory hardcoded...
+        - "-v ${PWD}/.eirctl/zap/wrk:/zap/wrk/"
+
+pipelines:
+  trivy-filesystem-scan:
+    # - task: trivy:prep:scan
+    - task: trivy:filesystem:scan
+      # depends_on:
+      #   - trivy:prep:scan
+    - task: trivy:convert:results
+      depends_on:
+        - trivy:filesystem:scan
+    - task: trivy:display:results
+      depends_on:
+        - trivy:convert:results
+
+  trivy-container-scan:
+    - task: trivy:prep:scan
+    - task: trivy:container:scan
+      depends_on:
+        - trivy:prep:scan
 
 tasks:
   lint:yaml:
@@ -44,31 +73,77 @@ tasks:
     description: |
       Perform YAML Linting pass additiona arguments via -- stdin
 
-      By default the utility uses `yamllint.conf` in the current dire
+      By default the utility uses `yamllint.conf` in the current directory
     command:
-      - yamllint -s -c {{ or (index . "YamlLintConf") "yamllint.conf" }} . {{ .Args }}
+      - yamllint -s -c {{ .YamlLintConf | default "yamllint.conf" }} {{ .Args }} .
 
-  trivy:file:system:scan:
+  trivy:prep:scan:
+    context: trivy:yq:container
+    description: |
+      Performs a YQ merge of trivyignore files for use by the trivy tasks.
+    command: |
+      rm -rf .eirctl/.trivyignore.yaml
+      if [ -f ".trivyignore.os.yaml" ]; then
+        yq ea '. as $item ireduce ({}; . *+ $item)' .trivyignore.yaml .trivyignore.os.yaml > .eirctl/.trivyignore.yaml
+      else
+        cp .trivyignore.yaml .eirctl/.trivyignore.yaml
+      fi
+
+  trivy:filesystem:scan:
     context: trivy:container
     description: |
-      Run Trivy vulnerability scan for the file system
+      Run Trivy vulnerability scan for the file system.
 
       .trivyignore.yaml can be used to specify temporary overrides
+
+      Additional Optional Variables to pass in
+      .TrivyIgnoreFile
+      .TrivySkipFiles -> `;` separated files
+      .TrivyFileSystemScanArgs -> `;` separated scan args
+      .TrivySeverity -> `,` separated list of severities
+      .TrivyScanners
     command:
       - |
-        trivy filesystem --format table --scanners vuln,secret,misconfig,license --show-suppressed --exit-code=1 --ignorefile .trivyignore.yaml --severity HIGH,CRITICAL . {{ if .ArgsList }}{{ .Args }}{{ end }}
+        mkdir -p .eirctl
+        exec trivy filesystem \
+          --format json \
+          --output .eirctl/trivy-results-filesystem.json \
+          --scanners {{ .TrivyScanners | default "vuln,secret,misconfig,license" }} \
+          --exit-code=0 \
+          --ignorefile {{ .TrivyIgnoreFile | default ".eirctl/.trivyignore.yaml" }} \
+          {{ if .TrivySkipFiles -}}
+          {{ range (.TrivySkipFiles | splitList ";") -}}
+          --skip-files="{{ . }}" \
+          {{ end -}}
+          {{ end -}}
+          --show-suppressed {{ if .TrivyFileSystemScanArgs }}{{ range (.TrivyFileSystemScanArgs | splitList ";") }} {{ . }}{{ end }}{{ end }} \
+          {{ .TrivyRoot | default "." }}
+  
+  # private 
+  trivy:convert:results:
+    context: trivy:container
+    allow_failure: true
+    description: |
+      Converts Trivy filesystem scan results to a human-readable format.
+    command:
+      - |
+        trivy convert \
+          --show-suppressed \
+          --format {{ .TrivyFormat | default "table" }} \
+          --exit-code 1 \
+          --severity {{ .TrivySeverity | default "HIGH,CRITICAL" }} \
+          --scanners {{ .TrivyScanners | default "vuln,secret,misconfig,license" }} \
+          --output .eirctl/report.filesystem.{{ .TrivyFormat | default "table" }} \
+          ./.eirctl/trivy-results-filesystem.json
 
-  trivy:file:system:sbom:
+  # private
+  trivy:display:results:
     context: trivy:container
     description: |
-      Run Trivy vulnerability SBOM scan for the file system
-
-      .trivyignore.yaml can be used to specify temporary overrides
+      Display Trivy scan results in a human-readable format.
     command:
       - |
-        mkdir -p .trivy
-        trivy filesystem --show-suppressed --format cyclonedx --output .trivy/fs-sbom-file.json . {{ if .ArgsList }}{{ .Args }}{{ end }}
-        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 1 --format table .trivy/fs-sbom-file.json
+        cat .eirctl/report.filesystem.{{ .TrivyFormat | default "table" }}
 
   trivy:container:scan:
     context: trivy:container
@@ -78,43 +153,28 @@ tasks:
       .trivyignore.yaml can be used to specify temporary overrides
     command:
       - |
-        trivy image --show-suppressed --exit-code 1 --ignorefile .trivyignore.yaml --severity HIGH,CRITICAL --format table "${IMAGE_REPOSITORY_URI}:${EXTRA_TAGS}"
+        trivy image \
+          --format json \
+          --output .eirctl/trivy-results-image.json \
+          --exit-code=0 \
+          --scanners vuln,misconfig \
+          --ignorefile {{ .TrivyIgnoreFile | default ".trivyignore.yaml" }} \
+          --show-suppressed \
+          "${IMAGE_REPOSITORY_URI}:${EXTRA_TAGS}"
+
+        trivy convert \
+          --show-suppressed \
+          --format {{ .TrivyFormat | default "table" }} \
+          --exit-code 1 \
+          --severity {{ .TrivySeverity | default "HIGH,CRITICAL" }} \
+          --scanners vuln,misconfig \
+          --output .eirctl/report.image.{{ .TrivyFormat | default "table" }} \
+          ./.eirctl/trivy-results-image.json
+
     required:
       env:
         - IMAGE_REPOSITORY_URI
         - EXTRA_TAGS
-
-  trivy:container:sbom:
-    context: trivy:container
-    description: |
-      Run Trivy vulnerability sbom scan
-
-      Reports are generated under .trivy
-    command:
-      - |
-        mkdir -p .trivy
-        # Create SBOM
-        trivy image --format cyclonedx --output .trivy/sbom-file.json "${IMAGE_REPOSITORY_URI}:${EXTRA_TAGS}"
-        # Scan SBOM - we do this twice here to show the output of surpressed at the lower severities
-        # This is currently an experimental feature in trivy when it's stable - the second run can be removed
-        echo "---"
-        echo "📊 \e[1;96mFull output\e[0m \e[90m\e[0m \e[1;93mwithout severity filters\e[0m"
-        echo "---"
-        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 0 --format table .trivy/sbom-file.json
-        echo "---"
-        echo "📊 \e[1;96mFinal output\e[0m \e[90m\e[0m \e[1;93mwith severity filters\e[0m"
-        echo "---"
-        trivy sbom --ignorefile .trivyignore.yaml --show-suppressed --exit-code 1 --severity HIGH,CRITICAL --format table .trivy/sbom-file.json
-    required:
-      env:
-        - IMAGE_REPOSITORY_URI
-        - EXTRA_TAGS
-
-  trufflehog:fs:
-    description: Runs trufflehog filesystem scan against the current directory and any other files / supplied
-    context: trufflehog
-    command:
-      - trufflehog filesystem . {{ if .ArgsList }}{{ .Args }}{{ end }}
 
   sonar:scanner:cli:
     context: sonar
@@ -123,9 +183,93 @@ tasks:
 
       e.g. `SONAR_TOKEN=$SONAR_TOKEN eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13 -Dsonar.scm.revision=0.0.13`
     command:
-      - sonar-scanner {{ .Args }}
-    after:
-      - rm -rf .scannerwork
+      - |
+        mkdir -p .scannerwork
+        sonar-scanner {{ .Args }}
+        rm -rf .scannerwork
     required:
       env:
         - SONAR_TOKEN
+
+  owasp:full:scan:
+    context: owasp
+    description: |
+      API scan runs a full website scan [more info](https://www.zaproxy.org/docs/docker/full-scan/)
+    command:
+      - |
+        CONFIG_PARAM=""
+        mkdir -p /zap/wrk/reports
+        rm -rf /zap/wrk/config
+        if [ -f ".zap/config" ]; then
+          cp -f .zap/config /zap/wrk/config
+          CONFIG_PARAM="-c config"
+        fi
+
+        # NOTE: Paths are assumed to be under `/zap/wrk` and should be mounted through from `./eirctl/`
+        zap-full-scan.py -t ${TARGET_URL} -r "reports/zap-full-scan-report.html" -J "/zap/reports/zap-full-scan-report.json" ${CONFIG_PARAM} {{ if .ArgsList }}{{ .Args }}{{ end }}
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+          exit 0
+        else
+          exit $exit_code
+        fi
+    required:
+      env:
+        - TARGET_URL
+
+  owasp:api:scan:
+    context: owasp
+    description: |
+      API scan runs a full API scan [more info](https://www.zaproxy.org/docs/docker/api-scan/)
+    command:
+      - |
+        CONFIG_PARAM=""
+        mkdir -p /zap/wrk/reports
+        rm -rf /zap/wrk/config
+        if [ -f ".zap/config" ]; then
+          cp -f .zap/config /zap/wrk/config
+          CONFIG_PARAM="-c config"
+        fi
+
+        # NOTE: Paths are assumed to be under `/zap/wrk` and should be mounted through from `./eirctl/`
+        zap-api-scan.py -t ${TARGET_URL} -f ${FORMAT} -r "reports/zap-api-scan-report.html" -J "reports/zap-api-scan-report.json" ${CONFIG_PARAM} {{ if .ArgsList }}{{ .Args }}{{ end }}
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+          exit 0
+        else
+          exit $exit_code
+        fi
+    required:
+      env:
+        - TARGET_URL
+
+  owasp:baseline:scan:
+    context: owasp
+    description: |
+      Baseline scan runs a subset of scans [more info](https://www.zaproxy.org/docs/docker/baseline-scan/)
+    command:
+      - |
+        CONFIG_PARAM=""
+        mkdir -p /zap/wrk/reports
+        rm -rf /zap/wrk/config
+        if [ -f ".zap/config" ]; then
+          cp -f .zap/config /zap/wrk/config
+          CONFIG_PARAM="-c config"
+        fi
+
+        ls -laR /zap/wrk
+
+        # NOTE: Paths are assumed to be under `/zap/wrk` and should be mounted through from `./eirctl/`
+        zap-baseline.py -t ${TARGET_URL} -r "reports/zap-baseline-scan-report.html" -J "reports/zap-baseline-scan-report.json" ${CONFIG_PARAM} {{ if .ArgsList }}{{ .Args }}{{ end }}
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+          exit 0
+        else
+          exit $exit_code
+        fi
+    required:
+      env:
+        - TARGET_URL

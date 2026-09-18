@@ -129,7 +129,7 @@ jobs:
 
       - name: Test
         run: |
-          go run cmd/main.go run pipeline gha:unit:test --verbose
+          go run cmd/main.go run pipeline gha:unit:test
 
       - name: Upload inert JUnit test report
         if: always()
@@ -150,6 +150,13 @@ jobs:
             .coverage/report-junit.xml
           if-no-files-found: error
           retention-days: 7
+
+      - name: Sonar Analysis
+        # if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          EIRCTL_CONTAINER_ARG="-u $(id -u):$(id -g)" go run cmd/main.go run pipeline sonar:scan -- -Dsonar.scm.revision=${{ github.sha }}
 
   sonarcloud:
     name: SonarCloud analysis
