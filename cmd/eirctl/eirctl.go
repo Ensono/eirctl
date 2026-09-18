@@ -141,7 +141,7 @@ var (
 )
 
 // initConfig constructs the config on execute
-func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
+func (tc *EirCtlCmd) initConfig(extraImports ...string) (*config.Config, error) {
 	// consume env and build options via Viper
 	tc.viperConf.AutomaticEnv()
 
@@ -162,7 +162,7 @@ func (tc *EirCtlCmd) initConfig() (*config.Config, error) {
 	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
-	conf, err := cl.Load(configFilePath)
+	conf, err := cl.Load(configFilePath, extraImports...)
 	if err != nil {
 		return nil, err
 	}
