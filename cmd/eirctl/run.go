@@ -50,11 +50,8 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		Args:         cobra.MinimumNArgs(0),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
-				return err
-			}
-			if err := runner.applyImports(conf); err != nil {
 				return err
 			}
 			// display selector if nothing is supplied
@@ -86,11 +83,8 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
-				return err
-			}
-			if err := runner.applyImports(conf); err != nil {
 				return err
 			}
 			taskRunner, argsStringer, err := rootCmd.buildTaskRunner(args, conf)
@@ -115,11 +109,8 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
-				return err
-			}
-			if err := runner.applyImports(conf); err != nil {
 				return err
 			}
 			runner.conf = conf
@@ -173,19 +164,6 @@ func (r *runCmd) runTarget(taskRunner *runner.TaskRunner, conf *config.Config, a
 		}
 	}
 
-	return nil
-}
-
-// applyImports merges any files supplied via the repeatable --import flag into
-// conf, with entries in those files taking precedence over any name clashes.
-func (r *runCmd) applyImports(conf *config.Config) error {
-	if len(r.flags.imports) == 0 {
-		return nil
-	}
-	cl := config.NewConfigLoader(conf)
-	if _, err := cl.LoadImports(r.flags.imports); err != nil {
-		return err
-	}
 	return nil
 }
 

@@ -79,11 +79,14 @@ type loaderContext struct {
 	Dir string
 }
 
-// Load loads and parses requested config file
-// This only called from the command itself and would be initially pointing to the local eirctl.yaml
+// Load loads and parses requested config file.
+//
+// The first argument is the primary config file. Any additional imports are
+// loaded afterwards and merged with override precedence, matching the
+// behaviour of CLI-supplied `--import` entries.
 //
 // NOTE: it then recursively builds a full config definition based on all the imports
-func (cl *Loader) Load(file string) (*Config, error) {
+func (cl *Loader) Load(file string, extraImports ...string) (*Config, error) {
 	cl.reset()
 	lc := &loaderContext{
 		Dir: cl.dir,
@@ -121,22 +124,21 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cl.dst.Variables.Set("Root", cl.dir)
 
 	logrus.Debugf("config %s loaded", file)
 	cl.dst.SourceFile = file
+
+	if err := cl.loadOverrideImports(extraImports); err != nil {
+		return nil, err
+	}
+
+	cl.dst.Variables.Set("Root", cl.dir)
 
 	// validate config
 	return cl.Validate()
 }
 
-// LoadImports loads additional standalone config files, e.g. supplied via the
-// `--import` CLI flag, and merges them into the already loaded config.
-//
-// Unlike the `import:` directive in a config file, entries in these files take
-// precedence over any existing entries with the same name (contexts, tasks,
-// pipelines etc.), allowing CLI supplied imports to override the loaded config.
-func (cl *Loader) LoadImports(files []string) (*Config, error) {
+func (cl *Loader) loadOverrideImports(files []string) error {
 	for _, file := range files {
 		if !utils.IsURL(file) && !filepath.IsAbs(file) {
 			file = path.Join(cl.dir, file)
@@ -144,23 +146,21 @@ func (cl *Loader) LoadImports(files []string) (*Config, error) {
 
 		def, err := cl.load(schema.ImportEntry{Src: file})
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		importedCfg, err := buildFromDefinition(def, &loaderContext{Dir: cl.dir})
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if err := cl.dst.mergeOverride(importedCfg); err != nil {
-			return nil, err
+			return err
 		}
 		logrus.Debugf("import %s loaded", file)
 	}
 
-	cl.dst.Variables.Set("Root", cl.dir)
-
-	return cl.Validate()
+	return nil
 }
 
 // LoadGlobalConfig load global config file  - ~/.eirctl/config.yaml
