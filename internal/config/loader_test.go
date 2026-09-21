@@ -1349,6 +1349,64 @@ tasks:
 	}
 }
 
+func Test_Load_WithExtraImportsOverridesExistingEntries(t *testing.T) {
+	projectDir, err := os.MkdirTemp("", "load-extra-imports-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(projectDir)
+
+	baseConfig := `
+contexts:
+  env:
+    variables:
+      Value: base
+
+tasks:
+  task1:
+    context: env
+    command:
+      - echo base
+`
+	baseFile := filepath.Join(projectDir, "eirctl.yaml")
+	if err := os.WriteFile(baseFile, []byte(baseConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	overrideConfig := `
+contexts:
+  env:
+    variables:
+      Value: override
+
+tasks:
+  task2:
+    command:
+      - echo override
+`
+	overrideFile := filepath.Join(projectDir, "override.yaml")
+	if err := os.WriteFile(overrideFile, []byte(overrideConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cl := config.NewConfigLoader(config.NewConfig())
+	cl.WithDir(projectDir)
+	cfg, err := cl.Load(baseFile, overrideFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := cfg.Contexts["env"].Variables.Get("Value"); got != "override" {
+		t.Fatalf("expected CLI import to override context variable, got %v", got)
+	}
+	if _, ok := cfg.Tasks["task1"]; !ok {
+		t.Error("expected task1 from base config")
+	}
+	if _, ok := cfg.Tasks["task2"]; !ok {
+		t.Error("expected task2 from extra import")
+	}
+}
+
 func Test_ImportFiles_URL_Non200Status(t *testing.T) {
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
