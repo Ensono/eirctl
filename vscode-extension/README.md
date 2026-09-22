@@ -27,7 +27,15 @@ For local testing you can use the `Debug Extension` configuration.
 > There might be a race condition before the TCP server is ready and the extension starts (temporary workaround).
 If you want to install a locally published extension and test that way you can install it locally via this command
 
-`BUILD_GOARCH=$(go env GOARCH) BUILD_GOOS=$(go env GOOS) eirctl build:package:vscode:extension`
+Linux:
+> `BUILD_GOARCH=linux BUILD_GOOS=amd64 eirctl build:package:vscode:extension`
+> `BUILD_GOARCH=linux BUILD_GOOS=arm64 eirctl build:package:vscode:extension`
+
+Mac:
+> `BUILD_GOARCH=darwin BUILD_GOOS=arm64 eirctl build:package:vscode:extension`
+
+Windows (note the additional `BINARY_SUFFIX` variable):
+> `BUILD_GOARCH="windows" BUILD_GOOS="amd64" BINARY_SUFFIX=".exe" eirctl build:package:vscode:extension`
 
 and then `code --install-extension ./vscode-extension/eirctl-latest.vsix`
 
