@@ -13,6 +13,8 @@ include::installation.adoc[]
 
 include::import.adoc[]
 
+include::tasks.adoc[]
+
 include::artifacts.adoc[]
 
 include::watchers.adoc[]
