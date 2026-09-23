@@ -33,6 +33,8 @@
   "documentation_quick_start_status": "Met",
   "dynamic_analysis_enable_assertions_justification": "The Go test suite uses standard testing assertions across 38 test files and runs with the Go race detector in CI: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
   "dynamic_analysis_enable_assertions_status": "Met",
+  "dynamic_analysis_fixed_justification": "Maintainer confirmation: dynamic application security testing has not identified a medium-or-higher severity finding, so no such finding is awaiting remediation.",
+  "dynamic_analysis_fixed_status": "Met",
   "dynamic_analysis_justification": "The release workflow runs only after the Lint and Test workflow succeeds; the test pipeline executes go test with the Go race detector: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml and https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
   "dynamic_analysis_status": "Met",
   "english_justification": "The project documentation and contributor guidance are written in English, and the contribution guide accepts bug reports and enhancement requests through GitHub Issues: https://github.com/Ensono/eirctl/blob/main/README.md and https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
@@ -51,7 +53,7 @@
   "maintained_status": "Met",
   "no_leaked_credentials_justification": "Maintainer confirmation: GitHub Secret Scanning is enabled for the repository and has found no secrets. A repository-scoped, pinned Gitleaks pre-commit hook prevents newly committed credentials: https://github.com/Ensono/eirctl/blob/main/.pre-commit-config.yaml",
   "no_leaked_credentials_status": "Met",
-  "release_notes_justification": "All published GitHub releases provide generated, human-readable change summaries rather than raw version-control logs; for example: https://github.com/Ensono/eirctl/releases/tag/v0.11.8. The release workflow enforces generated notes for future releases: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml",
+  "release_notes_justification": "Published GitHub releases include a human-readable \"What's Changed\" summary; for example, v0.11.24: https://github.com/Ensono/eirctl/releases/tag/v0.11.24. The release workflow enforces generated notes for future releases: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml",
   "release_notes_status": "Met",
   "release_notes_vulns_justification": "Maintainer confirmation: the project has not had any publicly known runtime vulnerabilities (CVE or equivalent) and has not released a fix for one; therefore there is no vulnerability disclosure to include in release notes.",
   "release_notes_vulns_status": "N/A",
@@ -76,6 +78,8 @@
   "test_invocation_justification": "The documented standard Go command go test ./... runs the test suite: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
   "test_invocation_status": "Met",
   "test_justification": "The project has a publicly released Go test suite, and CONTRIBUTING.md documents how to run it: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
+  "test_most_justification": "The complete Go suite achieved 87.7% aggregate statement coverage in an isolated run; CI also generates coverage reports for its unit-test pipeline: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
+  "test_most_status": "Met",
   "test_policy_justification": "The contributor guide requires tests to be added or updated for behaviour changes, or an explanation when tests are not applicable: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
   "test_policy_status": "Met",
   "test_status": "Met",
@@ -102,5 +106,7 @@
   "warnings_fixed_justification": "The required lint task fails on findings, and recent public Lint and Test workflow runs completed successfully: https://github.com/Ensono/eirctl/actions/runs/31382510657",
   "warnings_fixed_status": "Met",
   "warnings_justification": "Pull-request CI runs golangci-lint, a FLOSS linter for Go, and fails the lint task on findings: https://github.com/Ensono/eirctl/blob/main/.github/workflows/pr.yml and https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
-  "warnings_status": "Met"
+  "warnings_status": "Met",
+  "warnings_strict_justification": "The required CI lint task runs golangci-lint without allowing failure, so lint findings fail the Lint job: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml and https://github.com/Ensono/eirctl/blob/main/.github/workflows/pr.yml",
+  "warnings_strict_status": "Met"
 }
