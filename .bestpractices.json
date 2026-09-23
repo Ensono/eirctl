@@ -78,6 +78,8 @@
   "test_invocation_justification": "The documented standard Go command go test ./... runs the test suite: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
   "test_invocation_status": "Met",
   "test_justification": "The project has a publicly released Go test suite, and CONTRIBUTING.md documents how to run it: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
+  "test_most_justification": "The complete Go suite achieved 87.7% aggregate statement coverage in an isolated run; CI also generates coverage reports for its unit-test pipeline: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
+  "test_most_status": "Met",
   "test_policy_justification": "The contributor guide requires tests to be added or updated for behaviour changes, or an explanation when tests are not applicable: https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
   "test_policy_status": "Met",
   "test_status": "Met",
@@ -104,5 +106,7 @@
   "warnings_fixed_justification": "The required lint task fails on findings, and recent public Lint and Test workflow runs completed successfully: https://github.com/Ensono/eirctl/actions/runs/31382510657",
   "warnings_fixed_status": "Met",
   "warnings_justification": "Pull-request CI runs golangci-lint, a FLOSS linter for Go, and fails the lint task on findings: https://github.com/Ensono/eirctl/blob/main/.github/workflows/pr.yml and https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
-  "warnings_status": "Met"
+  "warnings_status": "Met",
+  "warnings_strict_justification": "The required CI lint task runs golangci-lint without allowing failure, so lint findings fail the Lint job: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml and https://github.com/Ensono/eirctl/blob/main/.github/workflows/pr.yml",
+  "warnings_strict_status": "Met"
 }
