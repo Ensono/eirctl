@@ -33,6 +33,8 @@
   "documentation_quick_start_status": "Met",
   "dynamic_analysis_enable_assertions_justification": "The Go test suite uses standard testing assertions across 38 test files and runs with the Go race detector in CI: https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
   "dynamic_analysis_enable_assertions_status": "Met",
+  "dynamic_analysis_fixed_justification": "Maintainer confirmation: dynamic application security testing has not identified a medium-or-higher severity finding, so no such finding is awaiting remediation.",
+  "dynamic_analysis_fixed_status": "Met",
   "dynamic_analysis_justification": "The release workflow runs only after the Lint and Test workflow succeeds; the test pipeline executes go test with the Go race detector: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml and https://github.com/Ensono/eirctl/blob/main/shared/build/go/eirctl.yaml",
   "dynamic_analysis_status": "Met",
   "english_justification": "The project documentation and contributor guidance are written in English, and the contribution guide accepts bug reports and enhancement requests through GitHub Issues: https://github.com/Ensono/eirctl/blob/main/README.md and https://github.com/Ensono/eirctl/blob/main/CONTRIBUTING.md",
