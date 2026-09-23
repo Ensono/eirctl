@@ -13,7 +13,7 @@ contexts:
 
   golint:
     container:
-      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine@sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e
+      name: mirror.gcr.io/golangci/golangci-lint:v2.13.2-alpine@sha256:da1f79b184ff1d98781648407d05a99b9cba7b282aa3416b0a0eac102a3b0557
       enable_mount: true
     envfile:
       exclude:
