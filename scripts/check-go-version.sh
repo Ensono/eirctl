@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=1.26.6
-language_version=1.26
+version=1.27.1
+language_version=1.27.0
 
 fail() {
   printf 'Go version check failed: %s\n' "$*" >&2
