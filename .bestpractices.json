@@ -51,7 +51,7 @@
   "maintained_status": "Met",
   "no_leaked_credentials_justification": "Maintainer confirmation: GitHub Secret Scanning is enabled for the repository and has found no secrets. A repository-scoped, pinned Gitleaks pre-commit hook prevents newly committed credentials: https://github.com/Ensono/eirctl/blob/main/.pre-commit-config.yaml",
   "no_leaked_credentials_status": "Met",
-  "release_notes_justification": "All published GitHub releases provide generated, human-readable change summaries rather than raw version-control logs; for example: https://github.com/Ensono/eirctl/releases/tag/v0.11.8. The release workflow enforces generated notes for future releases: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml",
+  "release_notes_justification": "Published GitHub releases include a human-readable \"What's Changed\" summary; for example, v0.11.24: https://github.com/Ensono/eirctl/releases/tag/v0.11.24. The release workflow enforces generated notes for future releases: https://github.com/Ensono/eirctl/blob/main/.github/workflows/release.yml",
   "release_notes_status": "Met",
   "release_notes_vulns_justification": "Maintainer confirmation: the project has not had any publicly known runtime vulnerabilities (CVE or equivalent) and has not released a fix for one; therefore there is no vulnerability disclosure to include in release notes.",
   "release_notes_vulns_status": "N/A",
