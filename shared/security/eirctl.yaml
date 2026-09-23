@@ -31,6 +31,8 @@ contexts:
       name: mirror.gcr.io/sonarsource/sonar-scanner-cli:12.0.0.3214_8.0.1@sha256:97c145e4f8fe1786906c604272d17901e745051bc6c8173582f31aac8d0eb7fe
       entrypoint: /usr/bin/env
       enable_mount: true
+      container_args:
+        - "${EIRCTL_CONTAINER_ARG}"
     envfile:
       exclude:
         - HOME
