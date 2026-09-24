@@ -2,19 +2,20 @@ package main
 
 import (
 	"flag"
+	"io"
 	"os"
 
 	"github.com/Ensono/eirctl/lang/lsp"
 	"github.com/rs/zerolog"
 )
 
-func main() {
+func runMain(in io.Reader, out, errOut io.Writer) int {
 	useTcp := flag.Bool("use-tcp", false, "enable TCP JSON-RPC mode")
 	host := flag.String("host", "127.0.0.1", "host interface for TCP JSON-RPC mode")
 	port := flag.Int("port", 11103, "TCP port for JSON-RPC mode")
 	flag.Parse()
 
-	log := zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.InfoLevel)
+	log := zerolog.New(errOut).With().Timestamp().Logger().Level(zerolog.InfoLevel)
 
 	if _, ok := os.LookupEnv("EIRCTL_LSP_DEBUG"); ok {
 		log = log.Level(zerolog.DebugLevel)
@@ -23,9 +24,17 @@ func main() {
 		UseTCP: *useTcp,
 		Host:   *host,
 		Port:   *port,
+		Stdio:  in,
+		Stdout: out,
 	}
 
 	if err := lsp.Init(log, transportConfig); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize LSP transport")
+		log.Error().Err(err).Msg("Failed to initialize LSP transport")
+		return 1
 	}
+	return 0
+}
+
+func main() {
+	os.Exit(runMain(os.Stdin, os.Stdout, os.Stderr))
 }

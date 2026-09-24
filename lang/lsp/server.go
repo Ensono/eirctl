@@ -85,9 +85,9 @@ func WithTransportConfig(config TransportConfig) ServerOpt {
 
 func (s *Server) Serve() error {
 	for !s.closed {
-		payload, err := readMessage(s.reader)
+		payload, err := ReadMessage(s.reader)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -455,7 +455,7 @@ func (s *Server) dependsOnFallbackCompletions(path string, content []byte, posit
 	return result.StageCompletionsForScope(scope)
 }
 
-func readMessage(reader *bufio.Reader) ([]byte, error) {
+func ReadMessage(reader *bufio.Reader) ([]byte, error) {
 	headers := map[string]string{}
 	for {
 		line, err := reader.ReadString('\n')

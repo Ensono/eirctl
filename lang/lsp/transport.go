@@ -1,12 +1,13 @@
 package lsp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strconv"
+	"sync"
 
 	"github.com/rs/zerolog"
 )
@@ -15,6 +16,13 @@ type TransportConfig struct {
 	UseTCP bool
 	Host   string
 	Port   int
+	Stdio  io.Reader
+	Stdout io.Writer
+	// Ctx cancels the TCP accept loop. Defaults to context.Background().
+	Ctx context.Context
+	// OnListen is invoked with the bound address once the TCP listener is
+	// ready. Primarily used by tests binding to an ephemeral port (Port: 0).
+	OnListen func(addr net.Addr)
 }
 
 const name string = "eirctl-lsp"
@@ -25,16 +33,20 @@ var (
 )
 
 func Init(log zerolog.Logger, config TransportConfig) error {
+	ctx := config.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	if config.UseTCP {
-		if err := serveTCP(config.Host, config.Port, log); err != nil {
-			return fmt.Errorf("%w", ErrFailedToStartTCP)
+		if err := serveTCP(ctx, config, log); err != nil {
+			return fmt.Errorf("%w: %v", ErrFailedToStartTCP, err)
 		}
 		return nil
 	}
 
 	// create stdio/stdout LSP server - in process invocation
-	server, err := NewServer(os.Stdin, os.Stdout, WithLogger(log), WithTransportConfig(config))
+	server, err := NewServer(config.Stdio, config.Stdout, WithLogger(log), WithTransportConfig(config))
 	if err != nil {
 		return fmt.Errorf("%w", ErrFailedToStartStdio)
 	}
@@ -42,30 +54,48 @@ func Init(log zerolog.Logger, config TransportConfig) error {
 	log.Info().Msg(name + ": Starting stdio language server...")
 
 	if err := server.Serve(); err != nil {
-		log.Fatal().Err(err).Msg(name + ": LSP server terminated unexpectedly")
+		return fmt.Errorf(name + ": LSP server terminated")
 	}
 	return nil
 }
 
-// create TCP Listener per client connection and serve the LSP server over that connection
-func serveTCP(host string, port int, log zerolog.Logger) error {
-	address := net.JoinHostPort(host, strconv.Itoa(port))
+// serveTCP creates a listener and serves an LSP server per client connection
+// until ctx is cancelled.
+func serveTCP(ctx context.Context, config TransportConfig, log zerolog.Logger) error {
+	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
-	log.Info().Msgf(name+": Starting language server on tcp://%s", address)
+	if config.OnListen != nil {
+		config.OnListen(listener.Addr())
+	}
+
+	var wg sync.WaitGroup
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+	}()
+
+	log.Info().Msgf(name+": Starting language server on tcp://%s", listener.Addr().String())
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			wg.Wait()
+			if ctx.Err() != nil {
+				return nil
+			}
 			return err
 		}
-		go handleConnection(conn, log)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			handleConnection(conn, log)
+		}()
 	}
 }
-
 func handleConnection(conn net.Conn, log zerolog.Logger) {
 	defer conn.Close()
 
@@ -76,6 +106,6 @@ func handleConnection(conn net.Conn, log zerolog.Logger) {
 	}
 
 	if err := server.Serve(); err != nil && !errors.Is(err, io.EOF) {
-		log.Fatal().Err(err).Msg(name + ": connection terminated")
+		log.Error().Err(err).Msg(name + ": connection terminated")
 	}
 }
