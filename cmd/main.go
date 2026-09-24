@@ -67,10 +67,10 @@ func runMain(stdoutW io.Writer, errW io.Writer) int {
 	setDefaultCommandIfNonePresent(eirctlRootCmd.Cmd)
 
 	if err := eirctlRootCmd.Execute(); err != nil {
-		logrus.Debugf("main: err type=%T value=%v", err, err)
+		logrus.Debugf("eirclt (main): err type=%T value=%v", err, err)
 		fmt.Fprintf(stdoutW, cmdutils.RED_TERMINAL+"\n", err)
 		if code, ok := runner.IsExitStatus(err); ok {
-			logrus.Debugf("main: exit code=%d", code)
+			logrus.Debugf("eirctl (main): exit code=%d", code)
 			// propagate the container's actual exit code (e.g. 137 for SIGKILL, 143 for SIGTERM)
 			return int(code)
 		}

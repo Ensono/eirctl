@@ -56,10 +56,11 @@ func NewServer(in io.Reader, out io.Writer, opts ...ServerOpt) (*Server, error) 
 		return nil, err
 	}
 	s := &Server{
-		reader:          bufio.NewReader(in),
-		writer:          out,
-		homeDir:         homeDir,
-		docs:            map[string]string{},
+		reader:  bufio.NewReader(in),
+		writer:  out,
+		homeDir: homeDir,
+		docs:    map[string]string{},
+		// initializing the default logger to stderr with error level
 		log:             zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.ErrorLevel),
 		transportConfig: TransportConfig{},
 	}

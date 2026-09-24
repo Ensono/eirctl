@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Ensono/eirctl/lang/lsp"
 	"github.com/rs/zerolog"
@@ -20,12 +23,17 @@ func runMain(in io.Reader, out, errOut io.Writer) int {
 	if _, ok := os.LookupEnv("EIRCTL_LSP_DEBUG"); ok {
 		log = log.Level(zerolog.DebugLevel)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), []os.Signal{os.Interrupt, syscall.SIGTERM, os.Kill}...)
+	defer stop()
+
 	transportConfig := lsp.TransportConfig{
 		UseTCP: *useTcp,
 		Host:   *host,
 		Port:   *port,
 		Stdio:  in,
 		Stdout: out,
+		Ctx:    ctx,
 	}
 
 	if err := lsp.Init(log, transportConfig); err != nil {
