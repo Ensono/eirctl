@@ -24,7 +24,7 @@ func Test_Serve_Process(t *testing.T) {
 		log := zerolog.New(out).With().Timestamp().Logger().Level(zerolog.InfoLevel)
 
 		writeFramed(t, in, `{"jsonrpc":"2.0","method":"exit"}`)
-		err := lsp.Init(log, lsp.TransportConfig{Stdio: in, Stdout: out})
+		err := lsp.Init(context.TODO(), log, lsp.TransportConfig{Stdio: in, Stdout: out})
 		if err != nil {
 			t.Fatalf("Failed to initialize LSP transport: %v", err)
 		}
@@ -39,11 +39,10 @@ func Test_Serve_Process(t *testing.T) {
 		done := make(chan error, 1)
 
 		go func() {
-			done <- lsp.Init(log, lsp.TransportConfig{
+			done <- lsp.Init(ctx, log, lsp.TransportConfig{
 				UseTCP:   true,
 				Host:     "127.0.0.1",
 				Port:     0, // ephemeral
-				Ctx:      ctx,
 				OnListen: func(addr net.Addr) { addrCh <- addr },
 			})
 		}()

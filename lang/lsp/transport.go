@@ -18,8 +18,6 @@ type TransportConfig struct {
 	Port   int
 	Stdio  io.Reader
 	Stdout io.Writer
-	// Ctx cancels the TCP accept loop. Defaults to context.Background().
-	Ctx context.Context
 	// OnListen is invoked with the bound address once the TCP listener is
 	// ready. Primarily used by tests binding to an ephemeral port (Port: 0).
 	OnListen func(addr net.Addr)
@@ -32,12 +30,7 @@ var (
 	ErrFailedToStartStdio = errors.New(name + ": Failed to start stdio server")
 )
 
-func Init(log zerolog.Logger, config TransportConfig) error {
-	ctx := config.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+func Init(ctx context.Context, log zerolog.Logger, config TransportConfig) error {
 	if config.UseTCP {
 		if err := serveTCP(ctx, config, log); err != nil {
 			return fmt.Errorf("%w: %v", ErrFailedToStartTCP, err)
@@ -79,7 +72,8 @@ func serveTCP(ctx context.Context, config TransportConfig, log zerolog.Logger) e
 		_ = listener.Close()
 	}()
 
-	log.Info().Msgf(name+": Starting language server on tcp://%s", listener.Addr().String())
+	log.Info().Msgf(name+": Starting TCP language server on %s", listener.Addr().String())
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

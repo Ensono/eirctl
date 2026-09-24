@@ -33,10 +33,9 @@ func runMain(in io.Reader, out, errOut io.Writer) int {
 		Port:   *port,
 		Stdio:  in,
 		Stdout: out,
-		Ctx:    ctx,
 	}
 
-	if err := lsp.Init(log, transportConfig); err != nil {
+	if err := lsp.Init(ctx, log, transportConfig); err != nil {
 		log.Error().Err(err).Msg("Failed to initialize LSP transport")
 		return 1
 	}
