@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -347,5 +348,296 @@ func TestPathToURIRoundTrip(t *testing.T) {
 	}
 	if got != filepath.Clean(path) {
 		t.Errorf("round-trip: got %q, want %q", got, filepath.Clean(path))
+	}
+}
+
+func newHandlerTestServer(t *testing.T) (*Server, *bytes.Buffer) {
+	t.Helper()
+
+	var out bytes.Buffer
+	server, err := NewServer(strings.NewReader(""), &out)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	return server, &out
+}
+
+func openHandlerTestDocument(t *testing.T, server *Server) {
+	t.Helper()
+
+	payload := []byte(`{
+        "jsonrpc":"2.0",
+        "method":"textDocument/didOpen",
+        "params":{
+            "textDocument":{
+                "uri":"file:///tmp/eirctl.yaml",
+                "languageId":"yaml",
+                "version":1,
+                "text":"tasks:\n  build:\n    command: echo build\npipelines:\n  ci:\n    - task: build\n"
+            }
+        }
+    }`)
+
+	if err := server.handleMessage(payload); err != nil {
+		t.Fatalf("didOpen error = %v", err)
+	}
+}
+
+func TestServerHandleMessageDocumentSymbol(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":1,
+        "method":"textDocument/documentSymbol",
+        "params":{
+            "textDocument":{"uri":"file:///tmp/eirctl.yaml"}
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("documentSymbol error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":1`) {
+		t.Fatalf("documentSymbol response = %q", out.String())
+	}
+	if !strings.Contains(out.String(), `"result"`) {
+		t.Fatalf("documentSymbol response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageDocumentSymbolNegative(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":1,
+        "method":"textDocument/documentSymbol",
+        "params":{}
+    }`))
+	if err != nil {
+		t.Fatal("documentSymbol with invalid params returned non nil error")
+	}
+	if !strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, ErrCodeInternal)) {
+		t.Fatalf("documentSymbol response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageCompletion(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":2,
+        "method":"textDocument/completion",
+        "params":{
+            "textDocument":{"uri":"file:///tmp/eirctl.yaml"},
+            "position":{"line":5,"character":12}
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("completion error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":2`) ||
+		!strings.Contains(out.String(), `"result"`) {
+		t.Fatalf("completion response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageCompletionNegative(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":2,
+        "method":"textDocument/completion",
+        "params":{}
+    }`))
+	if err != nil {
+		t.Fatal("completion with invalid params returned non nil error")
+	}
+	if !strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, ErrCodeInternal)) {
+		t.Fatalf("completion response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageHover(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":3,
+        "method":"textDocument/hover",
+        "params":{
+            "textDocument":{"uri":"file:///tmp/eirctl.yaml"},
+            "position":{"line":5,"character":12}
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("hover error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":3`) ||
+		!strings.Contains(out.String(), `"result"`) {
+		t.Fatalf("hover response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageHoverNegative(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":3,
+        "method":"textDocument/hover",
+        "params":{}
+    }`))
+	if err != nil {
+		t.Fatal("hover with invalid params returned non nil error")
+	}
+	if !strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, ErrCodeInternal)) {
+		t.Fatalf("hover response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageReferences(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":4,
+        "method":"textDocument/references",
+        "params":{
+            "textDocument":{"uri":"file:///tmp/eirctl.yaml"},
+            "position":{"line":5,"character":12},
+            "context":{"includeDeclaration":true}
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("references error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":4`) ||
+		!strings.Contains(out.String(), `"result"`) {
+		t.Fatalf("references response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageReferencesNegative(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":4,
+        "method":"textDocument/references",
+        "params":{}
+    }`))
+	if err != nil {
+		t.Fatal("references with invalid params returned nil error")
+	}
+	if !strings.Contains(out.String(), fmt.Sprintf(`"code":%d`, ErrCodeInternal)) {
+		t.Fatalf("references response = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageDidOpen(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "method":"textDocument/didOpen",
+        "params":{
+            "textDocument":{
+                "uri":"file:///tmp/eirctl.yaml",
+                "languageId":"yaml",
+                "version":1,
+                "text":"tasks:\n  build:\n    command: echo build\n"
+            }
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("didOpen error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"method":"textDocument/publishDiagnostics"`) {
+		t.Fatalf("didOpen output = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageDidOpenNegative(t *testing.T) {
+	server, _ := newHandlerTestServer(t)
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "method":"textDocument/didOpen",
+        "params":{}
+    }`))
+	if err == nil {
+		t.Fatal("didOpen with invalid params returned nil error")
+	}
+}
+
+func TestServerHandleMessageDidChange(t *testing.T) {
+	server, out := newHandlerTestServer(t)
+	openHandlerTestDocument(t, server)
+	out.Reset()
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "method":"textDocument/didChange",
+        "params":{
+            "textDocument":{
+                "uri":"file:///tmp/eirctl.yaml",
+                "version":2
+            },
+            "contentChanges":[{
+                "text":"tasks:\n  test:\n    command: echo test\n"
+            }]
+        }
+    }`))
+	if err != nil {
+		t.Fatalf("didChange error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"method":"textDocument/publishDiagnostics"`) {
+		t.Fatalf("didChange output = %q", out.String())
+	}
+}
+
+func TestServerHandleMessageDidChangeNegative(t *testing.T) {
+	server, _ := newHandlerTestServer(t)
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "method":"textDocument/didChange",
+        "params":{}
+    }`))
+	if err == nil {
+		t.Fatal("didChange with invalid params returned nil error")
+	}
+}
+
+func TestServerHandleMessageDefault(t *testing.T) {
+	server, _ := newHandlerTestServer(t)
+
+	err := server.handleMessage([]byte(`{
+        "jsonrpc":"2.0",
+        "id":99,
+        "method":"unknown/method",
+        "params":{}
+    }`))
+	if err != nil {
+		t.Fatal("unknown method returned non nil error")
 	}
 }

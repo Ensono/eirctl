@@ -20,6 +20,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	ErrCodeInternal = -32603
+)
+
 // errUnsupportedURIScheme is returned by uriToPath when the URI has a scheme
 // that the LSP server does not handle (e.g. "git", "untitled"). Callers
 // that receive this error from a notification handler should silently ignore
@@ -187,7 +191,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
-			return s.respondError(req.ID, -32603, err.Error())
+			return s.respondError(req.ID, ErrCodeInternal, err.Error())
 		}
 		defs := result.DefinitionsAt(path, toProtocolPosition(params.Position))
 		return s.respond(req.ID, toLSPLocations(defs))
@@ -198,7 +202,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
-			return s.respondError(req.ID, -32603, err.Error())
+			return s.respondError(req.ID, ErrCodeInternal, err.Error())
 		}
 		refs := result.ReferencesAt(path, toProtocolPosition(params.Position))
 		locations := toLSPReferenceLocations(refs)
@@ -215,7 +219,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
-			return s.respondError(req.ID, -32603, err.Error())
+			return s.respondError(req.ID, ErrCodeInternal, err.Error())
 		}
 		hover, ok := result.HoverAt(path, toProtocolPosition(params.Position))
 		if !ok {
@@ -229,7 +233,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
-			return s.respondError(req.ID, -32603, err.Error())
+			return s.respondError(req.ID, ErrCodeInternal, err.Error())
 		}
 		items := result.CompletionsAt(path, toProtocolPosition(params.Position))
 		if len(items) == 0 {
@@ -245,7 +249,7 @@ func (s *Server) handleMessage(payload []byte) error {
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
-			return s.respondError(req.ID, -32603, err.Error())
+			return s.respondError(req.ID, ErrCodeInternal, err.Error())
 		}
 		return s.respond(req.ID, toLSPDocumentSymbols(result, path))
 	default:
