@@ -91,3 +91,15 @@ tasks:
       env:
         - CONFIGMANAGER_OUTPUT_FILE
         - CONFIGMANAGER_INPUT_FILE
+
+  git:tag:
+    description: |
+      Usage `eirctl tag VERSION=2111dsfsdfa REVISION=as2342432 --set Message="my message"`
+      This task runs in the default mvdan.sh by default
+    command: |
+      git tag -a {{ .Env.VERSION }} -m {{ .Message | default "ci tag release" }} {{ .Env.REVISION }}
+      git push origin ${VERSION}
+    required:
+      env:
+        - VERSION
+        - REVISION
