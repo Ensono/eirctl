@@ -53,7 +53,13 @@ jobs:
         run: scripts/check-workflow-security.sh
       - name: Linters
         run: |
-          go run -race cmd/main.go run lints
+          go run -race cmd/main.go run lint:vuln:scan
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: .eirctl/report.filesystem.sarif
+          category: trivy
 
   docs:
     name: Documentation

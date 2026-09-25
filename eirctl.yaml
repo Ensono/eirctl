@@ -48,6 +48,8 @@ pipelines:
   trivy-scan:
     - task: trivy:filesystem:scan
     - task: trivy:convert:results
+      variables:
+        TrivyFormat: "sarif"
       depends_on:
         - trivy:filesystem:scan
     - task: trivy:display:results
