@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,5 +113,53 @@ func writeFramed(t *testing.T, writer io.Writer, payload string) {
 	t.Helper()
 	if _, err := fmt.Fprintf(writer, "Content-Length: %d\r\n\r\n%s", len(payload), payload); err != nil {
 		t.Errorf("Failed to write framed payload: %v", err)
+	}
+}
+
+func Test_ServeTcp_fail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	log := zerolog.New(io.Discard)
+
+	err := lsp.Init(ctx, log, lsp.TransportConfig{
+		UseTCP: true,
+		Host:   "128.0.0.1",
+		Port:   1, // ephemeral
+	})
+
+	if !errors.Is(err, lsp.ErrFailedToStartTCP) {
+		t.Fatalf("expected ErrFailedToStartTCP, got: %v", err)
+	}
+}
+
+func Test_ServeTcp_CloseConn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		cancel()
+	}()
+
+	log := zerolog.New(io.Discard)
+	addrCh := make(chan net.Addr, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- lsp.Init(ctx, log, lsp.TransportConfig{
+			UseTCP:   true,
+			Host:     "127.0.0.1",
+			Port:     0, // ephemeral
+			OnListen: func(addr net.Addr) { addrCh <- addr },
+		})
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("Init returned error: %v", err)
+		}
+		// if lo.String() != "" && strings.Contains(lo.String(), "error") {
+		// 	t.Errorf("Server log output contains an error:\n%s", lo.String())
+		// }
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for transport shutdown")
 	}
 }

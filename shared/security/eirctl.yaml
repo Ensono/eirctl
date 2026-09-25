@@ -181,14 +181,12 @@ tasks:
   sonar:scanner:cli:
     context: sonar
     description: |
-      Sonar Task can can be overridden with Args or Environment variables.
+      Sonar Task can can be enhanced with SonarScannerArgsList ; separated `--set SonarScannerArgsList="-Dsonar.prop=foo;-Dsonar.prop=bar"` list or `-- -Dsonar.prop=foo` or Sonar Environment variables.
 
       e.g. `SONAR_TOKEN=$SONAR_TOKEN eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13 -Dsonar.scm.revision=0.0.13`
     command:
       - |
-        mkdir -p .scannerwork
-        sonar-scanner {{ .Args }}
-        rm -rf .scannerwork
+        sonar-scanner {{ if .SonarScannerArgsList }}{{ range ( .SonarScannerArgsList | splitList ";") }}{{ . }} {{ end }}{{ end }}{{ .Args }}
     required:
       env:
         - SONAR_TOKEN

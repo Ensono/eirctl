@@ -163,10 +163,10 @@ jobs:
           cp "$GITHUB_EVENT_PATH" .github/sonar-event.json
           echo "current user: $(id -u):$(id -g)"
           GITHUB_EVENT_PATH=/eirctl/.github/sonar-event.json \
-            go run cmd/main.go run pipeline sonar:scan -- -Dsonar.scm.revision=${{ github.sha }} \
-            -Dsonar.projectVersion=${{ needs.set-version.outputs.semVer }} \
-            -Dsonar.scm.provider=git \
-            -Dsonar.working.directory=/eirctl/.scannerwork || echo ".scannerwork failed to delete - unimportant in GHA runner"
+            go run cmd/main.go run pipeline sonar:scan --set SonarScannerArgsList="-Dsonar.scm.revision=${{ github.sha }};\
+            -Dsonar.projectVersion=${{ needs.set-version.outputs.semVer }};\
+            -Dsonar.scm.provider=git;\
+            -Dsonar.working.directory=/eirctl/.scannerwork"
 
   sonarcloud:
     name: SonarCloud analysis
