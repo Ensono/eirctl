@@ -42,9 +42,21 @@ pipelines:
       depends_on:
         - test:unit
 
-  lints:
+  # @comment: Trivy scan pipeline for filesystem vulnerabilities
+  # re-uses imported Trivy tasks from shared/security/eirctl.yaml
+  # skips 
+  trivy-scan:
+    - task: trivy:filesystem:scan
+    - task: trivy:convert:results
+      depends_on:
+        - trivy:filesystem:scan
+    - task: trivy:display:results
+      depends_on:
+        - trivy:convert:results
+
+  lint:vuln:scan:
     - task: go:lint
-    - pipeline: trivy-filesystem-scan
+    - pipeline: trivy-scan
       variables:
         TrivyIgnoreFile: ".trivyignore.yaml"
         TrivyFileSystemScanArgs: "--skip-dirs=.deps;--skip-dirs=local;--skip-dirs=.eirctl"

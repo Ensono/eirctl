@@ -52,10 +52,10 @@ contexts:
 
 pipelines:
   trivy-filesystem-scan:
-    # - task: trivy:prep:scan
+    - task: trivy:prep:scan
     - task: trivy:filesystem:scan
-      # depends_on:
-      #   - trivy:prep:scan
+      depends_on:
+        - trivy:prep:scan
     - task: trivy:convert:results
       depends_on:
         - trivy:filesystem:scan
