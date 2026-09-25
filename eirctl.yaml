@@ -48,8 +48,6 @@ pipelines:
   trivy-scan:
     - task: trivy:filesystem:scan
     - task: trivy:convert:results
-      variables:
-        TrivyFormat: "sarif"
       depends_on:
         - trivy:filesystem:scan
     - task: trivy:display:results
@@ -60,6 +58,7 @@ pipelines:
     - task: go:lint
     - pipeline: trivy-scan
       variables:
+        TrivyFormat: sarif
         TrivyIgnoreFile: ".trivyignore.yaml"
         TrivyFileSystemScanArgs: "--skip-dirs=.deps;--skip-dirs=local;--skip-dirs=.eirctl"
     - task: go:vuln:check
