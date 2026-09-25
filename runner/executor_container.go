@@ -57,8 +57,11 @@ type ContainerExecutorIface interface {
 }
 
 type ContainerExecutor struct {
-	// containerClient
-	cc          ContainerExecutorIface
+	// containerClient encapsulates the underlying container client used to interact with the container runtime.
+	cc ContainerExecutorIface
+	// execContext holds the execution context for the container executor.
+	// this is supplied by the user via the config for that specific context
+	//  - includes container specific props as well as generic context props such up/down/before/after
 	execContext *ExecutionContext
 	termUtils   *TerminalUtils
 }
@@ -176,6 +179,7 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 	if len(os.Getenv("CI")) > 0 {
 		throttle = 3 * time.Second
 	}
+
 	// container.ImagePull is asynchronous.
 	// The reader needs to be read completely for the pull operation to complete.
 	//
@@ -188,7 +192,8 @@ func (e *ContainerExecutor) PullImage(ctx context.Context, containerConf *contai
 		progressbar.OptionShowBytes(false),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s[reset]", containerConf.Image)),
+		progressbar.OptionSetDescription(fmt.Sprintf("[cyan][1/1][reset] [blue]pulling %s...[reset]",
+			ContainerDisplayName(containerConf.Image))),
 		progressbar.OptionThrottle(throttle),
 		progressbar.OptionShowTotalBytes(true),
 	)
@@ -435,8 +440,8 @@ func (e *ContainerExecutor) streamLogs(ctx context.Context, containerId string, 
 func (e *ContainerExecutor) cleanupContainer(ctx context.Context, containerId string) {
 	logrus.Debugf("container clean up (%s) stopping...", containerId)
 	if err := e.cc.ContainerStop(ctx, containerId, container.StopOptions{
-		Timeout: nil,       // hardcoded for now => nil means 10s, can be configurable
-		Signal:  "SIGTERM", // this is the default signal - SIGKILL is sent automatically after timeout expired
+		Timeout: e.execContext.container.gracefulStopTime, // nil means 10s, can be configurable
+		Signal:  "SIGINT",                                 // this is the default signal - SIGKILL is sent automatically after timeout expired
 	}); err != nil {
 		logrus.Debugf("container (%s) stopping error: %v", containerId, err)
 	}
@@ -474,4 +479,16 @@ func (e *ContainerExecutor) checkExitStatus(ctx context.Context, containerId str
 		return interp.ExitStatus(uint8(resp.State.ExitCode))
 	}
 	return nil
+}
+
+// ContainerDisplayName returns a human-readable display name for a container based on its image name.
+func ContainerDisplayName(c string) string {
+	fromName := strings.LastIndex(c, "/")
+	cn := c[fromName+1:]
+	toSha := strings.Index(c, "@")
+	if toSha >= 0 {
+		cn = c[fromName+1 : toSha+16]
+	}
+
+	return cn
 }
