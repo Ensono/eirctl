@@ -274,7 +274,7 @@ func (gs *GitSource) tree() (*object.Tree, error) {
 	return tree, nil
 }
 
-func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
+func (gs *GitSource) getGitSSHAuth(host string) (gitssh.AuthMethod, error) {
 
 	sshDefaultConf := parseDefaultSshConfigFilePaths()
 	// values supplied via the GIT_SSH_COMMAND have global precedence
@@ -318,18 +318,17 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 	if err != nil {
 		return nil, err
 	}
+	warnForSSHKeyStrength(signer.PublicKey())
 
 	hostKeyCallback, err := hostKeyCallback(sshConf)
 	if err != nil {
 		return nil, err
 	}
 
-	return &gitssh.PublicKeys{
-		User:   sshConf.User,
-		Signer: signer,
-		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
-			HostKeyCallback: hostKeyCallback,
-		},
+	return &hardenedGitSSHAuth{
+		user:            sshConf.User,
+		signer:          signer,
+		hostKeyCallback: hostKeyCallback,
 	}, nil
 }
 

@@ -613,6 +613,7 @@ func expectedJobPermissions(workflow Workflow, job string) Permissions {
 			"build": {"contents": "read", pullRequestsPermission: "read"},
 		},
 		".github/workflows/pr.yml": {
+			"lint":   {"contents": "read", "security-events": "write"},
 			"report": {"contents": "read", "checks": "write"},
 		},
 		debugPublisherWorkflowPath: {
@@ -654,6 +655,9 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 }
 
 func validateNonDebugRepositoryTopology(workflows map[string]Workflow) error {
+	if err := validateGoVulnerabilitySARIFUpload(workflows); err != nil {
+		return err
+	}
 	if err := validateReleaseTopology(workflows); err != nil {
 		return err
 	}
@@ -786,6 +790,26 @@ func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 		return errors.New("debug publication must validate the successful issue_comment request run and exact clean-runner artifact before its isolated debug-release contents-write job")
 	}
 	return nil
+}
+
+func validateGoVulnerabilitySARIFUpload(workflows map[string]Workflow) error {
+	workflow, err := requiredWorkflow(workflows, ".github/workflows/pr.yml")
+	if err != nil {
+		return err
+	}
+	lint, ok := workflow.Jobs.Values["lint"]
+	if !ok || !samePermissions(lint.Permissions, Permissions{"contents": "read", "security-events": "write"}) {
+		return errors.New("PR lint job must use only contents: read and security-events: write")
+	}
+	for _, step := range lint.Steps {
+		if step.Name == "Upload Go vulnerability SARIF" &&
+			actionUses(step.Uses, "github/codeql-action/upload-sarif") &&
+			step.With["sarif_file"] == "govulncheck.sarif" &&
+			strings.Contains(step.If, "always()") && strings.Contains(step.If, "hashFiles('govulncheck.sarif')") {
+			return nil
+		}
+	}
+	return errors.New("PR lint job must upload a generated Go vulnerability SARIF report even when the scan reports findings")
 }
 
 func validateReleaseTopology(workflows map[string]Workflow) error {

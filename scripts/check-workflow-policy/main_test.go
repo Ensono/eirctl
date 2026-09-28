@@ -460,6 +460,29 @@ func TestTargetWorkflowTopologyAndPermissions(t *testing.T) {
 	}
 }
 
+func TestPRLintRequiresGoVulnerabilitySARIFUpload(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "pr.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow, err := parseWorkflow(".github/workflows/pr.yml", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGoVulnerabilitySARIFUpload(map[string]Workflow{workflow.Path: workflow}); err != nil {
+		t.Fatalf("validateGoVulnerabilitySARIFUpload() rejected the checked-in workflow: %v", err)
+	}
+
+	withoutUpload := strings.Replace(string(content), "github/codeql-action/upload-sarif@", "github/codeql-action/upload-sarif-disabled@", 1)
+	workflow, err = parseWorkflow(".github/workflows/pr.yml", []byte(withoutUpload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateGoVulnerabilitySARIFUpload(map[string]Workflow{workflow.Path: workflow}); err == nil {
+		t.Fatal("validateGoVulnerabilitySARIFUpload() accepted a workflow without the required upload action")
+	}
+}
+
 func TestTrustedWorkflowRunRequiresAllGuards(t *testing.T) {
 	valid := "github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'"
 	if !trustedWorkflowRun(valid) {

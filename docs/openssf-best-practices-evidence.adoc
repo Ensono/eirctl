@@ -1,0 +1,85 @@
+= OpenSSF Best Practices evidence
+
+This record supplies repository-backed evidence for the OpenSSF Best
+Practices Badge answers in `.bestpractices.json`. Reassess the answers when
+the relevant implementation, build configuration, Go toolchain, or
+`golang.org/x/crypto` dependency changes.
+
+== Criterion snapshot
+
+The criteria below were retrieved on 2026-09-23 from the authoritative
+https://github.com/coreinfrastructure/best-practices-badge[OpenSSF Best
+Practices Badge repository], commit
+https://github.com/coreinfrastructure/best-practices-badge/blob/37b04b95bccc221cb5d2ab3614749ef631337275/docs/criteria.md[`37b04b95bccc221cb5d2ab3614749ef631337275`].
+
+* `dynamic_analysis_unsafe` permits `N/A` when the project does not produce
+  software written in a memory-unsafe language.
+* `crypto_keylength` requires security mechanisms to use default key lengths
+  meeting the NIST 2030 minimums and to make smaller key lengths completely
+  disableable. Those minimums are 112-bit symmetric keys, 2048-bit factoring
+  moduli, 224-bit discrete-logarithm keys, 2048-bit discrete-logarithm groups,
+  224-bit elliptic curves, and 224-bit hashes.
+* `crypto_working` requires default security mechanisms not to depend on broken
+  algorithms or inappropriate cipher modes, subject only to its documented
+  interoperable-protocol exception.
+* `crypto_weaknesses` recommends that default security mechanisms not depend
+  on algorithms or modes with known serious weaknesses, including SHA-1 and SSH
+  CBC mode.
+* `crypto_pfs` recommends perfect forward secrecy for key-agreement protocols.
+
+A warning that continues to accept an undersized SSH identity neither disables
+that identity nor gives users a configuration mechanism to disable smaller
+identities. Therefore warning-only handling does not satisfy
+`crypto_keylength` and that answer remains `Unmet`.
+
+== Pinned SSH-library review
+
+`go.mod` pins Go `1.27.0` (with toolchain `go1.27.1`) and
+`golang.org/x/crypto v0.57.0`. After the existing identity parser returns a
+signer, its `PublicKey()` can be inspected through the optional
+`ssh.CryptoPublicKey` interface. The pinned library exposes RSA and ECDSA
+public keys as `*rsa.PublicKey` and `*ecdsa.PublicKey`, and Ed25519 as
+`ed25519.PublicKey`; these reveal only public algorithm and strength metadata.
+A key that does not implement that interface, or whose resulting public-key
+type is not recognised, must remain usable and be reported as unclassifiable.
+
+The pinned SSH defaults include forward-secret ML-KEM/X25519, Curve25519,
+ECDH, and finite-field Diffie-Hellman key exchanges. They also retain a
+`diffie-hellman-group14-sha1` fallback and legacy RSA/DSA authentication
+fallbacks for compatibility. `internal/config/loader_git_ssh_security.go`
+constructs the Git SSH client configuration from
+`ssh.SupportedAlgorithms()` for key exchange, ciphers, MACs, and host keys;
+that pinned-library API excludes its insecure lists. The same implementation
+restricts RSA authentication to `rsa-sha2-512` and `rsa-sha2-256`, and permits
+only supported ECDSA and Ed25519 authentication algorithms. As a result,
+Git-over-SSH does not use SHA-1 `ssh-rsa`, DSA, SSH CBC, or RC4 fallbacks.
+
+== SSH identity warning classification policy
+
+After the existing private-key parser has produced a signer, eirctl assesses
+only its public key. RSA keys with a modulus smaller than 2048 bits are
+reported as below the 2030 factoring-modulus baseline. ECDSA keys are assessed
+from their public curve size, with curves smaller than 224 bits reported as
+below the elliptic-curve baseline. Ed25519 is treated as meeting the
+elliptic-curve baseline. Keys without safely inspectable RSA, ECDSA, or
+Ed25519 public metadata are reported as unclassifiable.
+
+These diagnostics are warning-only: they neither reject nor replace the
+selected identity, and authentication continues. Diagnostic text is restricted
+to fixed algorithm categories and numeric public-key strength metadata. It
+must not contain private-key bytes, passphrases, tokens, repository URLs, or
+identity-file paths.
+
+== Go runtime and transport evidence
+
+The released executable is built from the repository's Go sources by the
+checked-in build task with `CGO_ENABLED=0`; see `go.mod` and `eirctl.yaml`.
+The project therefore does not produce a memory-unsafe-language executable for
+the `dynamic_analysis_unsafe` criterion.
+
+The production code delegates cryptographic operations and transport security
+to the Go standard library and the maintained `golang.org/x/crypto/ssh`
+package. `internal/config/loader_git_ssh_security.go` applies the reviewed SSH
+algorithm policy above, while Go's standard HTTPS/TLS transport is used for
+HTTPS Git imports. The selected SSH key exchanges provide forward secrecy; the
+standard HTTPS/TLS transport provides it when TLS key agreement is used.

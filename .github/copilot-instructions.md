@@ -81,6 +81,23 @@ eirctl show:coverage # Opens HTML coverage report
 eirctl tidy # Runs go mod tidy 
 ```
 
+### Docker/Moby Vulnerability Context
+
+`github.com/docker/docker` is used as a client library by the container runner.
+[Issue #95](https://github.com/Ensono/eirctl/issues/95) records the current
+assessment of Docker/Moby dependency findings, including
+`CVE-2026-33997` (plugin-install privilege validation) and
+`CVE-2026-34040` (AuthZ request-body inspection). The current code does not
+install or manage Docker plugins, configure AuthZ plugins, or provide a raw
+Docker API request interface; these vulnerabilities' triggering conditions are
+therefore outside eirctl's current code paths. The connected Docker daemon can
+still be affected when another tool or user meets those conditions.
+
+The Go vulnerability workflow uploads raw SARIF findings to GitHub code
+scanning. Manage triage, mitigation, and risk acceptance there; do not add
+repository-local suppression. Require a dedicated security review before adding
+plugin management, AuthZ configuration, or raw Docker API functionality.
+
 ### CI Generation
 
 Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Actions, GitLab CI, Bitbucket).
