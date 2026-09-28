@@ -1,3 +1,142 @@
-# Agent Instructions
+# eirctl Coding Agent Instructions
 
-Before making changes, review [`.github/copilot-instructions.md`](.github/copilot-instructions.md) and follow its project-specific guidance.
+## Project Overview
+
+eirctl is a cross-platform concurrent task and container runner - a build tool alternative to GNU Make. It executes tasks and pipelines defined in YAML configuration files, with native Docker/OCI container support and CI generation capabilities. When using Copilot load the `Ensono Stacks - Platform Engineering` Space from the `Ensono` GitHub organization to access relevant context.
+
+## Core Architecture
+
+### Key Components (Data Flow)
+
+1. **Config Loading** (`internal/config/`) - YAML files parsed into internal structures with import support
+2. **Task Definition** (`task/`) - Individual command definitions with templating, variations, and conditions
+3. **Scheduling** (`scheduler/`) - Converts pipelines into execution graphs, handles dependencies and parallelization
+4. **Execution** (`runner/`) - Runs tasks in contexts (native shell via mvdan.sh or containers via Docker API)
+5. **Output** (`output/`) - Multiple formatters: raw, prefixed, cockpit (TUI dashboard)
+
+### Execution Contexts Pattern
+
+Tasks run in contexts defined in YAML. Three execution strategies:
+
+-   **Default**: mvdan.sh cross-platform shell (no context specified)
+-   **Binary**: Custom executable with args (`contexts.mycontext.executable`)
+-   **Container**: Native Docker API (`contexts.mycontext.container`) - no docker CLI required
+
+Container contexts use `runner/executor_container.go` with the Docker client API, not shell commands.
+
+### Graph Processing
+
+-   **Normalized graphs** (`eirctl graph`) show logical dependencies for visualization
+-   **Denormalized graphs** (`eirctl run --graph-only`) show actual execution plan with unique node instances
+-   See `scheduler/denormalize.go` and `docs/graph-implementation.adoc`
+
+## Development Patterns
+
+### Command Structure
+
+CLI commands in `cmd/eirctl/` follow pattern: `{command}.go` + `{command}_test.go` + test data in `testdata/`
+
+-   Use `cobra.Command` with consistent flag handling via `rootCmdFlags` struct
+-   Commands delegate to core packages, don't contain business logic
+
+### Testing Approach
+
+-   Use `cmdRunTestHelper()` pattern in command tests for consistent CLI testing
+-   Test files include both unit tests and integration tests with real YAML configs
+-   Container tests often require Docker daemon - mark with build tags if needed
+-   Test data in `testdata/` directories throughout codebase
+
+### Configuration Schema
+
+-   Schema at `schemas/schema_v1.json` - keep in sync when adding config options
+-   Use `//go:generate` for schema generation from Go structs (see `tools/schemagenerator/`)
+-   YAML files support `yaml-language-server` schema directive for IDE support
+
+### Error Handling
+
+Custom error types for different failure modes:
+
+-   `ErrImagePull`, `ErrContainerCreate` etc. in container execution
+-   `ErrArtifactFailed` for output processing failures
+-   Collect multiple validation errors before returning (see required input validation)
+
+## Key Workflows
+
+### Building
+
+```bash
+# Cross-platform builds via task variations
+eirctl build:binary  # Uses shared/build/go/eirctl.yaml import
+
+# Manual build
+go build -o bin/eirctl cmd/main.go
+```
+
+### Testing
+
+```bash
+eirctl test:unit     # Runs tests with coverage in containers
+eirctl lints        # golangci-lint + vulnerability scanning
+eirctl show:coverage # Opens HTML coverage report
+eirctl tidy # Runs go mod tidy
+```
+
+### Docker/Moby Vulnerability Context
+
+`github.com/docker/docker` is used as a client library by the container runner.
+[Issue #95](https://github.com/Ensono/eirctl/issues/95) records the current
+assessment of Docker/Moby dependency findings, including
+`CVE-2026-33997` (plugin-install privilege validation) and
+`CVE-2026-34040` (AuthZ request-body inspection). The current code does not
+install or manage Docker plugins, configure AuthZ plugins, or provide a raw
+Docker API request interface; these vulnerabilities' triggering conditions are
+therefore outside eirctl's current code paths. The connected Docker daemon can
+still be affected when another tool or user meets those conditions.
+
+The Go vulnerability workflow uploads raw SARIF findings to GitHub code
+scanning. Manage triage, mitigation, and risk acceptance there; do not add
+repository-local suppression. Require a dedicated security review before adding
+plugin management, AuthZ configuration, or raw Docker API functionality.
+
+### CI Generation
+
+Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Actions, GitLab CI, Bitbucket).
+
+-   Implementation in `internal/genci/` with provider-specific generators
+-   Uses execution graph to determine job dependencies and parallelization
+
+## Project-Specific Conventions
+
+### Variable Templating
+
+Extensive Go template usage in task definitions:
+
+-   `.Root`, `.Dir`, `.TempDir` - path variables
+-   `.Args`, `.ArgsList` - CLI arguments passed after `--`
+-   `.Task.Name`, `.Context.Name`, `.Stage.Name` - runtime context
+-   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic
+-   User variables via `--set key=value` and can also be passed in via the `vars` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
+-   `.Current.OS`,  `.Current.Arch` - OS and Architecture variables
+    > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2
+
+### Task Variations
+
+Tasks can run multiple times with different env vars - see `build` task in `eirctl.yaml` for cross-compilation example.
+
+### Import System
+
+YAML configs support `import` for shared definitions (see `shared/build/go/eirctl.yaml`). Local and remote imports supported.
+
+### Container Integration
+
+Native container support without docker CLI dependency:
+
+-   Use `container` context type, not `executable` with docker commands
+-   Enable volume mounting with `enable_mount: true`
+-   DinD support with `enable_dind: true`
+
+When implementing container features, work with `runner/executor_container.go` and the Docker client API directly.
+
+### What to Avoid
+
+- Avoid disabling security controls, such as GPG signing, even if GPG signing fails, instead prompt the user to take the required action to fix the issue.
