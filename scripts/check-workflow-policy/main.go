@@ -41,6 +41,7 @@ const (
 	debugRequestWorkflowPath        = ".github/workflows/debug-build-request.yml"
 	debugPublisherWorkflowPath      = ".github/workflows/publish-debug-release.yml"
 	pullRequestsPermission          = "pull-requests"
+	securityEventsPermission        = "security-events"
 	downloadArtifactAction          = "actions/download-artifact"
 	downloadArtifactActionPrefix    = downloadArtifactAction + "@"
 	uploadArtifactActionPrefix      = "actions/upload-artifact@"
@@ -613,7 +614,7 @@ func expectedJobPermissions(workflow Workflow, job string) Permissions {
 			"build": {"contents": "read", pullRequestsPermission: "read"},
 		},
 		".github/workflows/pr.yml": {
-			"lint":   {"contents": "read", "security-events": "write"},
+			"lint":   {"contents": "read", securityEventsPermission: "write"},
 			"report": {"contents": "read", "checks": "write"},
 		},
 		debugPublisherWorkflowPath: {
@@ -627,7 +628,7 @@ func expectedJobPermissions(workflow Workflow, job string) Permissions {
 			"build-and-push": {"contents": "read", "packages": "write"},
 		},
 		".github/workflows/scorecard.yml": {
-			"analysis": {"contents": "read", "security-events": "write", "id-token": "write"},
+			"analysis": {"contents": "read", securityEventsPermission: "write", "id-token": "write"},
 		},
 	}
 	if jobs, ok := allowed[workflow.Path]; ok {
@@ -798,7 +799,7 @@ func validateGoVulnerabilitySARIFUpload(workflows map[string]Workflow) error {
 		return err
 	}
 	lint, ok := workflow.Jobs.Values["lint"]
-	if !ok || !samePermissions(lint.Permissions, Permissions{"contents": "read", "security-events": "write"}) {
+	if !ok || !samePermissions(lint.Permissions, Permissions{"contents": "read", securityEventsPermission: "write"}) {
 		return errors.New("PR lint job must use only contents: read and security-events: write")
 	}
 	for _, step := range lint.Steps {
