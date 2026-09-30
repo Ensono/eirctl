@@ -108,16 +108,18 @@ func (tc *TaskCompiler) compileCommand(input compileCommandInput) (*Job, error) 
 		Stderr:  input.stderr,
 		Vars:    tc.variables.Merge(input.vars),
 	}
+	jobEnv := input.executionCtx.Env
 
 	// Look at the executable details and check if the command is running `docker` determine if an Envfile is being generated
 	// If it has then check to see if the args contains the --env-file flag and if it does modify the path to the envfile
 	// if it does not then add the --env-file flag to the args array
 	if input.executionCtx.Envfile != nil { // && executionCtx.Executable.IsContainer
 		// generate the envfile with supplied env only
-		err := input.executionCtx.ProcessEnvfile(input.env)
+		processedEnv, err := input.executionCtx.ProcessEnvfile(input.env)
 		if err != nil {
 			return nil, err
 		}
+		jobEnv = processedEnv
 	}
 
 	c := []string{input.command}
@@ -128,7 +130,7 @@ func (tc *TaskCompiler) compileCommand(input compileCommandInput) (*Job, error) 
 	}
 
 	j.Command = strings.Join(c, " ")
-	j.Env = input.executionCtx.Env
+	j.Env = jobEnv
 	logrus.Debugf("command: %s", j.Command)
 
 	var err error
