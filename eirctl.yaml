@@ -44,7 +44,8 @@ pipelines:
     - task: go:lint
     - task: go:vuln:check
       variables:
-        VulnCheckPost: '| jq ''.statements[] | select(.status == "affected")'''
+        VulnCheckFormat: sarif
+        VulnCheckPost: '> govulncheck.sarif'
 
   build:docs:
     - task: gen:docs:html

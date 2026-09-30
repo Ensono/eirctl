@@ -1,5 +1,5 @@
 ---
-name: eirctl-project-automation
+name: task-runner
 description: "Use when: installing eirctl, editing eirctl.yaml, or running project tooling through existing eirctl tasks, pipelines, and contexts. In the eirctl repo, prefer the built-in build, test, lint, coverage, and schema tasks before adding new automation."
 argument-hint: "Describe the project command or workflow to run via eirctl"
 ---
@@ -197,6 +197,25 @@ For repo task execution examples, state prerequisites up front:
 - If a task uses a container context, mention that container runtime access and any required socket mounts must work first.
 - If a task interpolates build metadata such as `.Version` or `.Revision`, mention that these values must be provided by the config, environment, or invoking workflow.
 - If a task downloads modules or images, mention that network access and certificate trust must be available.
+
+### Rootless Podman socket for container tasks
+
+When `docker` is backed by Podman and a container task cannot reach `/var/run/docker.sock`, inspect `podman system connection list` and verify the current user's **local rootless** socket exists before changing the endpoint. Never point `DOCKER_HOST` at a remote or untrusted socket.
+
+The two variables serve different purposes in eirctl:
+
+- `DOCKER_HOST` is the **Unix URI** used by eirctl's host-side Docker client (for example, `unix:///run/user/1000/podman/podman.sock`).
+- `EIRCTL_DOCKER_HOST` is the **filesystem path**, not a URI, that eirctl bind-mounts into `/var/run/docker.sock` for contexts with `enable_dind: true`. If unset, it mounts the host's `/var/run/docker.sock` instead. Setting only `DOCKER_HOST` does not change that mount.
+
+For a verified local rootless socket, run a container-backed task like this:
+
+```bash
+socket="/run/user/$(id -u)/podman/podman.sock"
+test -S "$socket" || { echo "Local Podman socket is unavailable" >&2; exit 1; }
+DOCKER_HOST="unix://$socket" EIRCTL_DOCKER_HOST="$socket" eirctl lints
+```
+
+This configuration was needed to run the repo's `lints` pipeline locally: with only `DOCKER_HOST`, the `go:vuln:check` container still tried to mount `/var/run/docker.sock` on the host and failed under rootless Podman. Use the regular Docker socket on systems where it is available and trusted; do not change the task or weaken socket permissions just to bypass an environment failure.
 
 ## CI and Reproducibility
 

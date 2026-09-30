@@ -1,8 +1,8 @@
-# eirctl Copilot Instructions
+# eirctl Coding Agent Instructions
 
 ## Project Overview
 
-eirctl is a cross-platform concurrent task and container runner - a build tool alternative to GNU Make. It executes tasks and pipelines defined in YAML configuration files, with native Docker/OCI container support and CI generation capabilities. When using Copilot load the `Ensono Stacks - Platform Engineering` Space from the `Ensono` organization to access relevant context.
+eirctl is a cross-platform concurrent task and container runner - a build tool alternative to GNU Make. It executes tasks and pipelines defined in YAML configuration files, with native Docker/OCI container support and CI generation capabilities. When using Copilot load the `Ensono Stacks - Platform Engineering` Space from the `Ensono` GitHub organization to access relevant context.
 
 ## Core Architecture
 
@@ -78,8 +78,25 @@ go build -o bin/eirctl cmd/main.go
 eirctl test:unit     # Runs tests with coverage in containers
 eirctl lints        # golangci-lint + vulnerability scanning
 eirctl show:coverage # Opens HTML coverage report
-eirctl tidy # Runs go mod tidy 
+eirctl tidy # Runs go mod tidy
 ```
+
+### Docker/Moby Vulnerability Context
+
+`github.com/docker/docker` is used as a client library by the container runner.
+[Issue #95](https://github.com/Ensono/eirctl/issues/95) records the current
+assessment of Docker/Moby dependency findings, including
+`CVE-2026-33997` (plugin-install privilege validation) and
+`CVE-2026-34040` (AuthZ request-body inspection). The current code does not
+install or manage Docker plugins, configure AuthZ plugins, or provide a raw
+Docker API request interface; these vulnerabilities' triggering conditions are
+therefore outside eirctl's current code paths. The connected Docker daemon can
+still be affected when another tool or user meets those conditions.
+
+The Go vulnerability workflow uploads raw SARIF findings to GitHub code
+scanning. Manage triage, mitigation, and risk acceptance there; do not add
+repository-local suppression. Require a dedicated security review before adding
+plugin management, AuthZ configuration, or raw Docker API functionality.
 
 ### CI Generation
 
@@ -95,12 +112,12 @@ Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Acti
 Extensive Go template usage in task definitions:
 
 -   `.Root`, `.Dir`, `.TempDir` - path variables
--   `.Args`, `.ArgsList` - CLI arguments passed after `--` 
+-   `.Args`, `.ArgsList` - CLI arguments passed after `--`
 -   `.Task.Name`, `.Context.Name`, `.Stage.Name` - runtime context
--   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic   
+-   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic
 -   User variables via `--set key=value` and can also be passed in via the `vars` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
 -   `.Current.OS`,  `.Current.Arch` - OS and Architecture variables
-    > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2 
+    > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2
 
 ### Task Variations
 

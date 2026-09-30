@@ -37,6 +37,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      security-events: write
     env:
       DOCKER_HOST: unix:///var/run/docker.sock
     steps:
@@ -54,6 +57,11 @@ jobs:
       - name: Linters
         run: |
           go run -race cmd/main.go run lints
+      - name: Upload Go vulnerability SARIF
+        if: ${{ always() && hashFiles('govulncheck.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          sarif_file: govulncheck.sarif
 
   docs:
     name: Documentation
