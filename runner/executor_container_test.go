@@ -1537,3 +1537,37 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 		t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
 	}
 }
+
+func Test_ContainerDisplayName(t *testing.T) {
+	ttests := map[string]struct {
+		input    string
+		expected string
+	}{
+		"full with sha": {
+			input:    "foo.io/org/name:1.2.3@sha256:asphasd8sd7fhdsfhsd0sd7hfdsfa8hds8f8sdf8dsfa",
+			expected: "name:1.2.3@sha256:asphasd8",
+		},
+		"no sha": {
+			input:    "foo.io/org/name:1.2.3",
+			expected: "name:1.2.3",
+		},
+		// this format is discouraged especially for non docker runtimes like podman and others
+		// equivalent to "docker.io/library/node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239"
+		"default registry in default library": {
+			input:    "node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239",
+			expected: "node:trixie-slim@sha256:14bf3eac",
+		},
+		"default registry in default library specified": {
+			input:    "docker.io/library/node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239",
+			expected: "node:trixie-slim@sha256:14bf3eac",
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			got := runner.ContainerDisplayName(tt.input)
+			if got != tt.expected {
+				t.Errorf("ContainerDisplayName(%q) = %q; want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

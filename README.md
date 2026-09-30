@@ -255,6 +255,10 @@ tasks:
     condition: git diff --exit-code
 ```
 
+> **Note:** For long-running processes in container tasks, wrap your final
+> command in `exec` (e.g. `exec node my-test.js`) so it receives cancellation
+> signals immediately. See [container-signal-handling](./docs/troubleshooting.adoc#container-task signal-handling) for details.
+
 ## Pipelines
 
 Pipeline is a set of stages (tasks or other pipelines) to be executed in a certain order. Stages may be executed in parallel or one-by-one.
