@@ -19,6 +19,9 @@ const (
 	checkoutAction                  = "actions/checkout"
 	checkoutActionPrefix            = checkoutAction + "@"
 	persistCredentialsField         = "persist-credentials"
+	checkoutFetchDepthField         = "fetch-depth"
+	sparseCheckoutField             = "sparse-checkout"
+	githubTokenExpression           = "${{ github.token }}"
 	secretExpressionMarker          = "secrets."
 	sonarTokenName                  = "SONAR_TOKEN"
 	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
@@ -900,9 +903,9 @@ func validateGoVulnReporterEnvelope(workflow Workflow) (schema.GithubJob, error)
 func validateGoVulnReporterCheckout(job schema.GithubJob) error {
 	checkout := job.Steps[0]
 	if !actionUses(checkout.Uses, checkoutAction) || checkoutCount(job) != 1 ||
-		checkout.With["ref"] != "main" || checkout.With["fetch-depth"] != "1" ||
+		checkout.With["ref"] != "main" || checkout.With[checkoutFetchDepthField] != "1" ||
 		checkout.With[persistCredentialsField] != "false" || checkout.With["path"] != "trusted" ||
-		!strings.Contains(checkout.With["sparse-checkout"], trustedGoVulnValidatorPath) ||
+		!strings.Contains(checkout.With[sparseCheckoutField], trustedGoVulnValidatorPath) ||
 		checkout.With["sparse-checkout-cone-mode"] != "false" {
 		return errors.New("trusted Go vulnerability reporter may check out only the protected main SARIF validator without credentials")
 	}
@@ -914,7 +917,7 @@ func validateGoVulnReporterProvenance(provenance *schema.GithubStep) error {
 	// action, and must receive only the upstream run identity and the job's own
 	// token.
 	if provenance.ID != "provenance" || provenance.Uses != "" || len(provenance.Env) != 3 ||
-		scalarValue(provenance.Env["GH_TOKEN"]) != "${{ github.token }}" ||
+		scalarValue(provenance.Env["GH_TOKEN"]) != githubTokenExpression ||
 		scalarValue(provenance.Env["RUN_ID"]) != "${{ github.event.workflow_run.id }}" ||
 		scalarValue(provenance.Env["RUN_ATTEMPT"]) != "${{ github.event.workflow_run.run_attempt }}" {
 		return errors.New("trusted Go vulnerability reporter must resolve provenance in a protected-base run step scoped to the upstream run identity")
@@ -934,7 +937,7 @@ func validateGoVulnReporterPublication(download, validate, upload *schema.Github
 		download.With[artifactIDsField] != "${{ steps.provenance.outputs.artifact-id }}" ||
 		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
 		download.With["repository"] != "${{ github.repository }}" ||
-		download.With["github-token"] != "${{ github.token }}" ||
+		download.With["github-token"] != githubTokenExpression ||
 		download.With["path"] != trustedGoVulnReportDir {
 		return errors.New("trusted Go vulnerability reporter must download only the exact verified artifact of the verified run")
 	}
@@ -1069,10 +1072,10 @@ func parseTrustedSonarSteps(job schema.GithubJob) (trustedSonarSteps, error) {
 
 func validateTrustedSonarCheckout(job schema.GithubJob, checkout *schema.GithubStep) error {
 	if checkout.Name != "Check out trusted analyzer helpers" || !actionUses(checkout.Uses, checkoutAction) ||
-		checkout.With["ref"] != "main" || checkout.With["fetch-depth"] != "1" ||
+		checkout.With["ref"] != "main" || checkout.With[checkoutFetchDepthField] != "1" ||
 		checkout.With[persistCredentialsField] != "false" || checkout.With["path"] != "trusted" ||
-		!strings.Contains(checkout.With["sparse-checkout"], "scripts/materialize-sonar-source/main.go") ||
-		!strings.Contains(checkout.With["sparse-checkout"], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
+		!strings.Contains(checkout.With[sparseCheckoutField], "scripts/materialize-sonar-source/main.go") ||
+		!strings.Contains(checkout.With[sparseCheckoutField], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
 		return errors.New("trusted SonarCloud analyzer may check out only the protected main helper and report validator")
 	}
 	return nil
@@ -1118,7 +1121,7 @@ func validateTrustedSonarReports(download, validateReports *schema.GithubStep) e
 		len(download.With) != 5 || download.With["repository"] != "${{ github.repository }}" ||
 		download.With[artifactIDsField] != "${{ steps.provenance.outputs.artifact-id }}" ||
 		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
-		download.With["github-token"] != "${{ github.token }}" || download.With["path"] != "analysis/reports" ||
+		download.With["github-token"] != githubTokenExpression || download.With["path"] != "analysis/reports" ||
 		validateReports.Name != "Validate bounded passive report artifact" || strings.TrimSpace(validateReports.Run) != "trusted/scripts/validate-sonar-reports.sh analysis/reports" {
 		return errors.New("trusted SonarCloud analyzer must download and validate only the exact verified passive report artifact")
 	}
@@ -1163,7 +1166,7 @@ func validateTrustedSonarMaterializer(materialize *schema.GithubStep) error {
 		--bounds `+trustedSonarReviewedBounds), " ")
 	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
 		strings.Join(strings.Fields(materialize.Run), " ") != expected ||
-		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != "${{ github.token }}" {
+		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != githubTokenExpression {
 		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
 	}
 	return nil
@@ -1209,7 +1212,7 @@ func checkoutCount(job schema.GithubJob) int {
 
 func isProtectedBaseCheckout(step *schema.GithubStep) bool {
 	return actionUses(step.Uses, checkoutAction) && step.With["ref"] == "" &&
-		step.With["fetch-depth"] == "1" && step.With[persistCredentialsField] == "false"
+		step.With[checkoutFetchDepthField] == "1" && step.With[persistCredentialsField] == "false"
 }
 
 func hasVerifiedStaticMainCheckout(job schema.GithubJob) bool {
