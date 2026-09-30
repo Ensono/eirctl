@@ -84,6 +84,7 @@ tasks:
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
         CGO_ENABLED=1 GOFLAGS="-buildvcs=false" go test \
+          -buildvcs=false \
           -v \
           -race \
           -cover {{ if .GoCoverPackages }}-coverpkg={{ .GoCoverPackages }}{{ end }} \

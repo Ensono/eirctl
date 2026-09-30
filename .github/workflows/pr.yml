@@ -134,7 +134,7 @@ jobs:
 
       - name: Test
         run: |
-          go run cmd/main.go run pipeline gha:unit:test --debug
+          go run cmd/main.go run pipeline gha:unit:test
 
       - name: Scan trusted main source with SonarCloud
         env:
