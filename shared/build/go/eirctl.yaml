@@ -83,13 +83,12 @@ tasks:
         unset GOTOOLCHAIN
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
-        CGO_ENABLED=1 go test \
+        CGO_ENABLED=1 GOFLAGS="-buildvcs=false" go test \
           -v \
           -race \
           -cover {{ if .GoCoverPackages }}-coverpkg={{ .GoCoverPackages }}{{ end }} \
           -mod=readonly \
           -shuffle=on \
-          -buildvcs=false \
           -coverprofile=.coverage/out \
           -count=1 \
           -run=${GO_TEST_RUN_ARGS:-.} \
