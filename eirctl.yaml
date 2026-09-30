@@ -38,6 +38,9 @@ pipelines:
 
   gha:unit:test:
     - pipeline: test:unit
+      variables:
+        GoExcludePkgRegex: "/(vscode-extension|scripts|local)(/|$)"
+        GoCoverPackages: github.com/Ensono/eirctl/...
     - task: sonar:coverage:prep
       depends_on:
         - test:unit
@@ -88,6 +91,15 @@ pipelines:
 
   sonar:scan:
     - task: sonar:scanner:cli
+
+  show:coverage:
+    - pipeline: test:unit
+      variables:
+        GoExcludePkgRegex: "/(vscode-extension|scripts|local)(/|$)"
+        GoCoverPackages: github.com/Ensono/eirctl/...
+    - task: show_coverage
+      depends_on:
+        - test:unit
 
 tasks:
   build:vscode:extension:
