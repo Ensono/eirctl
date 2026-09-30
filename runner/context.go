@@ -511,13 +511,13 @@ func (c *ExecutionContext) After(stdout, stderr io.Writer) error {
 
 var ErrMutuallyExclusiveVarSet = errors.New("mutually exclusive vars have been set")
 
-// ProcessEnvfile processes env and other supplied variables into a single context environment
-func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
+// ProcessEnvfile processes env and other supplied variables into a job environment.
+func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) (*variables.Variables, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// return an error if the include and exclude have both been specified
 	if len(c.Envfile.Exclude) > 0 && len(c.Envfile.Include) > 0 {
-		return fmt.Errorf("include and exclude lists are mutually exclusive, %w", ErrMutuallyExclusiveVarSet)
+		return nil, fmt.Errorf("include and exclude lists are mutually exclusive, %w", ErrMutuallyExclusiveVarSet)
 	}
 
 	// create a string builder object to hold all of the lines that need to be written out to
@@ -560,8 +560,7 @@ func (c *ExecutionContext) ProcessEnvfile(env *variables.Variables) error {
 		envstr := fmt.Sprintf("%s=%s", varName, varValue)
 		builder = append(builder, envstr)
 	}
-	c.Env = variables.FromMap(utils.ConvertFromEnv(builder))
-	return nil
+	return variables.FromMap(utils.ConvertFromEnv(builder)), nil
 }
 
 func (c *ExecutionContext) includeExcludeSkip(varName string) bool {

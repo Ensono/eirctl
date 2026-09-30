@@ -202,7 +202,7 @@ func Test_Generate_Env_file(t *testing.T) {
 			e.Include = append(e.Include, "incld1")
 		}), []string{}, []string{}, []string{}, []string{})
 
-		if err := execContext.ProcessEnvfile(envVars); err == nil {
+		if _, err := execContext.ProcessEnvfile(envVars); err == nil {
 			t.Fatal("got nil, wanted an error")
 		}
 
@@ -215,15 +215,16 @@ func genEnvFileHelperTestRunner(t *testing.T, envVars *variables.Variables, envF
 
 	execContext := runner.NewExecutionContext(nil, "", envVars, envFile, []string{}, []string{}, []string{}, []string{})
 
-	if err := execContext.ProcessEnvfile(envVars); err != nil {
+	processedEnv, err := execContext.ProcessEnvfile(envVars)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(execContext.Env.Map()) < 1 {
+	if len(processedEnv.Map()) < 1 {
 		t.Fatal("empty")
 	}
 
-	return helperEnvString(execContext.Env)
+	return helperEnvString(processedEnv)
 }
 
 func helperEnvString(envMap *variables.Variables) string {
@@ -249,11 +250,11 @@ func ExampleExecutionContext_ProcessEnvfile() {
 	})
 
 	execContext := runner.NewExecutionContext(nil, "", envVars, ef, []string{}, []string{}, []string{}, []string{})
-	_ = execContext.ProcessEnvfile(envVars)
+	processedEnv, _ := execContext.ProcessEnvfile(envVars)
 
 	// for the purposes of the test example we need to make sure the map is
 	// always displayed in same order of keys, which is not a guarantee with a map
-	fmt.Println(helperEnvString(execContext.Env))
+	fmt.Println(helperEnvString(processedEnv))
 	//Output:
 	// TF_VAR_capped_by_msft=some value
 }
