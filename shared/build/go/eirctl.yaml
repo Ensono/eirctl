@@ -83,7 +83,7 @@ tasks:
         unset GOTOOLCHAIN
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
-        CGO_ENABLED=1 GOFLAGS="-buildvcs=false" go test \
+        CGO_ENABLED=1 go test \
           -buildvcs=false \
           -v \
           -race \
@@ -94,7 +94,7 @@ tasks:
           -count=1 \
           -run=${GO_TEST_RUN_ARGS:-.} \
           {{ if .GoExcludePkgRegex -}}
-          $(go list ./... | grep -Ev '{{ .GoExcludePkgRegex }}')
+          $(GOFLAGS="-buildvcs=false" go list ./... | grep -Ev '{{ .GoExcludePkgRegex }}')
           {{- else -}}
           ./...
           {{- end -}} | tee .coverage/test.out
