@@ -6,21 +6,35 @@ toolchain go1.27.1
 
 require (
 	dario.cat/mergo v1.0.2
+	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/bmatcuk/doublestar v1.3.4
 	github.com/briandowns/spinner v1.23.2
+	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/containerd/errdefs v1.0.0
+	github.com/coryb/templatecolor v0.0.0-20230911044230-5d137a83f1e3
+	github.com/docker/cli v29.8.2+incompatible
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.1
+	github.com/emicklei/dot v1.11.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-billy/v5 v5.9.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/invopop/jsonschema v0.14.0
+	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/pb33f/ordered-map/v2 v2.3.1
+	github.com/pb33f/ordered-map/v2 v2.3.2
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/sirupsen/logrus v1.10.2
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/spf13/viper v1.21.0
 	golang.org/x/crypto v0.57.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.14.1
 )
@@ -53,6 +67,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -65,6 +80,8 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
@@ -79,6 +96,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/pb33f/go-yaml v0.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.1 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -102,30 +120,9 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-)
-
-require (
-	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/charmbracelet/bubbles v1.0.0
-	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/huh v1.0.0
-	github.com/coryb/templatecolor v0.0.0-20230911044230-5d137a83f1e3
-	github.com/docker/cli v29.8.1+incompatible
-	github.com/docker/docker v28.5.2+incompatible
-	github.com/emicklei/dot v1.11.0
-	github.com/fatih/color v1.19.0 // indirect
-	github.com/go-git/go-git/v5 v5.19.2
-	github.com/k0kubun/go-ansi v0.0.0-20180517002512-3bf9e2903213
-	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/spf13/cobra v1.10.2
-	github.com/spf13/viper v1.21.0
-	golang.org/x/sys v0.48.0
-	golang.org/x/term v0.46.0
 )
