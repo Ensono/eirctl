@@ -1047,3 +1047,155 @@ func TestRunAcceptsCandidateRoot(t *testing.T) {
 		t.Fatal("run() unexpectedly accepted an incomplete candidate topology")
 	}
 }
+
+// The reviewed reporter fixture is the exact topology this protected base policy
+// is being prepared to accept. It lives in testdata until the workflow itself is
+// landed by a separately reviewed change.
+const goVulnReporterFixture = "trusted-govulncheck-sarif.yml"
+
+func copyWorkflowRootWithGoVulnReporter(t *testing.T, mutate func(string) string) string {
+	t.Helper()
+	root := copyWorkflowRootFile(t, "", nil)
+	contents, err := os.ReadFile(filepath.Join("testdata", goVulnReporterFixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(contents)
+	if mutate != nil {
+		body = mutate(body)
+	}
+	target := filepath.Join(root, ".github", "workflows", goVulnReporterFixture)
+	if err := os.WriteFile(target, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestBasePolicyAcceptsRepositoryWithoutGoVulnerabilityReporter(t *testing.T) {
+	// The preparatory policy rollout must not require a workflow that has not
+	// been landed yet, otherwise the protected base rejects its own revision.
+	if err := Validate(copyWorkflowRootFile(t, "", nil)); err != nil {
+		t.Fatalf("Validate() rejected the current repository topology: %v", err)
+	}
+}
+
+func TestBasePolicyAcceptsReviewedGoVulnerabilityReporter(t *testing.T) {
+	if err := Validate(copyWorkflowRootWithGoVulnReporter(t, nil)); err != nil {
+		t.Fatalf("Validate() rejected the reviewed trusted reporter topology: %v", err)
+	}
+}
+
+func TestGoVulnerabilityReporterTopologyGuards(t *testing.T) {
+	// One case per invariant. The provenance body is pinned by digest, so a
+	// single representative tamper proves the whole body is covered.
+	cases := []struct {
+		name     string
+		mutate   func(string) string
+		wantFail bool
+	}{
+		// Display names carry no security meaning: renaming must change nothing.
+		{name: "renamed steps", mutate: func(content string) string {
+			content = strings.Replace(content, "name: Publish verified SARIF to code scanning", "name: Send report", 1)
+			return strings.Replace(content, "name: Resolve immutable upstream provenance", "name: Provenance", 1)
+		}},
+		{name: "equivalent flow trigger syntax", mutate: func(content string) string {
+			return strings.Replace(content, "on:\n  workflow_run:\n    workflows: [Lint and Test]\n    types: [completed]",
+				"on: {workflow_run: {workflows: [Lint and Test], types: [completed]}}", 1)
+		}},
+		{name: "tampered provenance body", mutate: func(content string) string {
+			return strings.Replace(content, ".head.sha == $sha", `.head.sha != ""`, 1)
+		}, wantFail: true},
+		{name: "provenance not scoped to the upstream run", mutate: func(content string) string {
+			return strings.Replace(content, "          RUN_ID: ${{ github.event.workflow_run.id }}", "          RUN_ID: ${{ github.run_id }}", 1)
+		}, wantFail: true},
+		{name: "upload bound to an unverified revision", mutate: func(content string) string {
+			return strings.Replace(content, "sha: ${{ steps.provenance.outputs.head-sha }}", "sha: ${{ github.event.workflow_run.head_sha }}", 1)
+		}, wantFail: true},
+		{name: "checkout path inside a git worktree", mutate: func(content string) string {
+			return strings.Replace(content, "checkout_path: ${{ github.workspace }}/report", "checkout_path: ${{ github.workspace }}/trusted", 1)
+		}, wantFail: true},
+		{name: "alternate upload action", mutate: func(content string) string {
+			return strings.Replace(content, trustedGoVulnUploadAction, "attacker/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd", 1)
+		}, wantFail: true},
+		{name: "permission elevation", mutate: func(content string) string {
+			return strings.Replace(content, "      security-events: write", "      security-events: write\n      id-token: write", 1)
+		}, wantFail: true},
+		{name: "pull-request checkout", mutate: func(content string) string {
+			return strings.Replace(content, "      - name: Resolve immutable upstream provenance",
+				"      - name: Check out candidate\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.workflow_run.head_sha }}\n      - name: Resolve immutable upstream provenance", 1)
+		}, wantFail: true},
+		{name: "candidate command after download", mutate: func(content string) string {
+			return strings.Replace(content, "      - name: Publish verified SARIF to code scanning",
+				"      - name: Post-process report\n        run: bash report/fix.sh\n      - name: Publish verified SARIF to code scanning", 1)
+		}, wantFail: true},
+		{name: "untrusted validator", mutate: func(content string) string {
+			return strings.Replace(content, "trusted/scripts/validate-govulncheck-sarif.sh report", "report/validate.sh report", 1)
+		}, wantFail: true},
+		{name: "secret exposure", mutate: func(content string) string {
+			return strings.Replace(content, "          GH_TOKEN: ${{ github.token }}", "          GH_TOKEN: ${{ secrets.SONAR_TOKEN }}", 1)
+		}, wantFail: true},
+		{name: "missing upstream repository guard", mutate: func(content string) string {
+			return strings.Replace(content, "github.event.workflow_run.repository.full_name == github.repository &&", "", 1)
+		}, wantFail: true},
+		{name: "unbounded workflow source", mutate: func(content string) string {
+			return strings.Replace(content, "    workflows: [Lint and Test]", "    workflows: [Lint and Test, Anything Else]", 1)
+		}, wantFail: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Validate(copyWorkflowRootWithGoVulnReporter(t, tc.mutate))
+			if (err != nil) != tc.wantFail {
+				t.Fatalf("Validate() error = %v, want failure %v", err, tc.wantFail)
+			}
+		})
+	}
+}
+
+func TestBasePolicyRejectsCodeScanningWriteForPullRequestExecution(t *testing.T) {
+	// The lint job executes pull-request-controlled content. Granting it
+	// security-events: write is exactly the elevation this rollout refuses, and
+	// the refusal must not depend on any SARIF step name or file path.
+	root := copyWorkflowRootFile(t, "pr.yml", func(content string) string {
+		return strings.Replace(content, "  lint:\n    name: Lint\n    runs-on: ubuntu-26.04\n",
+			"  lint:\n    name: Lint\n    runs-on: ubuntu-26.04\n    permissions:\n      contents: read\n      security-events: write\n", 1)
+	})
+	if err := Validate(root); err == nil {
+		t.Fatal("Validate() accepted code-scanning write authority in a job that executes pull-request content")
+	}
+}
+
+func TestReviewedSonarScannerPinsAllowSupersession(t *testing.T) {
+	// The base checker runs from protected main, so it must already accept the
+	// next reviewed pin before the pull request that introduces it can pass.
+	if len(trustedSonarScannerActions) < 2 {
+		t.Fatal("no successor scanner pin is reviewed, so a scanner upgrade cannot pass its own policy check")
+	}
+	for _, action := range trustedSonarScannerActions {
+		if !pinnedAction.MatchString(action) {
+			t.Fatalf("reviewed scanner pin is not an immutable SHA: %q", action)
+		}
+		if !isReviewedSonarScannerAction(action) {
+			t.Fatalf("reviewed scanner pin was not accepted: %q", action)
+		}
+	}
+	for _, rejected := range []string{
+		"SonarSource/sonarqube-scan-action@v8",
+		"SonarSource/sonarqube-scan-action@0000000000000000000000000000000000000000",
+		"attacker/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4",
+	} {
+		if isReviewedSonarScannerAction(rejected) {
+			t.Fatalf("unreviewed scanner action was accepted: %q", rejected)
+		}
+	}
+
+	// Both reviewed pins must validate against the real workflow, so the
+	// upgrade is accepted before and after it lands.
+	for _, action := range trustedSonarScannerActions {
+		root := copyWorkflowRootFile(t, "trusted-sonarcloud-pr.yml", func(content string) string {
+			return strings.Replace(content, trustedSonarScannerActions[0], action, 1)
+		})
+		if err := Validate(root); err != nil {
+			t.Fatalf("Validate() rejected reviewed scanner pin %q: %v", action, err)
+		}
+	}
+}

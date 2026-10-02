@@ -19,13 +19,20 @@ const (
 	checkoutAction                  = "actions/checkout"
 	checkoutActionPrefix            = checkoutAction + "@"
 	persistCredentialsField         = "persist-credentials"
+	checkoutFetchDepthField         = "fetch-depth"
+	sparseCheckoutField             = "sparse-checkout"
+	githubTokenExpression           = "${{ github.token }}"
 	secretExpressionMarker          = "secrets."
 	sonarTokenName                  = "SONAR_TOKEN"
 	sonarTokenExpression            = "${{ secrets.SONAR_TOKEN }}"
 	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
+	prWorkflowPath                  = ".github/workflows/pr.yml"
+	lintAndTestWorkflowName         = "Lint and Test"
+	securityEventsPermission        = "security-events"
+	actionsPermission               = "actions"
+	contentsPermission              = "contents"
 	debugReleaseValidateJob         = "validate-build"
 	githubScriptActionPrefix        = "actions/github-script@"
-	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
 	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
 	trustedSonarExpectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
@@ -48,6 +55,23 @@ const (
 	debugLayoutStepName             = "Validate bounded binary layout without execution"
 	debugProvenanceStepName         = "Create trusted clean-runner provenance"
 )
+
+// trustedSonarScannerActions lists the reviewed immutable scanner pins.
+//
+// This checker runs from the protected base during pull_request_target, so a
+// pull request cannot authorize a pin that it introduces itself. Pinning
+// exactly one SHA therefore makes every scanner upgrade unmergeable, including
+// automated dependency bumps. Listing the current pin alongside the next
+// reviewed pin lets the upgrade land, after which the superseded entry is
+// removed by the same change. Only explicitly reviewed SHAs are ever accepted.
+var trustedSonarScannerActions = []string{
+	"SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f", // v8.2.1
+	"SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4", // v8.2.2
+}
+
+func isReviewedSonarScannerAction(uses string) bool {
+	return containsString(trustedSonarScannerActions, uses)
+}
 
 var pinnedAction = regexp.MustCompile(`@[0-9a-f]{40}$`)
 
@@ -626,7 +650,15 @@ func expectedJobPermissions(workflow Workflow, job string) Permissions {
 			"build-and-push": {"contents": "read", "packages": "write"},
 		},
 		".github/workflows/scorecard.yml": {
-			"analysis": {"contents": "read", "security-events": "write", "id-token": "write"},
+			"analysis": {"contents": "read", securityEventsPermission: "write", "id-token": "write"},
+		},
+		// The trusted Go vulnerability reporter is the only pull-request-scoped
+		// holder of security-events: write. It never checks out or executes
+		// pull-request-controlled content, so the permission cannot reach
+		// candidate code. This table is the single authority for the rule;
+		// topology validation below must not restate it.
+		trustedGoVulnWorkflowPath: {
+			trustedGoVulnReportJob: {actionsPermission: "read", contentsPermission: "read", securityEventsPermission: "write"},
 		},
 	}
 	if jobs, ok := allowed[workflow.Path]; ok {
@@ -654,6 +686,9 @@ func validateRepositoryTopology(workflows map[string]Workflow) error {
 }
 
 func validateNonDebugRepositoryTopology(workflows map[string]Workflow) error {
+	if err := validateTrustedGoVulnerabilityReporter(workflows); err != nil {
+		return err
+	}
 	if err := validateReleaseTopology(workflows); err != nil {
 		return err
 	}
@@ -788,6 +823,143 @@ func validateDebugPublisherTopology(workflows map[string]Workflow) error {
 	return nil
 }
 
+// The trusted Go vulnerability reporter publishes govulncheck findings to code
+// scanning from the protected default branch. Steps are matched by action
+// identity, step id, and position rather than by display name so renaming a step
+// can neither fail validation nor disguise a change of trust boundary.
+const (
+	trustedGoVulnWorkflowPath  = ".github/workflows/trusted-govulncheck-sarif.yml"
+	trustedGoVulnReportJob     = "report"
+	trustedGoVulnReportDir     = "report"
+	trustedGoVulnValidatorPath = "scripts/validate-govulncheck-sarif.sh"
+	trustedGoVulnValidateRun   = "trusted/" + trustedGoVulnValidatorPath + " " + trustedGoVulnReportDir
+	trustedGoVulnUploadAction  = "github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
+	trustedGoVulnArtifactName  = "govulncheck-sarif-${RUN_ID}-${RUN_ATTEMPT}"
+	// The provenance body is reviewed as a whole and pinned by digest, the same
+	// way this repository pins its other reviewed inline scripts. Substring
+	// matching over shell text would break on harmless refactors while still
+	// missing anything the marker list forgot to name.
+	trustedGoVulnProvenanceSHA256 = "8091f9e82a50b6c33f8f9fe962c255c8179cd15b2d77d96833f6b1973276c7fb"
+	trustedGoVulnConcurrency      = "govulncheck-sarif-${{ github.event.workflow_run.pull_requests[0].number || " +
+		"format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
+)
+
+// validateTrustedGoVulnerabilityReporter accepts the reviewed reporter topology
+// when the workflow is present. Presence is not required here: the protected
+// base policy is rolled out before the workflow itself, and the pull request
+// that starts producing the SARIF artifact is what makes the reporter mandatory.
+func validateTrustedGoVulnerabilityReporter(workflows map[string]Workflow) error {
+	workflow, ok := workflows[trustedGoVulnWorkflowPath]
+	if !ok {
+		return nil
+	}
+	job, err := validateGoVulnReporterEnvelope(workflow)
+	if err != nil {
+		return err
+	}
+	if len(job.Steps) != 5 {
+		return errors.New("trusted Go vulnerability reporter must use only the five reviewed checkout, provenance, download, validation, and upload steps")
+	}
+	if err := validateGoVulnReporterCheckout(job); err != nil {
+		return err
+	}
+	if err := validateGoVulnReporterProvenance(job.Steps[1]); err != nil {
+		return err
+	}
+	return validateGoVulnReporterPublication(job.Steps[2], job.Steps[3], job.Steps[4])
+}
+
+func validateGoVulnReporterEnvelope(workflow Workflow) (schema.GithubJob, error) {
+	if len(workflow.Jobs.Values) != 1 || !hasOnlyTriggers(workflow, "workflow_run") ||
+		len(workflow.On.WorkflowRun.Workflows) != 1 || workflow.On.WorkflowRun.Workflows[0] != lintAndTestWorkflowName ||
+		!samePermissions(workflow.Permissions, Permissions{contentsPermission: "read"}) {
+		return schema.GithubJob{}, errors.New("trusted Go vulnerability reporter must be a single-job, read-only workflow_run consumer of the lint workflow")
+	}
+	job, ok := workflow.Jobs.Values[trustedGoVulnReportJob]
+	if !ok || job.Environment != "" || job.Has("container") || job.Has("services") || !isGithubHosted(job) ||
+		containsCache(job) || hasLocalAction(job) || hasSecretInMap(workflow.Env) || hasSecretInMap(job.Env) ||
+		hasSecretReference(job) || jobSecretsConfigured(job) || concurrencyGroup(job) != trustedGoVulnConcurrency {
+		return schema.GithubJob{}, errors.New("trusted Go vulnerability reporter job must be a GitHub-hosted, cache-free, secret-free job with stale-revision-cancelling concurrency")
+	}
+	// The reporter deliberately accepts a failed upstream conclusion so that an
+	// unrelated lint failure cannot discard a completed scan. Scan completion is
+	// proven by the verified artifact instead.
+	for _, guard := range []string{
+		"github.event.workflow_run.repository.full_name == github.repository",
+		"github.event.workflow_run.conclusion == 'success'",
+		"github.event.workflow_run.conclusion == 'failure'",
+		"github.event.workflow_run.event == 'pull_request'",
+		"github.event.workflow_run.event == 'push'",
+		"github.event.workflow_run.head_branch == 'main'",
+		"github.event.workflow_run.head_repository.full_name == github.repository",
+	} {
+		if !strings.Contains(job.If, guard) {
+			return schema.GithubJob{}, fmt.Errorf("trusted Go vulnerability reporter job must require %s", guard)
+		}
+	}
+	return job, nil
+}
+
+func validateGoVulnReporterCheckout(job schema.GithubJob) error {
+	checkout := job.Steps[0]
+	if !actionUses(checkout.Uses, checkoutAction) || checkoutCount(job) != 1 ||
+		checkout.With["ref"] != "main" || checkout.With[checkoutFetchDepthField] != "1" ||
+		checkout.With[persistCredentialsField] != "false" || checkout.With["path"] != "trusted" ||
+		!strings.Contains(checkout.With[sparseCheckoutField], trustedGoVulnValidatorPath) ||
+		checkout.With["sparse-checkout-cone-mode"] != "false" {
+		return errors.New("trusted Go vulnerability reporter may check out only the protected main SARIF validator without credentials")
+	}
+	return nil
+}
+
+func validateGoVulnReporterProvenance(provenance *schema.GithubStep) error {
+	// Structural identity: the provenance resolver must be a run step, not an
+	// action, and must receive only the upstream run identity and the job's own
+	// token.
+	if provenance.ID != "provenance" || provenance.Uses != "" || len(provenance.Env) != 3 ||
+		scalarValue(provenance.Env["GH_TOKEN"]) != githubTokenExpression ||
+		scalarValue(provenance.Env["RUN_ID"]) != "${{ github.event.workflow_run.id }}" ||
+		scalarValue(provenance.Env["RUN_ATTEMPT"]) != "${{ github.event.workflow_run.run_attempt }}" {
+		return errors.New("trusted Go vulnerability reporter must resolve provenance in a protected-base run step scoped to the upstream run identity")
+	}
+	// Everything the body asserts -- run, attempt, workflow, repository, event,
+	// head revision, pull-request or protected-push binding, artifact uniqueness
+	// and the derived upload ref -- is covered by this digest. Changing the body
+	// requires re-reviewing it and updating the constant deliberately.
+	if stepFieldDigest(provenance, "run") != trustedGoVulnProvenanceSHA256 {
+		return errors.New("trusted Go vulnerability reporter provenance body differs from the reviewed script; re-review it and update trustedGoVulnProvenanceSHA256")
+	}
+	return nil
+}
+
+func validateGoVulnReporterPublication(download, validate, upload *schema.GithubStep) error {
+	if !actionUses(download.Uses, downloadArtifactAction) || len(download.With) != 5 ||
+		download.With[artifactIDsField] != "${{ steps.provenance.outputs.artifact-id }}" ||
+		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
+		download.With["repository"] != "${{ github.repository }}" ||
+		download.With["github-token"] != githubTokenExpression ||
+		download.With["path"] != trustedGoVulnReportDir {
+		return errors.New("trusted Go vulnerability reporter must download only the exact verified artifact of the verified run")
+	}
+	// The only command permitted after the untrusted artifact lands comes from the
+	// protected-main checkout, and the only action after it is the pinned uploader.
+	if validate.Uses != "" || strings.TrimSpace(validate.Run) != trustedGoVulnValidateRun {
+		return errors.New("trusted Go vulnerability reporter must validate the downloaded artifact with only the protected main validator")
+	}
+	// checkout_path must not resolve inside a Git worktree: upload-sarif prefers
+	// `git rev-parse HEAD` there and falls back to the verified `sha` input only
+	// when no worktree is reachable (github/codeql-action#2807).
+	if upload.Run != "" || upload.Uses != trustedGoVulnUploadAction || len(upload.With) != 6 ||
+		upload.With["sarif_file"] != trustedGoVulnReportDir+"/govulncheck.sarif" ||
+		upload.With["checkout_path"] != "${{ github.workspace }}/"+trustedGoVulnReportDir ||
+		upload.With["ref"] != "${{ steps.provenance.outputs.upload-ref }}" ||
+		upload.With["sha"] != "${{ steps.provenance.outputs.head-sha }}" ||
+		upload.With["category"] != "govulncheck" || upload.With["wait-for-processing"] != "true" {
+		return errors.New("trusted Go vulnerability reporter must end with only the pinned SARIF uploader bound to the verified ref and revision")
+	}
+	return nil
+}
+
 func validateReleaseTopology(workflows map[string]Workflow) error {
 	for _, file := range []string{".github/workflows/release.yml", ".github/workflows/release_container.yml"} {
 		workflow, err := requiredWorkflow(workflows, file)
@@ -900,10 +1072,10 @@ func parseTrustedSonarSteps(job schema.GithubJob) (trustedSonarSteps, error) {
 
 func validateTrustedSonarCheckout(job schema.GithubJob, checkout *schema.GithubStep) error {
 	if checkout.Name != "Check out trusted analyzer helpers" || !actionUses(checkout.Uses, checkoutAction) ||
-		checkout.With["ref"] != "main" || checkout.With["fetch-depth"] != "1" ||
+		checkout.With["ref"] != "main" || checkout.With[checkoutFetchDepthField] != "1" ||
 		checkout.With[persistCredentialsField] != "false" || checkout.With["path"] != "trusted" ||
-		!strings.Contains(checkout.With["sparse-checkout"], "scripts/materialize-sonar-source/main.go") ||
-		!strings.Contains(checkout.With["sparse-checkout"], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
+		!strings.Contains(checkout.With[sparseCheckoutField], "scripts/materialize-sonar-source/main.go") ||
+		!strings.Contains(checkout.With[sparseCheckoutField], "scripts/validate-sonar-reports.sh") || checkoutCount(job) != 1 {
 		return errors.New("trusted SonarCloud analyzer may check out only the protected main helper and report validator")
 	}
 	return nil
@@ -949,7 +1121,7 @@ func validateTrustedSonarReports(download, validateReports *schema.GithubStep) e
 		len(download.With) != 5 || download.With["repository"] != "${{ github.repository }}" ||
 		download.With[artifactIDsField] != "${{ steps.provenance.outputs.artifact-id }}" ||
 		download.With["run-id"] != "${{ steps.provenance.outputs.run-id }}" ||
-		download.With["github-token"] != "${{ github.token }}" || download.With["path"] != "analysis/reports" ||
+		download.With["github-token"] != githubTokenExpression || download.With["path"] != "analysis/reports" ||
 		validateReports.Name != "Validate bounded passive report artifact" || strings.TrimSpace(validateReports.Run) != "trusted/scripts/validate-sonar-reports.sh analysis/reports" {
 		return errors.New("trusted SonarCloud analyzer must download and validate only the exact verified passive report artifact")
 	}
@@ -994,7 +1166,7 @@ func validateTrustedSonarMaterializer(materialize *schema.GithubStep) error {
 		--bounds `+trustedSonarReviewedBounds), " ")
 	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
 		strings.Join(strings.Fields(materialize.Run), " ") != expected ||
-		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != "${{ github.token }}" {
+		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != githubTokenExpression {
 		return errors.New("trusted SonarCloud analyzer must use only the protected bounded Git Data API materializer with the verified head repository and SHA")
 	}
 	return nil
@@ -1018,7 +1190,7 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.qualitygate.wait=true`), " ")
 	legacyExpectedArgs := strings.Replace(expectedArgs, "-Dsonar.scm.provider=git ", "", 1)
 	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
-	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != trustedSonarScannerAction ||
+	if scanner.Name != "Scan passive pull-request data with SonarCloud" || !isReviewedSonarScannerAction(scanner.Uses) ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
 		scanner.With["skipSignatureVerification"] != "false" ||
@@ -1040,7 +1212,7 @@ func checkoutCount(job schema.GithubJob) int {
 
 func isProtectedBaseCheckout(step *schema.GithubStep) bool {
 	return actionUses(step.Uses, checkoutAction) && step.With["ref"] == "" &&
-		step.With["fetch-depth"] == "1" && step.With[persistCredentialsField] == "false"
+		step.With[checkoutFetchDepthField] == "1" && step.With[persistCredentialsField] == "false"
 }
 
 func hasVerifiedStaticMainCheckout(job schema.GithubJob) bool {
@@ -1185,17 +1357,22 @@ func exactDebugFinalizerSteps(job schema.GithubJob) bool {
 		job.Steps[4].Name == "Upload immutable final debug build artifact" && actionUses(job.Steps[4].Uses, "actions/upload-artifact")
 }
 
+// stepFieldDigest hashes a reviewed step body without reference to its display
+// name, so a rename cannot change what is being pinned.
+func stepFieldDigest(step *schema.GithubStep, field string) string {
+	value := step.Run
+	if field != "run" {
+		value = step.With[field]
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
+
 func stepDigestMatches(job schema.GithubJob, stepName, field, expected string) bool {
 	for _, step := range job.Steps {
 		if step.Name != stepName {
 			continue
 		}
-		value := step.Run
-		if field != "run" {
-			value = step.With[field]
-		}
-		digest := sha256.Sum256([]byte(value))
-		return fmt.Sprintf("%x", digest) == expected
+		return stepFieldDigest(step, field) == expected
 	}
 	return false
 }
