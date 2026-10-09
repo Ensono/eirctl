@@ -1,14 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Ensono/eirctl/refs/heads/main/schemas/schema_v1.json
+---
 contexts:
   awscli:
     container:
-      name: public.ecr.aws/aws-cli/aws-cli:2.28.21
+      name: public.ecr.aws/aws-cli/aws-cli:2.36.44
       entrypoint: /usr/bin/env
       shell: bash
       shell_args:
         - -c
       container_args:
-        - -v ~/.aws:/root/.aws
-        - ${EIRCTL_CONTAINER_ARG}
+        - "-v ~/.aws:/root/.aws"
       enable_dind: true
     envfile:
       exclude:
@@ -18,6 +19,61 @@ contexts:
         - BASH_FUNC_
 
 tasks:
+  aws:registry:auth:
+    context: awscli
+    description: |
+      This is to generate the authentication.
+
+      It creates the ./eirctl/.docker/config.json file in the current directory.
+    command:
+      - |
+        authToken=$(aws ecr get-authorization-token --query 'authorizationData[0].authorizationToken' --output text)
+        registry_url="{{ .Env.REGISTRY_URL }}"
+        mkdir -p .eirctl/.docker
+        echo "{\"auths\": {\"$registry_url\": {\"auth\": \"$authToken\" }}}" > .eirctl/.docker/config.json
+    required:
+      env:
+        # should be in the form of <account_id>.dkr.ecr.<region>.amazonaws.com
+        - REGISTRY_URL
+
+  aws:image_repo_uri:
+    description: |
+      Generates the full URL of a docker image in the AWS ECR registry
+      Export `IMAGE_REPOSITORY_URI` as a dotenv artifact.
+
+      Can be consumed by downstream tasks in a user defined pipeline(s) - e.g. `${IMAGE_REPOSITORY_URI}:0.0.1-some-tag`
+
+      It is consumed automatically from a .eirctl/container.env file if in a pipeline
+    context: awscli
+    command: |
+      rm -rf .eirctl/container.env
+      IMAGE_REPOSITORY_URI=$(aws ecr describe-repositories --repository-name $IMAGE_NAME --query 'repositories[0].repositoryUri' --output=text)
+      if [ -z "${IMAGE_REPOSITORY_URI}" ]; then
+          echo "'IMAGE_REPOSITORY_URI' is empty, are you authed, and is '${IMAGE_NAME}' a valid ECR repository?" >&2
+          exit 1;
+      fi
+      echo "IMAGE_REPOSITORY_URI=${IMAGE_REPOSITORY_URI}" > .eirctl/container.env
+    required:
+      env:
+        - IMAGE_NAME
+    artifacts:
+      path: .eirctl/container.env
+      type: dotenv
+
+  aws:ecr:retag:image:
+    description: |
+      Retags an already published/built docker Image in ECR
+
+      IMAGE_RELEASE_SUFFIX can be used to overwrite the suffix tag - current default is `-release`
+    context: awscli
+    command: |
+      IMAGE_MANIFEST=$(aws ecr batch-get-image --repository-name ${IMAGE_NAME} --image-ids imageTag=${IMAGE_TAG} --output text --query 'images[].imageManifest')
+      aws ecr put-image --repository-name ${IMAGE_NAME} --image-tag ${IMAGE_TAG}-${IMAGE_RELEASE_SUFFIX:-release} --image-manifest "${IMAGE_MANIFEST}"
+    required:
+      env:
+        - IMAGE_NAME
+        - IMAGE_TAG
+
   configmanager:file:
     description: |
       Replaces with configmanager the input file.
@@ -27,11 +83,23 @@ tasks:
       This can be overridden with the args arguments.
     context: awscli
     command: |
-      curl -L --fail-with-body https://github.com/DevLabFoundry/configmanager/releases/download/v2.1.10/configmanager-linux-${ARCH:=amd64} \
+      curl -L --fail-with-body https://github.com/DevLabFoundry/configmanager/releases/download/{{ .Env.CONFIGMANAGER_VERSION | default "v2.1.33" }}/configmanager-linux-{{ .Current.Arch }} \
       -o /tmp/configmanager
       chmod +x /tmp/configmanager
-      /tmp/configmanager fromstr -i ${CONFIGMANAGER_INPUT_FILE} -p ${CONFIGMANAGER_OUTPUT_FILE} {{ if .ArgsList }}{{ .Args }}{{ else }}-s '://' --enable-envsubst{{ end }}
+      /tmp/configmanager --strict fromstr -i {{ .Env.CONFIGMANAGER_INPUT_FILE }} -p {{ .Env.CONFIGMANAGER_OUTPUT_FILE }} {{ if .ArgsList }}{{ .Args }}{{ else }}-s '://' --enable-envsubst{{ end }}
     required:
       env:
         - CONFIGMANAGER_OUTPUT_FILE
         - CONFIGMANAGER_INPUT_FILE
+
+  git:tag:
+    description: |
+      Usage `eirctl tag VERSION=2111dsfsdfa REVISION=as2342432 --set Message="my message"`
+      This task runs in the default mvdan.sh by default
+    command: |
+      git tag -a {{ .Env.VERSION }} -m {{ .Message | default "ci tag release" }} {{ .Env.REVISION }}
+      git push origin ${VERSION}
+    required:
+      env:
+        - VERSION
+        - REVISION
