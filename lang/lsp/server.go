@@ -28,7 +28,6 @@ var (
 	RPCMessageFormatter = func(length int, payload []byte) string {
 		return fmt.Sprintf("Content-Length: %d\r\n\r\n%s", length, payload)
 	}
-	skipDirList = []string{".git", "node_modules"}
 )
 
 var (

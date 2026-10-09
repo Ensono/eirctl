@@ -1,5 +1,5 @@
-import { BuildResult, Message, PluginBuild, context } from 'esbuild';
-import { exit, argv } from 'node:process';
+import { BuildResult, Message, PluginBuild, context } from 'esbuild'
+import { argv, exit } from 'node:process'
 
 /**
  * @type {import('esbuild').Plugin}
