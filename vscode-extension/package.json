@@ -60,7 +60,7 @@
                     "items": {
                         "type": "string"
                     },
-                    "markdownDescription": "Arguments passed to the eirctl language server command when `eirctl.languageServer.transport` is `process`."
+                    "markdownDescription": "Arguments passed to the eirctl language server command. Full details can be found in the docs"
                 },
                 "eirctl.languageServer.cwd": {
                     "type": "string",

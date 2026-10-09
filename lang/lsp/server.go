@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -21,21 +20,32 @@ import (
 )
 
 const (
-	ErrCodeInternal = -32603
+	ErrCodeInternal               = -32603
+	ErrCodeJSONUnmarshalReqParams = -32602
 )
 
-// errUnsupportedURIScheme is returned by uriToPath when the URI has a scheme
-// that the LSP server does not handle (e.g. "git", "untitled"). Callers
-// that receive this error from a notification handler should silently ignore
-// the request rather than terminating the server.
-var errUnsupportedURIScheme = fmt.Errorf("unsupported URI scheme")
+var (
+	RPCMessageFormatter = func(length int, payload []byte) string {
+		return fmt.Sprintf("Content-Length: %d\r\n\r\n%s", length, payload)
+	}
+	skipDirList = []string{".git", "node_modules"}
+)
+
+var (
+	// ErrUnsupportedURIScheme is returned by uriToPath when the URI has a scheme
+	// that the LSP server does not handle (e.g. "git", "untitled"). Callers
+	// that receive this error from a notification handler should silently ignore
+	// the request rather than terminating the server.
+	ErrUnsupportedURIScheme = errors.New("unsupported URI scheme")
+	ErrMessageJsonParse     = errors.New("json parse failure")
+)
 
 // Server defines the language server that implements the Language Server Protocol (LSP) for eirctl.
 type Server struct {
 	reader *bufio.Reader
 	writer io.Writer
 
-	transportConfig TransportConfig
+	config Config
 	// homeDir is the user's home directory, used for resolving cache files referenced in imports.
 	homeDir string
 	// rootPath is the root path of the workspace, derived from the initialize request.
@@ -50,6 +60,9 @@ type Server struct {
 	closed                      bool
 	// structured logger
 	log zerolog.Logger
+	// standin for json.Func
+	jsonUnMarshalReq       func(data []byte, v any) error
+	jsonUnMarshalReqParams func(data []byte, v any) error
 }
 
 type ServerOpt func(*Server)
@@ -65,8 +78,10 @@ func NewServer(in io.Reader, out io.Writer, opts ...ServerOpt) (*Server, error) 
 		homeDir: homeDir,
 		docs:    map[string]string{},
 		// initializing the default logger to stderr with error level
-		log:             zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.ErrorLevel),
-		transportConfig: TransportConfig{},
+		log:                    zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.ErrorLevel),
+		config:                 Config{},
+		jsonUnMarshalReq:       json.Unmarshal,
+		jsonUnMarshalReqParams: json.Unmarshal,
 	}
 
 	for _, opt := range opts {
@@ -82,9 +97,21 @@ func WithLogger(logger zerolog.Logger) ServerOpt {
 	}
 }
 
-func WithTransportConfig(config TransportConfig) ServerOpt {
+func WithConfig(config Config) ServerOpt {
 	return func(s *Server) {
-		s.transportConfig = config
+		s.config = config
+	}
+}
+
+func WithJsonUnMarshalReq(jsonUnMarshalReq func(data []byte, v any) error) ServerOpt {
+	return func(s *Server) {
+		s.jsonUnMarshalReq = jsonUnMarshalReq
+	}
+}
+
+func WithJsonUnMarshalReqParams(jsonUnMarshalReqParams func(data []byte, v any) error) ServerOpt {
+	return func(s *Server) {
+		s.jsonUnMarshalReqParams = jsonUnMarshalReqParams
 	}
 }
 
@@ -104,16 +131,30 @@ func (s *Server) Serve() error {
 	return nil
 }
 
+func (s *Server) Close() error {
+	s.closed = true
+	return nil
+}
+
+func (s *Server) RootPath() string {
+	return s.rootPath
+}
+
+// handleMessage processes an incoming JSON-RPC message and dispatches it to the appropriate handler based on the method.
+//
+//nolint:gocognit,funlen,gocyclo,cyclop,maintidx
 func (s *Server) handleMessage(payload []byte) error {
 	var req requestEnvelope
-	if err := json.Unmarshal(payload, &req); err != nil {
+	if err := s.jsonUnMarshalReq(payload, &req); err != nil {
 		return err
 	}
 
 	switch req.Method {
 	case "initialize":
 		var params initializeParams
-		_ = json.Unmarshal(req.Params, &params)
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
+		}
 		s.rootPath = deriveRootPath(params)
 		s.configPathDiscoveryComplete = false
 		s.discoveredConfigPath = ""
@@ -139,12 +180,12 @@ func (s *Server) handleMessage(payload []byte) error {
 		return nil
 	case "textDocument/didOpen":
 		var params didOpenTextDocumentParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
-		path, err := uriToPath(params.TextDocument.URI)
+		path, err := UriToPath(params.TextDocument.URI)
 		if err != nil {
-			if errors.Is(err, errUnsupportedURIScheme) {
+			if errors.Is(err, ErrUnsupportedURIScheme) {
 				s.log.Debug().Msgf("textDocument/didOpen: skipping unsupported URI %q", params.TextDocument.URI)
 				return nil
 			}
@@ -154,12 +195,12 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.publishDiagnostics(path)
 	case "textDocument/didChange":
 		var params didChangeTextDocumentParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
-		path, err := uriToPath(params.TextDocument.URI)
+		path, err := UriToPath(params.TextDocument.URI)
 		if err != nil {
-			if errors.Is(err, errUnsupportedURIScheme) {
+			if errors.Is(err, ErrUnsupportedURIScheme) {
 				s.log.Debug().Msgf("textDocument/didChange: skipping unsupported URI %q", params.TextDocument.URI)
 				return nil
 			}
@@ -171,12 +212,12 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.publishDiagnostics(path)
 	case "textDocument/didClose":
 		var params didCloseTextDocumentParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
-		path, err := uriToPath(params.TextDocument.URI)
+		path, err := UriToPath(params.TextDocument.URI)
 		if err != nil {
-			if errors.Is(err, errUnsupportedURIScheme) {
+			if errors.Is(err, ErrUnsupportedURIScheme) {
 				s.log.Debug().Msgf("textDocument/didClose: skipping unsupported URI %q", params.TextDocument.URI)
 				return nil
 			}
@@ -186,8 +227,8 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: params.TextDocument.URI, Diagnostics: []lspDiagnostic{}})
 	case "textDocument/definition":
 		var params textDocumentPositionParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
@@ -197,8 +238,8 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.respond(req.ID, toLSPLocations(defs))
 	case "textDocument/references":
 		var params referenceParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
@@ -214,8 +255,8 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.respond(req.ID, locations)
 	case "textDocument/hover":
 		var params textDocumentPositionParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
@@ -225,11 +266,11 @@ func (s *Server) handleMessage(payload []byte) error {
 		if !ok {
 			return s.respond(req.ID, nil)
 		}
-		return s.respond(req.ID, lspHover{Contents: markupContent{Kind: "markdown", Value: hoverMarkdown(hover)}})
+		return s.respond(req.ID, lspHover{Contents: markupContent{Kind: "markdown", Value: HoverMarkdown(hover)}})
 	case "textDocument/completion":
 		var params completionParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
@@ -244,8 +285,8 @@ func (s *Server) handleMessage(payload []byte) error {
 		return s.respond(req.ID, toLSPCompletionItems(items))
 	case "textDocument/documentSymbol":
 		var params documentSymbolParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return err
+		if err := s.jsonUnMarshalReqParams(req.Params, &params); err != nil {
+			return s.reqParamsError(&req, err)
 		}
 		result, path, err := s.analyze(params.TextDocument.URI)
 		if err != nil {
@@ -260,8 +301,16 @@ func (s *Server) handleMessage(payload []byte) error {
 	}
 }
 
+func (s *Server) reqParamsError(req *requestEnvelope, err error) error {
+	if len(req.ID) == 0 {
+		s.log.Debug().Err(fmt.Errorf("%w, %v", ErrMessageJsonParse, err)).Msg("invalid documentSymbol params in " + req.Method)
+		return nil
+	}
+	return s.respondError(req.ID, ErrCodeJSONUnmarshalReqParams, err.Error())
+}
+
 func (s *Server) analyze(uri string) (analyze.Result, string, error) {
-	path, err := uriToPath(uri)
+	path, err := UriToPath(uri)
 	if err != nil {
 		return analyze.Result{}, "", err
 	}
@@ -286,119 +335,25 @@ func (s *Server) analyze(uri string) (analyze.Result, string, error) {
 	return result, path, nil
 }
 
+// analysisEntryPath determines the entry path for analysis based on the current path and server root configuration.
+//
+// Currently we want to enforce the presence of only the root configuration file (eirctl.yaml|yml) for analysis
+// any referenced imports will be able to find their way and resolve the root correctly in the workspace.
+//
+// Opening an orphaned configuration file will NOT back resolve the root even if imported
 func (s *Server) analysisEntryPath(currentPath string) string {
 	if s.rootPath == "" {
 		return currentPath
 	}
 
-	rootConfigPath := filepath.Join(s.rootPath, "eirctl.yaml")
-	if _, err := s.readFile(rootConfigPath); err == nil {
-		return rootConfigPath
-	}
-
-	if strings.HasSuffix(s.rootPath, ".yaml") {
-		if _, err := s.readFile(s.rootPath); err == nil {
-			return s.rootPath
+	for _, configFile := range []string{"eirctl.yaml", "eirctl.yml"} {
+		rootConfigPath := filepath.Join(s.rootPath, configFile)
+		if _, err := s.readFile(rootConfigPath); err == nil {
+			return rootConfigPath
 		}
-	}
-
-	if discovered := s.resolveWorkspaceConfigPath(); discovered != "" {
-		return discovered
 	}
 
 	return currentPath
-}
-
-func (s *Server) resolveWorkspaceConfigPath() string {
-	if s.configPathDiscoveryComplete {
-		return s.discoveredConfigPath
-	}
-
-	s.configPathDiscoveryComplete = true
-	if s.rootPath == "" {
-		return ""
-	}
-
-	rootInfo, err := os.Stat(s.rootPath)
-	if err != nil || !rootInfo.IsDir() {
-		return ""
-	}
-
-	candidates := make([]string, 0, 4)
-	const maxDepth = 4
-
-	_ = filepath.WalkDir(s.rootPath, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-
-		rel, err := filepath.Rel(s.rootPath, path)
-		if err != nil {
-			return nil
-		}
-		if rel == "." {
-			return nil
-		}
-
-		depth := strings.Count(rel, string(os.PathSeparator)) + 1
-		if entry.IsDir() {
-			name := entry.Name()
-			if name == ".git" || name == "node_modules" || depth > maxDepth {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if depth > maxDepth {
-			return nil
-		}
-
-		if entry.Name() == "eirctl.yaml" {
-			candidates = append(candidates, filepath.Clean(path))
-		}
-		return nil
-	})
-
-	if len(candidates) == 0 {
-		s.log.Debug().Msgf("config discovery root=%q found=0", s.rootPath)
-		return ""
-	}
-
-	selected := s.selectPreferredWorkspaceConfig(candidates)
-	if len(candidates) > 1 {
-		s.log.Debug().Msgf("config discovery root=%q found=%d selected=%q", s.rootPath, len(candidates), selected)
-	} else {
-		s.log.Debug().Msgf("config discovery root=%q selected=%q", s.rootPath, selected)
-	}
-
-	s.discoveredConfigPath = selected
-	return s.discoveredConfigPath
-}
-
-func (s *Server) selectPreferredWorkspaceConfig(candidates []string) string {
-	if len(candidates) == 0 {
-		return ""
-	}
-
-	bestPath := candidates[0]
-	bestDepth := s.workspaceConfigDepth(bestPath)
-	for _, candidate := range candidates[1:] {
-		depth := s.workspaceConfigDepth(candidate)
-		if depth < bestDepth {
-			bestPath = candidate
-			bestDepth = depth
-		}
-	}
-
-	return bestPath
-}
-
-func (s *Server) workspaceConfigDepth(candidate string) int {
-	rel, err := filepath.Rel(s.rootPath, candidate)
-	if err != nil {
-		return 1 << 30
-	}
-	return strings.Count(rel, string(os.PathSeparator)) + 1
 }
 
 func (s *Server) readFile(path string) ([]byte, error) {
@@ -411,17 +366,17 @@ func (s *Server) readFile(path string) ([]byte, error) {
 }
 
 func (s *Server) publishDiagnostics(path string) error {
-	result, _, err := s.analyze(pathToURI(path))
+	result, _, err := s.analyze(PathToURI(path))
 	if err != nil {
 		return err
 	}
 	byURI := map[string][]lspDiagnostic{}
 	for _, diagnostic := range result.Diagnostics {
-		uri := pathToURI(diagnostic.URI)
+		uri := PathToURI(diagnostic.URI)
 		byURI[uri] = append(byURI[uri], toLSPDiagnostic(diagnostic))
 	}
-	if _, ok := byURI[pathToURI(path)]; !ok {
-		byURI[pathToURI(path)] = []lspDiagnostic{}
+	if _, ok := byURI[PathToURI(path)]; !ok {
+		byURI[PathToURI(path)] = []lspDiagnostic{}
 	}
 	for uri, diagnostics := range byURI {
 		if err := s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{URI: uri, Diagnostics: diagnostics}); err != nil {
@@ -448,7 +403,7 @@ func (s *Server) write(value any) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(s.writer, "Content-Length: %d\r\n\r\n%s", len(payload), payload)
+	_, err = fmt.Fprint(s.writer, RPCMessageFormatter(len(payload), payload))
 	return err
 }
 
@@ -485,9 +440,42 @@ func ReadMessage(reader *bufio.Reader) ([]byte, error) {
 	return payload, err
 }
 
+// HoverMarkdown formats the hover information into a markdown string suitable for display in the LSP client - i.e. an IDE
+//
+// NOTE: more formatting options may be added in the future.
+func HoverMarkdown(hover analyze.Hover) string {
+	var buffer bytes.Buffer
+	buffer.WriteString("**")
+	buffer.WriteString(hover.Title)
+	buffer.WriteString("**\n\n")
+	buffer.WriteString(hover.Description)
+	if hover.Source.Label != "" {
+		buffer.WriteString("\n\nSource: `")
+		buffer.WriteString(hover.Source.Label)
+		buffer.WriteString("`")
+	}
+	if len(hover.Matches) > 0 {
+		buffer.WriteString("\n\nCandidates:\n")
+		for _, match := range hover.Matches {
+			buffer.WriteString("- `")
+			buffer.WriteString(match.Symbol.Name)
+			buffer.WriteString("` (")
+			buffer.WriteString(string(match.Match))
+			buffer.WriteString(") from `")
+			buffer.WriteString(match.Symbol.Source.Label)
+			buffer.WriteString("`\n")
+		}
+	}
+	return buffer.String()
+}
+
+// deriveRootPath determines the root path of the workspace based on the initialization parameters. It checks the RootURI, RootPath, and WorkspaceFolders in order of precedence.
+//
+// NOTE: this will need to be extended to properly support multi-root workspaces - i.e., when there are multiple workspace folders, the logic here only considers the first one.
+// In VSCode this means that in a multi folder/root workspace, only the first workspace folder will be considered as the root path.
 func deriveRootPath(params initializeParams) string {
 	if params.RootURI != "" {
-		if path, err := uriToPath(params.RootURI); err == nil {
+		if path, err := UriToPath(params.RootURI); err == nil {
 			return path
 		}
 	}
@@ -495,7 +483,7 @@ func deriveRootPath(params initializeParams) string {
 		return params.RootPath
 	}
 	if len(params.WorkspaceFolders) > 0 {
-		if path, err := uriToPath(params.WorkspaceFolders[0].URI); err == nil {
+		if path, err := UriToPath(params.WorkspaceFolders[0].URI); err == nil {
 			return path
 		}
 	}
@@ -507,7 +495,7 @@ func toProtocolPosition(position lspPosition) langprotocol.Position {
 }
 
 func toLSPLocation(location langprotocol.Location) lspLocation {
-	return lspLocation{URI: pathToURI(location.URI), Range: toLSPRange(location.Range)}
+	return lspLocation{URI: PathToURI(location.URI), Range: toLSPRange(location.Range)}
 }
 
 func toLSPLocations(symbols []langprotocol.Symbol) []lspLocation {
@@ -536,32 +524,6 @@ func toLSPDiagnostic(value langprotocol.Diagnostic) lspDiagnostic {
 		related = append(related, lspDiagnosticRelatedInformation{Location: toLSPLocation(item.Location), Message: item.Message})
 	}
 	return lspDiagnostic{Range: toLSPRange(value.Range), Severity: int(value.Severity), Code: value.Code, Source: value.Source, Message: value.Message, RelatedInformation: related}
-}
-
-func hoverMarkdown(hover analyze.Hover) string {
-	var buffer bytes.Buffer
-	buffer.WriteString("**")
-	buffer.WriteString(hover.Title)
-	buffer.WriteString("**\n\n")
-	buffer.WriteString(hover.Description)
-	if hover.Source.Label != "" {
-		buffer.WriteString("\n\nSource: `")
-		buffer.WriteString(hover.Source.Label)
-		buffer.WriteString("`")
-	}
-	if len(hover.Matches) > 0 {
-		buffer.WriteString("\n\nCandidates:\n")
-		for _, match := range hover.Matches {
-			buffer.WriteString("- `")
-			buffer.WriteString(match.Symbol.Name)
-			buffer.WriteString("` (")
-			buffer.WriteString(string(match.Match))
-			buffer.WriteString(") from `")
-			buffer.WriteString(match.Symbol.Source.Label)
-			buffer.WriteString("`\n")
-		}
-	}
-	return buffer.String()
 }
 
 func toLSPCompletionItems(items []analyze.CompletionItem) []lspCompletionItem {
@@ -664,7 +626,7 @@ func symbolKindToDocumentSymbolKind(kind langprotocol.SymbolKind) int {
 	}
 }
 
-func uriToPath(value string) (string, error) {
+func UriToPath(value string) (string, error) {
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return "", err
@@ -679,10 +641,10 @@ func uriToPath(value string) (string, error) {
 		}
 		return filepath.Clean(path), nil
 	}
-	return "", fmt.Errorf("%w: %s", errUnsupportedURIScheme, parsed.Scheme)
+	return "", fmt.Errorf("%w: %s", ErrUnsupportedURIScheme, parsed.Scheme)
 }
 
-func pathToURI(path string) string {
+func PathToURI(path string) string {
 	path = filepath.ToSlash(filepath.Clean(path))
 	if len(path) > 0 && path[0] != '/' {
 		path = "/" + path

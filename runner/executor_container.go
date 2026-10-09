@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -136,7 +136,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, job *Job) ([]byte, erro
 		remoteDir = job.Dir
 	}
 	// everything in the container is relative to the `/eirctl` directory
-	wd := path.Join("/eirctl", remoteDir)
+	wd := filepath.Join("/eirctl", remoteDir)
 	// adding the opiniated PWD into the Container Env as per the wd variable
 	cEnv := utils.ConvertEnv(utils.ConvertToMapOfStrings(
 		job.Env.Merge(variables.FromMap(map[string]string{"PWD": wd})).

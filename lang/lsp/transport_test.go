@@ -25,7 +25,7 @@ func Test_Serve_Process(t *testing.T) {
 		log := zerolog.New(out).With().Timestamp().Logger().Level(zerolog.InfoLevel)
 
 		writeFramed(t, in, `{"jsonrpc":"2.0","method":"exit"}`)
-		err := lsp.Init(context.TODO(), log, lsp.TransportConfig{Stdio: in, Stdout: out})
+		err := lsp.Init(context.TODO(), log, lsp.Config{Stdio: in, Stdout: out})
 		if err != nil {
 			t.Fatalf("Failed to initialize LSP transport: %v", err)
 		}
@@ -40,7 +40,7 @@ func Test_Serve_Process(t *testing.T) {
 		done := make(chan error, 1)
 
 		go func() {
-			done <- lsp.Init(ctx, log, lsp.TransportConfig{
+			done <- lsp.Init(ctx, log, lsp.Config{
 				UseTCP:   true,
 				Host:     "127.0.0.1",
 				Port:     0, // ephemeral
@@ -60,10 +60,6 @@ func Test_Serve_Process(t *testing.T) {
 			t.Fatalf("dial failed: %v", err)
 		}
 		defer conn.Close()
-
-		if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			t.Fatalf("set deadline failed: %v", err)
-		}
 
 		writeFramed(t, conn, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
 
@@ -85,14 +81,32 @@ func Test_Serve_Process(t *testing.T) {
 			t.Fatalf("expected capabilities, got: %s", payload)
 		}
 
+		writeFramed(t, conn, `{"jsonrpc":"2.0","method":"initialized"}`)
+		writeFramed(t, conn, `{"jsonrpc":"2.0","id":2,"method":"shutdown"}`)
+
+		payload, err = lsp.ReadMessage(reader)
+		if err != nil {
+			t.Fatalf("read shutdown response failed: %v", err)
+		}
+
+		var shutdownResponse struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(payload, &shutdownResponse); err != nil {
+			t.Fatalf("unmarshal shutdown response failed: %v", err)
+		}
+		if shutdownResponse.ID != 2 || string(shutdownResponse.Result) != "null" {
+			t.Fatalf("unexpected shutdown response: %s", payload)
+		}
+
 		writeFramed(t, conn, `{"jsonrpc":"2.0","method":"exit"}`)
 
-		// The server closes the connection once its Serve loop returns.
-		if _, err := reader.ReadByte(); err != io.EOF {
+		if _, err := reader.ReadByte(); !errors.Is(err, io.EOF) {
 			t.Fatalf("expected EOF after exit, got: %v", err)
 		}
 
-		// The accept loop only stops when the context is cancelled.
+		// Stop the listener after the connection handler has finished.
 		cancel()
 
 		select {
@@ -100,8 +114,8 @@ func Test_Serve_Process(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Init returned error: %v", err)
 			}
-			if lo.String() != "" && strings.Contains(lo.String(), "error") {
-				t.Errorf("Server log output contains an error:\n%s", lo.String())
+			if strings.Contains(lo.String(), `"level":"error"`) {
+				t.Errorf("server logged an error:\n%s", lo.String())
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatal("timeout waiting for transport shutdown")
@@ -122,7 +136,7 @@ func Test_ServeTcp_fail(t *testing.T) {
 
 	log := zerolog.New(io.Discard)
 
-	err := lsp.Init(ctx, log, lsp.TransportConfig{
+	err := lsp.Init(ctx, log, lsp.Config{
 		UseTCP: true,
 		Host:   "128.0.0.1",
 		Port:   1, // ephemeral
@@ -144,7 +158,7 @@ func Test_ServeTcp_CloseConn(t *testing.T) {
 	addrCh := make(chan net.Addr, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- lsp.Init(ctx, log, lsp.TransportConfig{
+		done <- lsp.Init(ctx, log, lsp.Config{
 			UseTCP:   true,
 			Host:     "127.0.0.1",
 			Port:     0, // ephemeral

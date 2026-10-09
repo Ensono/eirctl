@@ -136,22 +136,6 @@ jobs:
         run: |
           go run cmd/main.go run pipeline gha:unit:test
 
-      - name: Scan trusted main source with SonarCloud
-        env:
-          # Needed to get PR information
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mkdir -p ${PWD}/.scannerwork
-          chmod 0777 -R ${PWD}/.scannerwork
-          cp "$GITHUB_EVENT_PATH" .github/sonar-event.json
-          echo "current user: $(id -u):$(id -g)"
-          GITHUB_EVENT_PATH=/eirctl/.github/sonar-event.json \
-            go run cmd/main.go run pipeline sonar:scan --set SonarScannerArgsList="-Dsonar.scm.revision=${{ github.sha }};\
-            -Dsonar.projectVersion=${{ needs.set-version-tag.outputs.semVer }};\
-            -Dsonar.scm.provider=git;\
-            -Dsonar.working.directory=/eirctl/.scannerwork"
-
       - name: Upload inert JUnit test report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

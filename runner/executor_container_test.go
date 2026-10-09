@@ -9,7 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -157,7 +157,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 	t.Run("DOCKER_CONFIG use private registry - authFunc run", func(t *testing.T) {
 		// originalEnv := os.Environ()
-		tmpRegFile, _ := os.Create(path.Join(os.TempDir(), "config.json"))
+		tmpRegFile, _ := os.Create(filepath.Join(os.TempDir(), "config.json"))
 		_, err := tmpRegFile.Write([]byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`))
 		if err != nil {
 			t.Fatal(err)
@@ -165,7 +165,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 		containerConf := &container.Config{
 			Image: "private.io/alpine:3.21.3",
-			Env:   []string{fmt.Sprintf("%s=%s", runner.DOCKER_CONFIG, path.Dir(tmpRegFile.Name()))}}
+			Env:   []string{fmt.Sprintf("%s=%s", runner.DOCKER_CONFIG, filepath.Dir(tmpRegFile.Name()))}}
 
 		defer os.Remove(tmpRegFile.Name())
 

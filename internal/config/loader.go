@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -107,7 +106,7 @@ func (cl *Loader) Load(file string, extraImports ...string) (*Config, error) {
 	}
 
 	if !utils.IsURL(file) && !filepath.IsAbs(file) {
-		file = path.Join(cl.dir, file)
+		file = filepath.Join(cl.dir, file)
 	}
 
 	def, err := cl.load(schema.ImportEntry{Src: file})
@@ -143,7 +142,7 @@ func (cl *Loader) Load(file string, extraImports ...string) (*Config, error) {
 func (cl *Loader) loadOverrideImports(files []string) error {
 	for _, file := range files {
 		if !utils.IsURL(file) && !filepath.IsAbs(file) {
-			file = path.Join(cl.dir, file)
+			file = filepath.Join(cl.dir, file)
 		}
 
 		def, err := cl.load(schema.ImportEntry{Src: file})
@@ -171,7 +170,7 @@ func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 		return nil, nil
 	}
 
-	file := path.Join(cl.homeDir, ".eirctl", "config.yaml")
+	file := filepath.Join(cl.homeDir, ".eirctl", "config.yaml")
 	if !utils.FileExists(file) {
 		return cl.dst, nil
 	}

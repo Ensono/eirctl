@@ -8,6 +8,7 @@
   "settings": {
     "eirctl.languageServer.transport": "tcp",
     "eirctl.languageServer.tcpHost": "127.0.0.1",
-    "eirctl.languageServer.tcpPort": 11103
+    "eirctl.languageServer.tcpPort": 11103,
+    "eirctl.languageServer.args": ["--use-tcp", "--debug"],
   }
 }

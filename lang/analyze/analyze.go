@@ -456,56 +456,6 @@ func (r Result) stageReferencesFor(name string, scope string) []Reference {
 	return matches
 }
 
-func (r Result) FuzzyDefinitions(name string, kind protocol.SymbolKind) []DefinitionMatch {
-	type candidate struct {
-		symbol protocol.Symbol
-		score  int
-		match  MatchKind
-	}
-
-	query := strings.ToLower(strings.TrimSpace(name))
-	if query == "" {
-		return nil
-	}
-
-	var candidates []candidate
-	seen := map[string]bool{}
-	for _, symbol := range r.Symbols {
-		if symbol.Kind != kind {
-			continue
-		}
-		key := symbol.Kind.String() + "\x00" + symbol.Name + "\x00" + symbol.Location.URI + fmt.Sprintf(":%d:%d", symbol.Location.Range.Start.Line, symbol.Location.Range.Start.Character)
-		if seen[key] {
-			continue
-		}
-		score, match, ok := fuzzyMatchScore(query, strings.ToLower(symbol.Name))
-		if !ok {
-			continue
-		}
-		seen[key] = true
-		candidates = append(candidates, candidate{symbol: symbol, score: score, match: match})
-	}
-
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].score != candidates[j].score {
-			return candidates[i].score > candidates[j].score
-		}
-		if candidates[i].symbol.Name != candidates[j].symbol.Name {
-			return candidates[i].symbol.Name < candidates[j].symbol.Name
-		}
-		if candidates[i].symbol.Source.Label != candidates[j].symbol.Source.Label {
-			return candidates[i].symbol.Source.Label < candidates[j].symbol.Source.Label
-		}
-		return candidates[i].symbol.Location.Range.Start.Character < candidates[j].symbol.Location.Range.Start.Character
-	})
-
-	definitions := make([]DefinitionMatch, 0, len(candidates))
-	for _, candidate := range candidates {
-		definitions = append(definitions, DefinitionMatch{Symbol: candidate.symbol, Score: candidate.score, Match: candidate.match})
-	}
-	return definitions
-}
-
 func (r Result) SymbolAt(uri string, position protocol.Position) (protocol.Symbol, bool) {
 	for _, symbol := range r.Symbols {
 		if symbol.Location.URI == uri && symbol.Location.Range.Contains(position) {
@@ -737,36 +687,4 @@ func pipelineNameFromScope(scope string) string {
 		return ""
 	}
 	return pipelineName
-}
-
-func fuzzyMatchScore(query, candidate string) (int, MatchKind, bool) {
-	if query == candidate {
-		return 400, MatchKindExact, true
-	}
-	if strings.HasPrefix(candidate, query) {
-		return 300, MatchKindPrefix, true
-	}
-	if strings.Contains(candidate, query) {
-		return 200, MatchKindSubstring, true
-	}
-	if isSubsequence(query, candidate) {
-		return 100, MatchKindSubsequence, true
-	}
-	return 0, "", false
-}
-
-func isSubsequence(query, candidate string) bool {
-	if query == "" {
-		return true
-	}
-	queryIndex := 0
-	for _, character := range candidate {
-		if rune(query[queryIndex]) == character {
-			queryIndex++
-			if queryIndex == len(query) {
-				return true
-			}
-		}
-	}
-	return false
 }

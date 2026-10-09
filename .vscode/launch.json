@@ -35,7 +35,8 @@
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/eirctl-lsp/main.go",
             "args": [
-                "-use-tcp"
+                "--use-tcp",
+                "--debug"
             ],
             "env": {
                 "EIRCTL_LSP_DEBUG": "1"

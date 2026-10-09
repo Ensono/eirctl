@@ -38,11 +38,6 @@ func Parse(uri string, content []byte) (*Document, error) {
 	}, nil
 }
 
-func ParseLenient(uri string, content []byte) (*Document, error) {
-	doc, _, err := ParseRecovering(uri, content)
-	return doc, err
-}
-
 func ParseRecovering(uri string, content []byte) (*Document, []protocol.Diagnostic, error) {
 	diagnostics := []protocol.Diagnostic{}
 	current := append([]byte(nil), content...)
@@ -127,13 +122,6 @@ func SequenceItems(node *yaml.Node) []*yaml.Node {
 		return nil
 	}
 	return node.Content
-}
-
-func ScalarValue(node *yaml.Node) string {
-	if node == nil {
-		return ""
-	}
-	return node.Value
 }
 
 func NodeRange(node *yaml.Node) protocol.Range {

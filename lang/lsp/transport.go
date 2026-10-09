@@ -12,25 +12,29 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type TransportConfig struct {
-	UseTCP bool
-	Host   string
-	Port   int
-	Stdio  io.Reader
-	Stdout io.Writer
+type Config struct {
+	UseTCP   bool
+	Host     string
+	Port     int
+	SkipDirs []string
+	Stdio    io.Reader
+	Stdout   io.Writer
 	// OnListen is invoked with the bound address once the TCP listener is
 	// ready. Primarily used by tests binding to an ephemeral port (Port: 0).
 	OnListen func(addr net.Addr)
 }
 
-const name string = "eirctl-lsp"
+const (
+	SkipHidden string = "<.hidden>"
+	name       string = "eirctl-lsp"
+)
 
 var (
 	ErrFailedToStartTCP   = errors.New(name + ": Failed to start TCP server")
 	ErrFailedToStartStdio = errors.New(name + ": Failed to start stdio server")
 )
 
-func Init(ctx context.Context, log zerolog.Logger, config TransportConfig) error {
+func Init(ctx context.Context, log zerolog.Logger, config Config) error {
 	if config.UseTCP {
 		if err := serveTCP(ctx, config, log); err != nil {
 			return fmt.Errorf("%w: %v", ErrFailedToStartTCP, err)
@@ -39,7 +43,7 @@ func Init(ctx context.Context, log zerolog.Logger, config TransportConfig) error
 	}
 
 	// create stdio/stdout LSP server - in process invocation
-	server, err := NewServer(config.Stdio, config.Stdout, WithLogger(log), WithTransportConfig(config))
+	server, err := NewServer(config.Stdio, config.Stdout, WithLogger(log), WithConfig(config))
 	if err != nil {
 		return fmt.Errorf("%w", ErrFailedToStartStdio)
 	}
@@ -54,7 +58,7 @@ func Init(ctx context.Context, log zerolog.Logger, config TransportConfig) error
 
 // serveTCP creates a listener and serves an LSP server per client connection
 // until ctx is cancelled.
-func serveTCP(ctx context.Context, config TransportConfig, log zerolog.Logger) error {
+func serveTCP(ctx context.Context, config Config, log zerolog.Logger) error {
 	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
