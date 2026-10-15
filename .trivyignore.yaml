@@ -1,0 +1,23 @@
+# Trivy ignore file for vulnerability scanning exclusions
+#
+#
+---
+vulnerabilities:
+  - id: CVE-2026-41567
+    paths:
+      - go.mod
+    statement: |
+      This vulnerability is not in the eirctl callpath itself.
+      It does not compiled into the eirctl binary.
+  - id: CVE-2026-42306
+    paths:
+      - go.mod
+    statement: |
+      This vulnerability is not in the eirctl callpath itself.
+      It does not compiled into the eirctl binary.
+
+misconfigurations:
+
+secrets:
+
+licenses:

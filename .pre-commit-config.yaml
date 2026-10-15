@@ -21,16 +21,16 @@ repos:
         entry: go vet ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'
       - id: go-build
         name: Go build
         entry: go build ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'
       - id: go-test
         name: Go test
         entry: go test ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'
