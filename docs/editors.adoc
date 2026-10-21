@@ -1,0 +1,245 @@
+[[editor-integration]]
+== Editor integration
+
+The eirctl language server provides diagnostics, completion, hover information, go-to-definition, references, and document symbols for eirctl YAML configurations and their imports. It does not provide formatting or rename support.
+
+The server is a separate executable named `eirctl-lsp` (`eirctl-lsp.exe` on Windows), not an `eirctl lsp` subcommand. By default it communicates over standard input/output (stdio); no `--stdio` argument is required. Editor plugins and plugin managers do not replace this executable.
+
+=== Install the language server
+
+The VS Code extension packages a platform-specific server; see https://github.com/Ensono/eirctl/blob/main/vscode-extension/README.md[the VS Code guide]. Neovim and Vim need a standalone server. The regular `eirctl` CLI download described in <<_installation,Installation>> is not the language server.
+
+To build the server from a reviewed eirctl checkout, use the Go toolchain specified in the repository's https://github.com/Ensono/eirctl/blob/main/README.md[development prerequisites]:
+
+[source,shell]
+----
+go build -o eirctl-lsp ./cmd/eirctl-lsp
+chmod +x eirctl-lsp
+mkdir -p "$HOME/.local/bin"
+mv eirctl-lsp "$HOME/.local/bin/"
+----
+
+Add `$HOME/.local/bin` to `PATH` and restart the editor. Alternatively, keep the binary elsewhere and use its absolute path in the configurations below. On Windows, build and install from PowerShell:
+
+[source,powershell]
+----
+go build -o eirctl-lsp.exe ./cmd/eirctl-lsp
+$binDir = Join-Path $HOME 'bin'
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+Move-Item -Force .\eirctl-lsp.exe (Join-Path $binDir 'eirctl-lsp.exe')
+$env:PATH = "$binDir;$env:PATH"
+----
+
+The PowerShell `PATH` change applies only to the current session. Persist the directory in your user environment, or configure an absolute path. In WSL, build the Linux binary and run the editor in WSL rather than mixing Windows and Linux paths.
+
+Verify installation with `eirctl-lsp -h`; this prints the supported transport options and exits. Running `eirctl-lsp` without arguments waits for LSP messages and is not an interactive CLI.
+
+There is no repository-maintained Homebrew, apt, DNF, pacman, winget, Chocolatey, Scoop, or Mason package definition for the standalone server here. Do not assume `install eirctl` or `:MasonInstall eirctl` installs it. Use the source build above regardless of how you installed your editor or its plugin manager. If using a third-party package, check its provenance and confirm that it supplies `eirctl-lsp`.
+
+=== Neovim: built-in LSP (no plugin manager required)
+
+Neovim 0.11 or newer can configure this server directly. Neither `nvim-lspconfig` nor Mason is required. This setup works with lazy.nvim, vim-plug, packer.nvim, dein.vim, mini.deps, native packages, or no plugins at all.
+
+Put the following in `init.lua`, or in `lua/eirctl_lsp.lua` under your Neovim configuration directory and load it with `require('eirctl_lsp')` from `init.lua`. An `init.vim` user can wrap the same Lua in `lua << EOF` / `EOF`.
+
+[source,lua]
+----
+vim.lsp.config('eirctl', {
+  cmd = { 'eirctl-lsp' }, -- Or an absolute path to the executable.
+  filetypes = { 'yaml' },
+  root_markers = { 'eirctl.yaml' },
+  workspace_required = true,
+  on_attach = function(_, bufnr)
+    vim.bo[bufnr].omnifunc = 'v:lua.vim.lsp.omnifunc'
+    local opts = { buffer = bufnr }
+    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
+    vim.keymap.set('n', '<leader>ds', vim.lsp.buf.document_symbol, opts)
+    vim.keymap.set('n', '<leader>de', vim.diagnostic.open_float, opts)
+  end,
+})
+vim.lsp.enable('eirctl')
+----
+
+Open `eirctl.yaml` in a project containing that root marker. The server also attaches to YAML imports beneath that root, but not to YAML in unrelated projects. The examples intentionally use the standard `yaml` filetype; no eirctl-specific syntax plugin is needed. For a project whose root configuration has a different name, change the root marker to that filename in every client example you use.
+
+Use `gd` for definition, `gr` for references, `K` for hover, `<leader>ds` for symbols, and `<leader>de` for diagnostics. In Insert mode, `<C-x><C-o>` requests completion. An existing completion plugin can use the same client; automatic popup completion is not required by this guide.
+
+==== Optional nvim-lspconfig installation across plugin managers
+
+If your configuration already uses https://github.com/neovim/nvim-lspconfig[nvim-lspconfig], it can coexist with the custom configuration above. It does not download `eirctl-lsp`, and you do not need a pre-existing `eirctl` entry in its server registry. Current nvim-lspconfig requires Neovim 0.11.3 or newer; follow its upstream requirements. Do not add a second copy if your distribution already installs it.
+
+Choose *one* installation method. Keep the custom `vim.lsp.config` / `vim.lsp.enable` setup above in your own configuration, loaded once at startup.
+
+[cols="1,3,1",options="header"]
+|===
+|Manager |Plugin declaration |Install/update
+|https://lazy.folke.io/[lazy.nvim]
+|Add `{ 'neovim/nvim-lspconfig' }` to the specs passed to `require('lazy').setup(...)`.
+|`:Lazy sync`
+|https://github.com/junegunn/vim-plug[vim-plug]
+|Add `Plug 'neovim/nvim-lspconfig'` between your existing `plug#begin()` and `plug#end()` calls.
+|`:PlugInstall`
+|https://github.com/wbthomason/packer.nvim[packer.nvim] (legacy)
+|Add `use 'neovim/nvim-lspconfig'` inside your existing `require('packer').startup(function(use) ... end)`.
+|`:PackerSync`
+|https://github.com/Shougo/dein.vim[dein.vim]
+|Add `call dein#add('neovim/nvim-lspconfig')` within your existing dein setup.
+|`:call dein#install()`
+|https://github.com/nvim-mini/mini.deps[mini.deps]
+|After initializing mini.deps, call `require('mini.deps').add({ source = 'neovim/nvim-lspconfig' })`.
+|Restart Neovim; `add()` installs a missing plugin.
+|Native packages
+|Clone nvim-lspconfig into `pack/plugins/start/nvim-lspconfig` beneath `stdpath('data') .. '/site'`; see the command below.
+|Restart Neovim.
+|===
+
+For native packages on Linux/macOS (default data directory):
+
+[source,shell]
+----
+git clone https://github.com/neovim/nvim-lspconfig.git \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/nvim/site/pack/plugins/start/nvim-lspconfig"
+----
+
+On Windows or when using `NVIM_APPNAME`, check `:echo stdpath('data')` and use its `site/pack/plugins/start` directory instead. Plugin-manager bootstrap instructions belong to each manager's upstream documentation; the declarations above assume that manager is already installed. Packer is unmaintained and is included for existing configurations, not recommended for new ones. Older Neovim installations should upgrade or use a compatible Vim-client plugin below rather than copy obsolete `require('lspconfig').eirctl.setup(...)` examples.
+
+=== Vim: choose an LSP client
+
+Vim needs an LSP client plugin. Choose either https://github.com/prabirshrestha/vim-lsp[vim-lsp] or https://github.com/neoclide/coc.nvim[coc.nvim], not both for the same buffers. Both can also be used in Neovim as alternatives to its built-in client; in that case do not also enable the built-in `eirctl` configuration.
+
+==== Install vim-lsp or coc.nvim
+
+Use a Vim build with jobs/channels for vim-lsp. For coc.nvim, install Node.js and an editor version meeting https://cocnvim.com/install[its current upstream requirements]. Its `release` branch contains the built JavaScript; the examples below use that branch so no npm, Yarn, or pnpm build step is necessary.
+
+Choose one column and one manager. Insert declarations into the manager's existing setup, not a second bootstrap block.
+
+[cols="1,2,2,1",options="header"]
+|===
+|Manager |vim-lsp |coc.nvim |Install
+|vim-plug
+|`Plug 'prabirshrestha/vim-lsp'`
+|`Plug 'neoclide/coc.nvim', { 'branch': 'release' }`
+|`:PlugInstall`
+|dein.vim
+|`call dein#add('prabirshrestha/vim-lsp')`
+|`call dein#add('neoclide/coc.nvim', {'rev': 'release'})`
+|`:call dein#install()`
+|lazy.nvim (Neovim only)
+|`{ 'prabirshrestha/vim-lsp', lazy = false }`
+|`{ 'neoclide/coc.nvim', branch = 'release', lazy = false }`
+|`:Lazy sync`
+|packer.nvim (Neovim only, legacy)
+|`use 'prabirshrestha/vim-lsp'`
+|`use { 'neoclide/coc.nvim', branch = 'release' }`
+|`:PackerSync`
+|mini.deps (Neovim only)
+|`require('mini.deps').add({ source = 'prabirshrestha/vim-lsp' })`
+|`require('mini.deps').add({ source = 'neoclide/coc.nvim', checkout = 'release' })`
+|Restart after adding the declaration.
+|Native Vim packages / Pathogen
+|Clone `prabirshrestha/vim-lsp` into the package/bundle directory below.
+|Clone `neoclide/coc.nvim` with `--branch release` into that directory.
+|Restart the editor.
+|===
+
+Vim 8+ native packages on Linux/macOS, choosing vim-lsp:
+
+[source,shell]
+----
+mkdir -p "$HOME/.vim/pack/plugins/start"
+git clone https://github.com/prabirshrestha/vim-lsp.git \
+  "$HOME/.vim/pack/plugins/start/vim-lsp"
+----
+
+Or, choosing coc.nvim instead:
+
+[source,shell]
+----
+mkdir -p "$HOME/.vim/pack/plugins/start"
+git clone --branch release https://github.com/neoclide/coc.nvim.git \
+  "$HOME/.vim/pack/plugins/start/coc.nvim"
+----
+
+For https://github.com/tpope/vim-pathogen[Pathogen], clone the chosen plugin into `$HOME/.vim/bundle/` instead and ensure your vimrc calls `execute pathogen#infect()`. On Windows, use `vimfiles/pack/plugins/start` under your home directory for Vim native packages. For Neovim, use the `stdpath('data') .. '/site/pack/plugins/start'` directory described above, not `$HOME/.vim`.
+
+==== Configure vim-lsp
+
+Add this to your vimrc (or `init.vim` for Neovim) after the plugin-manager declarations. If using `init.lua`, put it inside `vim.cmd([[ ... ]])`. Keep registration before the plugin fires its `User lsp_setup` event; do not defer it to a later filetype callback.
+
+[source,vim]
+----
+filetype plugin indent on
+
+if executable('eirctl-lsp')
+  augroup eirctl_lsp
+    autocmd!
+    autocmd User lsp_setup call lsp#register_server({
+          \ 'name': 'eirctl',
+          \ 'cmd': {server_info->['eirctl-lsp']},
+          \ 'allowlist': ['yaml'],
+          \ 'root_uri': {server_info->lsp#utils#path_to_uri(
+          \   lsp#utils#find_nearest_parent_file_directory(
+          \     lsp#utils#get_buffer_path(), 'eirctl.yaml'))},
+          \ })
+    autocmd User lsp_buffer_enabled call s:eirctl_lsp_keys()
+  augroup END
+endif
+
+function! s:eirctl_lsp_keys() abort
+  if &filetype !=# 'yaml'
+    return
+  endif
+  setlocal omnifunc=lsp#complete
+  nmap <buffer> gd <plug>(lsp-definition)
+  nmap <buffer> gr <plug>(lsp-references)
+  nmap <buffer> K <plug>(lsp-hover)
+  nmap <buffer> <leader>ds <plug>(lsp-document-symbol)
+endfunction
+----
+
+For an executable outside `PATH`, replace *both* the `executable()` check and the command string with its absolute path. The root callback searches for the nearest `eirctl.yaml`, so imports use the same workspace. Unlike the Neovim example's `workspace_required` guard, this allowlist applies to all YAML buffers; vim-lsp can start the server without a root marker. Use this client in eirctl projects and avoid enabling competing YAML diagnostics unnecessarily.
+
+Request completion with `<C-x><C-o>` in Insert mode. Use `:LspStatus` to check the client, `:LspDocumentSymbol` for symbols, and `:LspDocumentDiagnostics` for diagnostics.
+
+==== Configure coc.nvim
+
+Run `:CocConfig` and merge this entry into the existing `languageserver` object (do not replace unrelated servers). No `coc-eirctl` extension or `:CocInstall` command is required.
+
+[source,json]
+----
+{
+  "languageserver": {
+    "eirctl": {
+      "command": "eirctl-lsp",
+      "args": [],
+      "filetypes": ["yaml"],
+      "rootPatterns": ["eirctl.yaml"],
+      "requireRootPattern": true
+    }
+  }
+}
+----
+
+Use an absolute `command` path if necessary; JSON Windows paths must escape backslashes, for example `"C:\\Users\\you\\bin\\eirctl-lsp.exe"`. Reload with `:CocRestart`, then open the root configuration or a YAML import beneath it. `requireRootPattern` prevents attachment to unrelated YAML workspaces.
+
+Useful commands include `:CocInfo`, `:CocList diagnostics`, `:CocList outline`, `:call CocActionAsync('jumpDefinition')`, `:call CocActionAsync('jumpReferences')`, and `:call CocActionAsync('doHover')`. For completion key mappings, follow https://cocnvim.com/[coc.nvim's documentation] rather than overwriting your existing completion configuration.
+
+=== Transport and troubleshooting
+
+* Check `:echo executable('eirctl-lsp')`; it should return `1`. Editors launched from a desktop may have a different `PATH` from a shell. Use an absolute path if necessary.
+* Check `:set filetype?`; these examples expect `yaml`. Ensure filetype detection is enabled and the project has a root `eirctl.yaml`.
+* For Neovim's built-in client, run `:checkhealth vim.lsp` and inspect `:lua vim.print(vim.lsp.get_clients({ bufnr = 0 }))`. Enable debug logging with `:lua vim.lsp.set_log_level('debug')` and find the log with `:lua print(vim.lsp.log.get_filename())`.
+* For vim-lsp use `:LspStatus`; for coc.nvim use `:CocInfo` and `:CocOpenLog`. Restart the editor/client after installing or replacing the server.
+* These examples attach to YAML files beneath an eirctl root, including imported files. Another YAML server may also attach; disable overlapping diagnostics for those buffers if you see duplicates. The eirctl server is not a general-purpose YAML formatter/schema server.
+* Set `EIRCTL_LSP_DEBUG=1` in the editor's environment when investigating server issues. Server logs go to stderr; never wrap the command in a script that prints to stdout, because stdout carries the LSP protocol. Logs can contain configuration paths/content: redact them before sharing.
+
+Prefer stdio: the editor starts and stops its own server without opening a network listener. The Vim/Neovim examples above use stdio. For the VS Code TCP transport, start the server *before* connecting:
+
+[source,shell]
+----
+eirctl-lsp -use-tcp -host 127.0.0.1 -port 11103
+----
+
+Keep TCP bound to loopback. The transport has no authentication or TLS; do not expose it to a network. Consult the chosen client's upstream documentation if you need a TCP connection rather than substitute TCP flags into a stdio command.

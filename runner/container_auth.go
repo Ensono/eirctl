@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/utils"
@@ -44,7 +44,7 @@ func registryAuthFile(contextEnv []string) (*configfile.ConfigFile, error) {
 		return nil, err
 	}
 
-	authFiles := []string{path.Join(home, DOCKER_CONFIG_FILE), path.Join(home, CONTAINER_CONFIG_FILE)}
+	authFiles := []string{filepath.Join(home, DOCKER_CONFIG_FILE), filepath.Join(home, CONTAINER_CONFIG_FILE)}
 
 	containerEnv := utils.ConvertFromEnv(contextEnv)
 
@@ -57,7 +57,7 @@ func registryAuthFile(contextEnv []string) (*configfile.ConfigFile, error) {
 		// check docker to maintain the old docker config directory behaviour
 		// it must contain a file called `config.json` in this directory
 		if regFile, found := containerEnv[DOCKER_CONFIG]; found {
-			authFiles = append([]string{path.Join(regFile, "config.json")}, authFiles...)
+			authFiles = append([]string{filepath.Join(regFile, "config.json")}, authFiles...)
 		}
 	}
 
