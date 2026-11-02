@@ -60,6 +60,35 @@ func (ri *RequiredInput) HasRequired() bool {
 	return (len(ri.Args) + len(ri.Vars) + len(ri.Env)) > 0
 }
 
+// Merge additively combines the required inputs from other into ri,
+// de-duplicating entries. It is used to accumulate required inputs declared
+// at the pipeline stage level onto the child task(s) so that a task must
+// satisfy both its own requirements and those declared by its parents.
+func (ri *RequiredInput) Merge(other *RequiredInput) *RequiredInput {
+	if other == nil {
+		return ri
+	}
+	ri.Env = mergeUniqueStrings(ri.Env, other.Env)
+	ri.Vars = mergeUniqueStrings(ri.Vars, other.Vars)
+	ri.Args = mergeUniqueStrings(ri.Args, other.Args)
+	return ri
+}
+
+func mergeUniqueStrings(lists ...[]string) []string {
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, list := range lists {
+		for _, v := range list {
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
 var ErrRequiredInputMissing = errors.New("missing required input")
 
 // CheckRequired ensures all required environment are specified/present and not empty

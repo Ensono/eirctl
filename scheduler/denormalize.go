@@ -130,6 +130,13 @@ func (g *ExecutionGraph) rebuildFromDenormalized(st StageTable) error {
 			if stage.Task.Name != stage.Name {
 				stage.Task.Name = stage.Name
 			}
+			// required inputs are additive: the task must satisfy its own
+			// requirements as well as those declared on this stage and any
+			// ancestral pipeline stages
+			stage.Task.Required = stage.Task.Required.Merge(stage.Required)
+			for _, v := range parentStages {
+				stage.Task.Required = stage.Task.Required.Merge(v.Required)
+			}
 			// the task level defined envs and envfiles and variables will overwrite the ones defined further up the call stack
 			stage.Task.Env = stage.env.Merge(stage.Task.Env)
 			stage.env = stage.env.Merge(stage.Task.Env)

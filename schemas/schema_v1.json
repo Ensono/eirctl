@@ -432,6 +432,10 @@
           "$ref": "#/$defs/VariablesVarMapType",
           "description": "Variables is the Key: Value map of vars vars to inject into the tasks"
         },
+        "required": {
+          "$ref": "#/$defs/RequiredInput",
+          "description": "Required specifies any required inputs to run the stage.\n\nThese are additive: a task runs only when both its own required inputs\nand those declared here (and on any parent stages) are satisfied."
+        },
         "ci_meta": {
           "type": "object",
           "description": "Generator PipelineLevel"

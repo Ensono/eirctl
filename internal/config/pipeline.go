@@ -45,6 +45,7 @@ func buildPipeline(g *scheduler.ExecutionGraph, stages []*PipelineDefinition, cf
 			s.Dir = def.Dir
 			s.AllowFailure = def.AllowFailure
 			s.Generator = def.Generator
+			s.Required = def.Required
 		})
 		if stagePipeline != nil && def.Name != "" && def.Pipeline != def.Name {
 			_ = stagePipeline.WithAlias(def.Pipeline)
