@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 
@@ -165,10 +164,10 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	specific := "download/%s"
 	latest := "latest/download"
 
-	releasePath := path.Join(fmt.Sprintf(specific, flags.Version), suffix)
+	releasePath := filepath.Join(fmt.Sprintf(specific, flags.Version), suffix)
 
 	if flags.Version == "latest" {
-		releasePath = path.Join(latest, suffix)
+		releasePath = filepath.Join(latest, suffix)
 	}
 
 	link, err := url.Parse(fmt.Sprintf("%s/%s", flags.BaseUrl, EnrichFinalLink(releasePath)))

@@ -5,6 +5,9 @@ contexts:
       name: mirror.gcr.io/golang:1.27.1-trixie@sha256:433790e515d27dc6003e847e644cc0af956985cf315c1c58a3b73ee2dd305183
       enable_dind: true
       enable_mount: true
+      shell: bash
+      shell_args:
+        - -c
     envfile:
       exclude:
         - GO
@@ -48,9 +51,7 @@ tasks:
       - |
         mkdir -p .coverage .deps
         export GOPATH="${PWD}/.deps" GOBIN="${PWD}/.deps/bin"
-        go install github.com/jstemmer/go-junit-report@v0.9.1
-        go install github.com/axw/gocov/gocov@v1.0.0
-        go install github.com/AlekSi/gocov-xml@v1.0.0
+        go install github.com/jstemmer/go-junit-report/v2@latest
     allow_failure: true
 
   coverage_merge_prereqs:
@@ -82,9 +83,22 @@ tasks:
         unset GOTOOLCHAIN
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
-        CGO_ENABLED=1 go test ./... -v -coverpkg=${ROOT_PKG_NAME:=github.com/Ensono}/... -race -mod=readonly -shuffle=on -buildvcs=false -coverprofile=.coverage/out -count=1 -run=$GO_TEST_RUN_ARGS | tee .coverage/test.out
-        cat .coverage/test.out | .deps/bin/go-junit-report > .coverage/report-junit.xml
-        .deps/bin/gocov convert .coverage/out | .deps/bin/gocov-xml > .coverage/report-cobertura.xml
+        CGO_ENABLED=1 go test \
+          -buildvcs=false \
+          -v \
+          -race \
+          -cover {{ if .GoCoverPackages }}-coverpkg={{ .GoCoverPackages }}{{ end }} \
+          -mod=readonly \
+          -shuffle=on \
+          -coverprofile=.coverage/out \
+          -count=1 \
+          -run=${GO_TEST_RUN_ARGS:-.} \
+          {{ if .GoExcludePkgRegex -}}
+          $(GOFLAGS="-buildvcs=false" go list ./... | grep -Ev '{{ .GoExcludePkgRegex }}')
+          {{- else -}}
+          ./...
+          {{- end -}} | tee .coverage/test.out
+        cat .coverage/test.out | .deps/bin/go-junit-report -set-exit-code > .coverage/report-junit.xml
     env:
       GOFLAGS: -buildvcs=false
     allow_failure: true
@@ -110,18 +124,20 @@ tasks:
     allow_failure: false
     command:
       - |
-        golangci-lint run
+        exec golangci-lint run
 
   releaser:
     context: goreleaser
     command:
       - |
-        release
+        execrelease
 
 pipelines:
   test:unit:
     - task: clean
     - task: test_prereqs
+      depends_on:
+        - clean
     - task: test
       depends_on:
         - clean
@@ -132,12 +148,6 @@ pipelines:
     - task: coverage_merge
       depends_on:
         - coverage_merge_prereqs
-
-  show:coverage:
-    - pipeline: test:unit
-    - task: show_coverage
-      depends_on:
-        - test:unit
 
   go:linters:
     - task: go:lint

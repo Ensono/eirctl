@@ -9,7 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -157,7 +157,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 	t.Run("DOCKER_CONFIG use private registry - authFunc run", func(t *testing.T) {
 		// originalEnv := os.Environ()
-		tmpRegFile, _ := os.Create(path.Join(os.TempDir(), "config.json"))
+		tmpRegFile, _ := os.Create(filepath.Join(os.TempDir(), "config.json"))
 		_, err := tmpRegFile.Write([]byte(`{"auths":{"private.io":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQxCg=="}}}`))
 		if err != nil {
 			t.Fatal(err)
@@ -165,7 +165,7 @@ func Test_ImagePull_AuthFunc(t *testing.T) {
 
 		containerConf := &container.Config{
 			Image: "private.io/alpine:3.21.3",
-			Env:   []string{fmt.Sprintf("%s=%s", runner.DOCKER_CONFIG, path.Dir(tmpRegFile.Name()))}}
+			Env:   []string{fmt.Sprintf("%s=%s", runner.DOCKER_CONFIG, filepath.Dir(tmpRegFile.Name()))}}
 
 		defer os.Remove(tmpRegFile.Name())
 
@@ -1535,5 +1535,39 @@ for i in $(seq 1 10); do echo "hello, iteration $i"; done`,
 	}
 	if !reflect.DeepEqual(mcc.methodsCalled, []string{"stop", "remove"}) {
 		t.Errorf("stop and remove were not both called or called in incorrect order %q", mcc.methodsCalled)
+	}
+}
+
+func Test_ContainerDisplayName(t *testing.T) {
+	ttests := map[string]struct {
+		input    string
+		expected string
+	}{
+		"full with sha": {
+			input:    "foo.io/org/name:1.2.3@sha256:asphasd8sd7fhdsfhsd0sd7hfdsfa8hds8f8sdf8dsfa",
+			expected: "name:1.2.3@sha256:asphasd8",
+		},
+		"no sha": {
+			input:    "foo.io/org/name:1.2.3",
+			expected: "name:1.2.3",
+		},
+		// this format is discouraged especially for non docker runtimes like podman and others
+		// equivalent to "docker.io/library/node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239"
+		"default registry in default library": {
+			input:    "node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239",
+			expected: "node:trixie-slim@sha256:14bf3eac",
+		},
+		"default registry in default library specified": {
+			input:    "docker.io/library/node:trixie-slim@sha256:14bf3eac4bf209d906d3c41256597d3ab1f926b2e93a79e9bdfe1efd32454239",
+			expected: "node:trixie-slim@sha256:14bf3eac",
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			got := runner.ContainerDisplayName(tt.input)
+			if got != tt.expected {
+				t.Errorf("ContainerDisplayName(%q) = %q; want %q", tt.input, got, tt.expected)
+			}
+		})
 	}
 }

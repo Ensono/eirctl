@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -377,7 +376,7 @@ func validateTreePath(value string) error {
 	if len([]byte(value)) > maxPathBytes {
 		return fmt.Errorf("path exceeds %d bytes", maxPathBytes)
 	}
-	if strings.HasPrefix(value, "/") || strings.Contains(value, `\`) || path.Clean(value) != value {
+	if strings.HasPrefix(value, "/") || strings.Contains(value, `\`) || filepath.Clean(value) != value {
 		return errors.New("path must be canonical, relative, and slash-separated")
 	}
 	for _, segment := range strings.Split(value, "/") {
@@ -441,7 +440,7 @@ func writeExclusive(fs fileSystem, root, relative string, data []byte) error {
 
 func ensureParentDirectories(fs fileSystem, root, relative string) error {
 	directory := root
-	parts := strings.Split(path.Dir(relative), "/")
+	parts := strings.Split(filepath.Dir(relative), "/")
 	if len(parts) == 1 && parts[0] == "." {
 		return nil
 	}

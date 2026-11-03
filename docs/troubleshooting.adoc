@@ -1,0 +1,102 @@
+== Troubleshooting 
+
+=== Container Task Signal Handling
+
+When a task runs inside a `container` execution context, eirctl runs your
+`command` via the context's configured shell, e.g.:
+
+[source,shell]
+----
+sh -c '<your command>'
+----
+
+This means the shell (`sh`, `bash`, etc.) is PID 1 inside the container,
+and your actual command runs as a *child process* of that shell.
+
+==== Why Ctrl+C may not stop your process immediately
+
+When a running task is cancelled (e.g. the user presses `Ctrl+C`, or the
+pipeline is otherwise cancelled), eirctl asks the Docker daemon to stop the
+container. Docker does this by sending `SIGTERM` to PID 1 in the container
+(the shell), followed by `SIGKILL` after a grace period if the container
+hasn't exited.
+
+Most POSIX shells, when invoked as `sh -c "some command"`, do **not**
+automatically forward signals like `SIGTERM` to their child processes.
+As a result:
+
+* The shell may receive `SIGTERM` but your actual command (e.g. `node`,
+  `python`, a long-running test runner, etc.) keeps running.
+* Cancellation appears to "hang" until the `SIGKILL` grace period expires
+  and the kernel tears down the container's PID namespace.
+* Any signal-based graceful shutdown logic in your application (closing
+  DB connections, flushing logs, etc.) never gets a chance to run.
+
+==== Recommended pattern: use `exec`
+
+If your task's final/primary command is the one you want to receive
+signals directly, prefix it with the shell built-in `exec`:
+
+[source,yaml]
+----
+tasks:
+  run-tests:
+    context: my-container-context
+    command: exec node run-some-test.js
+----
+
+`exec` replaces the current shell process image with the given command,
+rather than forking a child. This means your process becomes PID 1 (or
+a direct successor in the same slot) and receives `SIGTERM`/`SIGKILL`
+directly from the container runtime with no intermediary shell in the way.
+
+==== Multiline / compound commands
+
+For scripts with setup steps before the "real" long-running process,
+only the final command needs `exec`:
+
+[source,yaml]
+----
+tasks:
+  run-tests:
+    context: my-container-context
+    command: |
+      echo "starting test run..."
+      export NODE_ENV=test
+      exec node run-some-test.js
+----
+
+Everything before the `exec` line runs normally as child processes of the
+shell and exits before the final line replaces the shell process. Only
+the last statement needs the `exec` prefix — do **not** use `exec` on
+intermediate commands, as `exec` unconditionally replaces the current
+process and any subsequent lines in the script will never run.
+
+[WARNING]
+====
+`exec` is a shell built-in that replaces the *current shell process*.
+If your final command is part of a pipeline (`cmd1 | cmd2`) or compound
+expression (`cmd1 && cmd2`), `exec` cannot cleanly attach to just one
+side of it. In these cases, prefer restructuring the script so the
+final, signal-sensitive process is a standalone statement.
+====
+
+==== What eirctl guarantees regardless
+
+Even without `exec`, cancellation is not unbounded:
+
+* eirctl issues `ContainerStop` with a `SIGTERM`, followed by an
+  automatic `SIGKILL` after the grace period (currently a fixed 10s
+  default) if the container hasn't exited.
+* Once the container's PID 1 is killed, the Linux kernel guarantees all
+  other processes in that PID namespace are also terminated as part of
+  the namespace teardown — so the container will always stop eventually.
+
+`exec` simply makes this happen **immediately** and gives your
+application a chance to catch `SIGTERM` and shut down gracefully, rather
+than being hard-killed after the grace period.
+
+==== See also
+
+* xref:graph-implementation.adoc#_graph_internals[Execution Graph Implementation]
+* Docker docs: https://docs.docker.com/engine/reference/run/#stopsignal[STOPSIGNAL]
