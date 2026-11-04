@@ -146,6 +146,11 @@ type PipelineDefinition struct {
 	Envfile *utils.Envfile `mapstructure:"envfile" yaml:"envfile,omitempty" json:"envfile,omitempty"`
 	// Variables is the Key: Value map of vars vars to inject into the tasks
 	Variables VariablesVarMapType `mapstructure:"variables" yaml:"variables,omitempty" json:"variables,omitempty"`
+	// Required specifies any required inputs to run the stage.
+	//
+	// These are additive: a task runs only when both its own required inputs
+	// and those declared here (and on any parent stages) are satisfied.
+	Required *task.StageRequiredInput `mapstructure:"required" yaml:"required,omitempty" json:"required,omitempty"`
 	// Generator PipelineLevel
 	Generator map[string]any `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
 }

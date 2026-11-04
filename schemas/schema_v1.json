@@ -432,6 +432,10 @@
           "$ref": "#/$defs/VariablesVarMapType",
           "description": "Variables is the Key: Value map of vars vars to inject into the tasks"
         },
+        "required": {
+          "$ref": "#/$defs/StageRequiredInput",
+          "description": "Required specifies any required inputs to run the stage.\n\nThese are additive: a task runs only when both its own required inputs\nand those declared here (and on any parent stages) are satisfied."
+        },
         "ci_meta": {
           "type": "object",
           "description": "Generator PipelineLevel"
@@ -461,11 +465,32 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Args checks any args supplied after `--`"
+          "description": "Args checks any args supplied after `--`\n\nNOTE: Args is currently parsed but not validated and its semantics are\nunresolved; it is intentionally not available on pipeline stages."
         }
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "StageRequiredInput": {
+      "properties": {
+        "vars": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Vars is a list of required variables by the stage. It is case sensitive."
+        },
+        "env": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Env identifies any missing environment variables for the stage."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "StageRequiredInput declares the required inputs permitted on a pipeline stage.\nArgs are intentionally omitted pending a design decision."
     },
     "StringSlice": {
       "oneOf": [

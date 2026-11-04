@@ -216,6 +216,25 @@ The `SetMe` variable will be checked before the command is templated and will fa
 
 > IF however the command would look like this `command {{ .Env.FOO }} {{ .SetMe }} {{ .OptionalSet }}` and the eirctl required variables have been provided by the `OptionalSet` was omitted the result would look like this `command FOO_value SetMeValue <no value>`
 
+#### Required input on pipeline stages
+
+The same `required` block can be declared on a pipeline stage (a `task:` or `pipeline:` entry), supporting `env` and `vars` (stage-level `args` is not supported). Stage-level requirements are **additive**: a task runs only when both its own `required` inputs and those declared on the stage (and any parent stages) are satisfied.
+
+```yaml
+pipelines:
+  run:infra:test:
+    - task: test:smoke:pester
+      required:
+        env:
+          - AWS_ROLE_ARN
+          - AWS_REGION
+          - COMMIT_SHA
+          - DOMAIN
+          - ENVIRONMENT
+```
+
+When `run:infra:test` is invoked (directly or from a parent pipeline), `test:smoke:pester` must satisfy the env vars listed here as well as any declared on the task itself. Entries are merged and de-duplicated. Declaring `required` on a `pipeline:` stage propagates the requirement to every task within that pipeline.
+
 ### Storing task's output
 
 For more information about storing the task output and picking it up by another task see the [artifacts](./docs/artifacts.adoc) for more details.

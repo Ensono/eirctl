@@ -34,14 +34,17 @@ type Stage struct {
 	DependsOn    []string
 	Dir          string
 	AllowFailure bool
-	status       *atomic.Int32
-	env          *variables.Variables
-	envfile      *utils.Envfile
-	variables    *variables.Variables
-	start        time.Time
-	end          time.Time
-	mu           sync.Mutex
-	Generator    map[string]any
+	// Required holds the required inputs declared on this stage.
+	// They are merged additively onto the child task(s) during denormalization.
+	Required  *task.StageRequiredInput
+	status    *atomic.Int32
+	env       *variables.Variables
+	envfile   *utils.Envfile
+	variables *variables.Variables
+	start     time.Time
+	end       time.Time
+	mu        sync.Mutex
+	Generator map[string]any
 }
 
 // StageOpts is the Node options
@@ -72,6 +75,7 @@ func (s *Stage) FromStage(originalStage *Stage, existingGraph *ExecutionGraph, a
 	s.Dir = originalStage.Dir
 	s.AllowFailure = originalStage.AllowFailure
 	s.Generator = originalStage.Generator
+	s.Required = originalStage.Required
 	// top level env vars
 	if existingGraph != nil {
 		s.env = s.env.Merge(variables.FromMap(existingGraph.Env))

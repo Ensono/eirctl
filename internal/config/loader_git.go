@@ -391,8 +391,8 @@ func configuredKnownHosts(paths []string, legacy string) []string {
 	if legacy == "" {
 		return nil
 	}
-	fields, err := shell.Fields(legacy, nil)
-	if err != nil {
+	fields, ok := splitSSHConfigPaths(legacy)
+	if !ok {
 		return []string{legacy}
 	}
 	return fields
