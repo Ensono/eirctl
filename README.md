@@ -218,7 +218,7 @@ The `SetMe` variable will be checked before the command is templated and will fa
 
 #### Required input on pipeline stages
 
-The same `required` block can be declared on a pipeline stage (a `task:` or `pipeline:` entry). Stage-level requirements are **additive**: a task runs only when both its own `required` inputs and those declared on the stage (and any parent stages) are satisfied.
+The same `required` block can be declared on a pipeline stage (a `task:` or `pipeline:` entry), supporting `env` and `vars` (stage-level `args` is not supported). Stage-level requirements are **additive**: a task runs only when both its own `required` inputs and those declared on the stage (and any parent stages) are satisfied.
 
 ```yaml
 pipelines:

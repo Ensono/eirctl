@@ -36,7 +36,7 @@ type Stage struct {
 	AllowFailure bool
 	// Required holds the required inputs declared on this stage.
 	// They are merged additively onto the child task(s) during denormalization.
-	Required  *task.RequiredInput
+	Required  *task.StageRequiredInput
 	status    *atomic.Int32
 	env       *variables.Variables
 	envfile   *utils.Envfile

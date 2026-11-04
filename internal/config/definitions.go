@@ -150,7 +150,7 @@ type PipelineDefinition struct {
 	//
 	// These are additive: a task runs only when both its own required inputs
 	// and those declared here (and on any parent stages) are satisfied.
-	Required *task.RequiredInput `mapstructure:"required" yaml:"required,omitempty" json:"required,omitempty"`
+	Required *task.StageRequiredInput `mapstructure:"required" yaml:"required,omitempty" json:"required,omitempty"`
 	// Generator PipelineLevel
 	Generator map[string]any `mapstructure:"ci_meta,omitempty" yaml:"ci_meta,omitempty" json:"ci_meta,omitempty"`
 }

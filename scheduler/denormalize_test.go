@@ -141,14 +141,14 @@ func Test_Denormalize_additive_required(t *testing.T) {
 	// inner pipeline stage adds a stage-level required env on the task
 	innerStage := scheduler.NewStage("smoke", func(s *scheduler.Stage) {
 		s.Task = childTask
-		s.Required = &task.RequiredInput{Env: []string{"AWS_REGION"}}
+		s.Required = &task.StageRequiredInput{Env: []string{"AWS_REGION"}}
 	})
 	innerPipeline, _ := scheduler.NewExecutionGraph("inner", innerStage)
 
 	// outer pipeline references the inner pipeline and adds another required env
 	outerStage := scheduler.NewStage("deploy", func(s *scheduler.Stage) {
 		s.Pipeline = innerPipeline
-		s.Required = &task.RequiredInput{Env: []string{"ENVIRONMENT"}}
+		s.Required = &task.StageRequiredInput{Env: []string{"ENVIRONMENT"}}
 	})
 	graph, err := scheduler.NewExecutionGraph("root", outerStage)
 	if err != nil {

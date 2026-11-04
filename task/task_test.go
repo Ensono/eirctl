@@ -61,17 +61,14 @@ func TestRequiredInput_Merge(t *testing.T) {
 		base := &task.RequiredInput{
 			Env:  []string{"AWS_REGION", "COMMIT_SHA"},
 			Vars: []string{"Version"},
-			Args: []string{"one"},
 		}
-		got := base.Merge(&task.RequiredInput{
+		got := base.Merge(&task.StageRequiredInput{
 			Env:  []string{"COMMIT_SHA", "DOMAIN"},
 			Vars: []string{"Tag"},
-			Args: []string{"one", "two"},
 		})
 
 		assertStrings(t, "env", got.Env, []string{"AWS_REGION", "COMMIT_SHA", "DOMAIN"})
 		assertStrings(t, "vars", got.Vars, []string{"Version", "Tag"})
-		assertStrings(t, "args", got.Args, []string{"one", "two"})
 	})
 
 	t.Run("nil other is a no-op", func(t *testing.T) {
