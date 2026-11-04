@@ -492,26 +492,6 @@ func (r Result) DefinitionsAt(uri string, position protocol.Position) []protocol
 	return nil
 }
 
-func (r Result) DefinitionMatchesAt(uri string, position protocol.Position) []DefinitionMatch {
-	if reference, ok := r.ReferenceAt(uri, position); ok {
-		return r.DefinitionMatchesFor(reference)
-	}
-	if symbol, ok := r.SymbolAt(uri, position); ok {
-		var definitions []protocol.Symbol
-		if symbol.Kind == protocol.SymbolKindStage {
-			definitions = r.stageDefinitions(symbol.Name, symbol.Scope)
-		} else {
-			definitions = r.Definitions(symbol.Name, symbol.Kind)
-		}
-		matches := make([]DefinitionMatch, 0, len(definitions))
-		for _, definition := range definitions {
-			matches = append(matches, DefinitionMatch{Symbol: definition, Score: 400, Match: MatchKindExact})
-		}
-		return matches
-	}
-	return nil
-}
-
 func (r Result) ReferencesAt(uri string, position protocol.Position) []Reference {
 	if symbol, ok := r.SymbolAt(uri, position); ok {
 		return r.ReferencesForSymbol(symbol)
