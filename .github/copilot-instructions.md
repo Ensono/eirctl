@@ -83,8 +83,6 @@ eirctl tidy # Runs go mod tidy
 
 ### CI Generation
 
-Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Actions, GitLab CI, Bitbucket).
-
 -   Implementation in `internal/genci/` with provider-specific generators
 -   Uses execution graph to determine job dependencies and parallelization
 
