@@ -94,7 +94,7 @@ Extensive Go template usage in task definitions:
 -   `.Args`, `.ArgsList` - CLI arguments passed after `--` 
 -   `.Task.Name`, `.Context.Name` - runtime context
 -   Environment variables `.Env.Key` these are computed at runtime for each task node and thus are dynamic
--   User variables via `--set key=value` and can also be passed in via the `vars` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
+-   User variables via `--set key=value` and can also be passed in via the `variables` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
 -   `.Current.OS`,  `.Current.Arch` - OS and Architecture variables
     > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2 
 
