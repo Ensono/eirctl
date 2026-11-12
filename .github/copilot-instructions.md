@@ -91,7 +91,6 @@ eirctl tidy # Runs go mod tidy
 
 Extensive Go template usage in task definitions:
 
--   `.Root`, `.Dir`, `.TempDir` - path variables
 -   `.Args`, `.ArgsList` - CLI arguments passed after `--` 
 -   `.Task.Name`, `.Context.Name`, `.Stage.Name` - runtime context
 -   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic   
