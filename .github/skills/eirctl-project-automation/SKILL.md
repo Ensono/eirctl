@@ -8,7 +8,7 @@ argument-hint: "Describe the project command or workflow to run via eirctl"
 
 ## Purpose
 
-Use `eirctl` as the project task runner and tool execution boundary. Prefer existing `eirctl.yaml` tasks, pipelines, and contexts over direct host execution.
+Use `eirctl` as the project task runner and tool execution boundary.
 
 In the `eirctl` repository itself, start from the root `eirctl.yaml` and its imported shared definitions under `shared/` before creating anything new. This repo already has build, test, lint, coverage, schema generation, and security automation defined.
 
