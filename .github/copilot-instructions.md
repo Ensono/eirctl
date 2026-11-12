@@ -84,7 +84,6 @@ eirctl tidy # Runs go mod tidy
 ### CI Generation
 
 -   Implementation in `internal/genci/` with provider-specific generators
--   Uses execution graph to determine job dependencies and parallelization
 
 ## Project-Specific Conventions
 
