@@ -83,10 +83,7 @@ eirctl tidy # Runs go mod tidy
 
 ### CI Generation
 
-Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Actions, GitLab CI, Bitbucket).
-
 -   Implementation in `internal/genci/` with provider-specific generators
--   Uses execution graph to determine job dependencies and parallelization
 
 ## Project-Specific Conventions
 
@@ -94,11 +91,10 @@ Key feature: `eirctl generate` converts eirctl pipelines to CI YAML (GitHub Acti
 
 Extensive Go template usage in task definitions:
 
--   `.Root`, `.Dir`, `.TempDir` - path variables
 -   `.Args`, `.ArgsList` - CLI arguments passed after `--` 
--   `.Task.Name`, `.Context.Name`, `.Stage.Name` - runtime context
--   Environment variables `.Env.$VarName` these are computed at runtime for each task node and thus are dynamic   
--   User variables via `--set key=value` and can also be passed in via the `vars` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
+-   `.Task.Name`, `.Context.Name` - runtime context
+-   Environment variables `.Env.Key` these are computed at runtime for each task node and thus are dynamic
+-   User variables via `--set key=value` and can also be passed in via the `variables` property on task and pipeline definitions in YAML, see also precedence order of merging of vars and Environment Vars maps
 -   `.Current.OS`,  `.Current.Arch` - OS and Architecture variables
     > NB: On Windows when running in GitBash/MNG/other nix like shells - you will still get `windows` as the OS value unless you are running `eirctl.yaml` the linux binary inside a linux container or inside WSL2 
 
@@ -115,7 +111,6 @@ YAML configs support `import` for shared definitions (see `shared/build/go/eirct
 Native container support without docker CLI dependency:
 
 -   Use `container` context type, not `executable` with docker commands
--   Enable volume mounting with `enable_mount: true`
 -   DinD support with `enable_dind: true`
 
 When implementing container features, work with `runner/executor_container.go` and the Docker client API directly.
