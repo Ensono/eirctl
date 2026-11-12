@@ -111,7 +111,6 @@ YAML configs support `import` for shared definitions (see `shared/build/go/eirct
 Native container support without docker CLI dependency:
 
 -   Use `container` context type, not `executable` with docker commands
--   Enable volume mounting with `enable_mount: true`
 -   DinD support with `enable_dind: true`
 
 When implementing container features, work with `runner/executor_container.go` and the Docker client API directly.
