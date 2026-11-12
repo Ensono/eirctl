@@ -230,5 +230,3 @@ Before direct tool execution, confirm:
 - If it is environment-dependent, have container runtime access, network access, certificate trust, and required template values been checked?
 - If it is credential-dependent, has the user explicitly supplied the required secret out of band?
 - If the change touches shared automation or schemas, have the relevant repo tasks been rerun?
-
-If reproducibility matters, use `eirctl`.
