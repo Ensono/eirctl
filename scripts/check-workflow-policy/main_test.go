@@ -9,6 +9,13 @@ import (
 	"github.com/Ensono/eirctl/internal/schema"
 )
 
+func TestMain(m *testing.M) {
+	if err := os.Setenv(trustedSonarScannerSHAsEnv, "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 func TestPrivilegedPRExecutionFixtures(t *testing.T) {
 	cases := []struct {
 		name string
@@ -847,6 +854,44 @@ func TestMaterializerArchivesOnlyConfigurationData(t *testing.T) {
 	script := string(contents)
 	if !strings.Contains(script, "git archive --format=tar FETCH_HEAD -- .github/workflows eirctl.yaml sonar-project.properties") || strings.Contains(script, "scripts/check-workflow-policy") {
 		t.Fatal("candidate materializer must archive only configuration data, not candidate checker code")
+	}
+}
+
+func TestTrustedScannerApprovals(t *testing.T) {
+	const oldSHA = "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+	const newSHA = "59202af334b4ba7b5db01b701b8e79f8b3bef0f4"
+	cases := []struct {
+		name     string
+		approved string
+		scanner  string
+		wantFail bool
+	}{
+		{name: "current", approved: oldSHA, scanner: oldSHA},
+		{name: "replacement approved", approved: oldSHA + "," + newSHA, scanner: newSHA},
+		{name: "unapproved", approved: oldSHA, scanner: newSHA, wantFail: true},
+		{name: "missing", scanner: oldSHA, wantFail: true},
+		{name: "mutable", approved: "latest", scanner: oldSHA, wantFail: true},
+		{name: "trailing comma", approved: oldSHA + ",", scanner: oldSHA, wantFail: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(trustedSonarScannerSHAsEnv, tc.approved)
+			root := copyWorkflowRoot(t, func(content string) string {
+				return strings.Replace(content, oldSHA, tc.scanner, 1)
+			})
+			if err := Validate(root); (err != nil) != tc.wantFail {
+				t.Fatalf("Validate() error = %v, want failure %v", err, tc.wantFail)
+			}
+		})
+	}
+}
+
+func TestTrustedPolicyRequiresRepositoryScannerApprovals(t *testing.T) {
+	root := copyWorkflowRootFile(t, "trusted-workflow-policy.yml", func(content string) string {
+		return strings.Replace(content, "${{ vars.TRUSTED_SONAR_SCANNER_SHAS }}", "attacker-controlled", 1)
+	})
+	if err := Validate(root); err == nil {
+		t.Fatal("Validate() accepted an untrusted scanner approval source")
 	}
 }
 
