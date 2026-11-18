@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -25,16 +26,7 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	maxTreeEntries = 384
-	maxGoFiles     = 160
-	maxPathBytes   = 160
-	maxFileBytes   = 128 * 1024
-	maxTotalBytes  = 1024 * 1024
-
-	reviewedBounds = "tree=384,go=160,path=160,file=131072,total=1048576"
-	maxAPIResponse = 16 * 1024 * 1024
-)
+const apiByteBudget = 16 << 20
 
 var (
 	fullSHA       = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -50,14 +42,14 @@ type config struct {
 	HeadSHA        string
 	PullRequest    int
 	Output         string
-	Bounds         string
 	Token          string
 }
 
 type apiClient struct {
-	baseURL *url.URL
-	token   string
-	client  *http.Client
+	baseURL   *url.URL
+	token     string
+	client    *http.Client
+	remaining int64
 }
 
 type commitResponse struct {
@@ -162,7 +154,6 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.HeadSHA, "head-sha", "", "verified full head SHA")
 	flags.IntVar(&cfg.PullRequest, "pull-request", 0, "pull-request number")
 	flags.StringVar(&cfg.Output, "output", "analysis/source", "new source root")
-	flags.StringVar(&cfg.Bounds, "bounds", "", "reviewed source-bounds identity")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -182,9 +173,6 @@ func parseConfig(args []string) (config, error) {
 	if cfg.PullRequest <= 0 {
 		return config{}, errors.New("pull-request number must be positive")
 	}
-	if cfg.Bounds != reviewedBounds {
-		return config{}, fmt.Errorf("bounds must equal reviewed policy %q", reviewedBounds)
-	}
 	if cfg.Token == "" {
 		return config{}, errors.New("GH_TOKEN is required")
 	}
@@ -199,7 +187,7 @@ func newAPIClient(cfg config) (*apiClient, error) {
 	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" || baseURL.RawQuery != "" || baseURL.Fragment != "" {
 		return nil, errors.New("API URL must be an absolute URL without query or fragment")
 	}
-	return &apiClient{baseURL: baseURL, token: cfg.Token, client: http.DefaultClient}, nil
+	return &apiClient{baseURL: baseURL, token: cfg.Token, client: http.DefaultClient, remaining: apiByteBudget}, nil
 }
 
 func (c *apiClient) get(ctx context.Context, endpoint string, target any) error {
@@ -224,20 +212,21 @@ func (c *apiClient) get(ctx context.Context, endpoint string, target any) error 
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return fmt.Errorf("GET %s: unexpected HTTP status %d", endpoint, response.StatusCode)
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, maxAPIResponse+1))
-	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("decode GET %s: %w", endpoint, err)
+	body, err := io.ReadAll(io.LimitReader(response.Body, c.remaining+1))
+	if err != nil {
+		return fmt.Errorf("read GET %s: %w", endpoint, err)
 	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return fmt.Errorf("decode GET %s: trailing JSON content", endpoint)
+	if int64(len(body)) > c.remaining {
+		return fmt.Errorf("GET %s: exceeded %d-byte materialization budget", endpoint, apiByteBudget)
+	}
+	c.remaining -= int64(len(body))
+	if err := json.Unmarshal(body, target); err != nil {
+		return fmt.Errorf("decode GET %s: %w", endpoint, err)
 	}
 	return nil
 }
 
 func materialize(ctx context.Context, client *apiClient, fs fileSystem, cfg config) (result materializeResult, err error) {
-	if cfg.Bounds != reviewedBounds {
-		return materializeResult{}, errors.New("unreviewed source bounds")
-	}
 	validated, err := loadValidatedTree(ctx, client, cfg)
 	if err != nil {
 		return materializeResult{}, err
@@ -307,8 +296,8 @@ func validateTree(tree treeResponse) ([]treeEntry, int64, error) {
 	if tree.Truncated {
 		return nil, 0, errors.New("recursive tree response is truncated")
 	}
-	if len(tree.Tree) == 0 || len(tree.Tree) > maxTreeEntries {
-		return nil, 0, fmt.Errorf("recursive tree has %d entries; allowed range is 1..%d", len(tree.Tree), maxTreeEntries)
+	if len(tree.Tree) == 0 {
+		return nil, 0, errors.New("recursive tree is empty")
 	}
 	seen := make(map[string]struct{}, len(tree.Tree))
 	selected := make([]treeEntry, 0)
@@ -321,10 +310,13 @@ func validateTree(tree treeResponse) ([]treeEntry, int64, error) {
 		if !eligible {
 			continue
 		}
-		total, err = accountGoEntry(entry, total, len(selected))
-		if err != nil {
-			return nil, 0, err
+		if entry.Size == nil || *entry.Size < 0 {
+			return nil, 0, fmt.Errorf("go blob %q has an invalid size", entry.Path)
 		}
+		if *entry.Size > apiByteBudget-total {
+			return nil, 0, errors.New("declared Go source cannot fit in the materialization budget")
+		}
+		total += *entry.Size
 		selected = append(selected, entry)
 	}
 	if len(selected) == 0 {
@@ -355,28 +347,11 @@ func classifyTreeEntry(entry treeEntry, seen map[string]struct{}) (bool, error) 
 	return entry.Mode == "100644" && strings.HasSuffix(entry.Path, ".go"), nil
 }
 
-func accountGoEntry(entry treeEntry, total int64, selectedCount int) (int64, error) {
-	if entry.Size == nil || *entry.Size < 0 || *entry.Size > maxFileBytes {
-		return 0, fmt.Errorf("go blob %q has invalid or excessive size", entry.Path)
-	}
-	total += *entry.Size
-	if total > maxTotalBytes {
-		return 0, errors.New("aggregate Go source size exceeds the reviewed bound")
-	}
-	if selectedCount+1 > maxGoFiles {
-		return 0, errors.New("selected Go file count exceeds the reviewed bound")
-	}
-	return total, nil
-}
-
 func validateTreePath(value string) error {
 	if value == "" || !utf8.ValidString(value) {
 		return errors.New("path must be non-empty UTF-8")
 	}
-	if len([]byte(value)) > maxPathBytes {
-		return fmt.Errorf("path exceeds %d bytes", maxPathBytes)
-	}
-	if strings.HasPrefix(value, "/") || strings.Contains(value, `\`) || filepath.Clean(value) != value {
+	if strings.HasPrefix(value, "/") || strings.Contains(value, `\`) || path.Clean(value) != value {
 		return errors.New("path must be canonical, relative, and slash-separated")
 	}
 	for _, segment := range strings.Split(value, "/") {
@@ -405,7 +380,7 @@ func fetchBlob(ctx context.Context, client *apiClient, headRepository string, en
 	if err != nil {
 		return nil, fmt.Errorf("decode blob %q: %w", entry.Path, err)
 	}
-	if int64(len(data)) != *entry.Size || len(data) > maxFileBytes {
+	if int64(len(data)) != *entry.Size {
 		return nil, fmt.Errorf("decoded blob %q has the wrong size", entry.Path)
 	}
 	digest := sha1.Sum(append([]byte("blob "+strconv.Itoa(len(data))+"\x00"), data...)) //nolint:gosec // Git object identity.
