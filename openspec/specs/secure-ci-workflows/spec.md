@@ -146,8 +146,12 @@ The repository's workflow security policy SHALL parse workflow YAML structurally
 - **THEN** protected base-branch code resolves the verified head repository and full SHA through GitHub's API, requires a complete non-truncated Git tree, writes only allowlisted regular `.go` blobs as non-executable files under `analysis/source`, creates trusted scanner configuration outside that directory before materialization, and invokes no command, cache, local action, container, package manager, binary, checkout action, or external action other than the approved scanner after materialization
 
 ### Scenario: Source tree contains a forbidden entry
-- **WHEN** the verified tree or a requested blob contains a symlink, submodule, special or non-blob entry, absolute or traversal path, backslash path, duplicate normalized path, excessive path length, excessive file count, excessive per-file size, excessive aggregate size, or content whose blob identity does not match the requested tree entry
+- **WHEN** the verified tree or a requested blob contains a symlink, submodule, special or non-blob entry, absolute or traversal path, backslash path, duplicate normalized path, or content whose blob identity does not match the requested tree entry
 - **THEN** source materialization fails closed before `SONAR_TOKEN` is exposed
+
+### Scenario: Materialization exceeds the input budget
+- **WHEN** the helper would consume more than 16 MiB of GitHub API response bodies across a run
+- **THEN** it rejects the input before scanning; this budget is internal to the helper, not a workflow parameter or a quota on tree entries, paths, or files
 
 ### Scenario: SonarCloud topology broadens the exception
 - **WHEN** the trusted analyzer checks out pull-request source; materializes non-Go content, Git metadata, workflows, scripts, local actions, scanner configuration, dependency hooks, containers, or binaries; executes a pull-request command; uses an unapproved scanner; restores or saves a cache; exposes the secret outside the scanner step; omits required provenance or source bounds; or permits pull-request scanner settings to control the endpoint or project identity
