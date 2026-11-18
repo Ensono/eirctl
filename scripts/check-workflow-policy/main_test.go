@@ -917,11 +917,8 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 		{name: "helper permitting unsafe paths", mutate: func(content string) string {
 			return strings.Replace(content, materializer, "go run trusted/scripts/materialize-unsafe-paths/main.go", 1)
 		}, wantFail: true},
-		{name: "missing source bounds", mutate: func(content string) string {
-			return strings.Replace(content, "          --bounds tree=384,go=160,path=160,file=131072,total=1048576", "", 1)
-		}, wantFail: true},
-		{name: "expanded source bounds", mutate: func(content string) string {
-			return strings.Replace(content, "tree=384,go=160,path=160,file=131072,total=1048576", "tree=9999,go=9999,path=9999,file=999999,total=9999999", 1)
+		{name: "workflow-supplied source bounds", mutate: func(content string) string {
+			return strings.Replace(content, "--output analysis/source", "--output analysis/source --bounds 99999999", 1)
 		}, wantFail: true},
 		{name: "generic source archive extraction", mutate: func(content string) string {
 			return strings.Replace(content, materializer, "gh api repos/example/repository/tarball/main | tar -x", 1)

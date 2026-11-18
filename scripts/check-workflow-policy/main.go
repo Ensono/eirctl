@@ -26,7 +26,6 @@ const (
 	debugReleaseValidateJob         = "validate-build"
 	githubScriptActionPrefix        = "actions/github-script@"
 	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
-	trustedSonarReviewedBounds      = "tree=384,go=160,path=160,file=131072,total=1048576"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
 	trustedSonarExpectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
 	debugAuthorizeScriptSHA256      = "e7305c7b816eae30ff48df8753a890a056fd589bc5b7bf7830598063f67cfd32"
@@ -990,8 +989,7 @@ func validateTrustedSonarMaterializer(materialize *schema.GithubStep) error {
 		--head-repository "${{ steps.provenance.outputs.head-repository }}"
 		--head-sha "${{ steps.provenance.outputs.head-sha }}"
 		--pull-request "${{ steps.provenance.outputs.pr-number }}"
-		--output analysis/source
-		--bounds `+trustedSonarReviewedBounds), " ")
+		--output analysis/source`), " ")
 	if materialize.Name != "Materialize bounded verified Go source through the Git Data API" || materialize.Uses != "" ||
 		strings.Join(strings.Fields(materialize.Run), " ") != expected ||
 		len(materialize.Env) != 1 || scalarValue(materialize.Env["GH_TOKEN"]) != "${{ github.token }}" {

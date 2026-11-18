@@ -160,13 +160,11 @@ unknown entries, unsafe or duplicate paths, executable `.go` files,
 non-Go files, and changed PR heads fail closed or remain unmaterialized.
 The helper rechecks the current PR head after all writes.
 
-The protected source limits are 384 recursive tree entries, 160 selected
-Go files, 160 path bytes, 131,072 bytes per Go blob, and 1,048,576
-aggregate Go bytes. The measured baseline and headroom are recorded in
-the change verification notes. These values are reviewed constants
-represented by the workflow policy; they are not attacker-controlled
-inputs. Increasing one requires a new baseline, hostile boundary tests,
-and CODEOWNERS review.
+The helper has a single built-in input budget of 16 MiB for all successful
+GitHub API response bodies combined, including tree metadata, base64-encoded
+blobs and the final PR head check. This bounds input size, not process memory
+or elapsed time. The workflow cannot override it. The helper does not impose
+separate limits on entry counts, path lengths or individual Go file sizes.
 
 The scanner is the only command or action after materialization. It runs
 from the trusted `analysis` root and forces the SonarCloud endpoint,
