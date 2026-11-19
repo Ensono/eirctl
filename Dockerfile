@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 go build -mod=readonly -buildvcs=false \
     -ldflags="-s -w -X github.com/Ensono/eirctl/cmd/eirctl.Version=${Version} -X github.com/Ensono/eirctl/cmd/eirctl.Revision=${Revision} -extldflags -static" \
     -o bin/eirctl cmd/main.go
 
-FROM docker.io/alpine:3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM docker.io/alpine:3@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 COPY --from=builder /app/bin/eirctl /usr/bin/eirctl
 
