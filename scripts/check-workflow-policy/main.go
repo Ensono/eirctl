@@ -25,7 +25,8 @@ const (
 	trustedSonarWorkflowPath        = ".github/workflows/trusted-sonarcloud-pr.yml"
 	debugReleaseValidateJob         = "validate-build"
 	githubScriptActionPrefix        = "actions/github-script@"
-	trustedSonarScannerAction       = "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+	trustedSonarScannerActionPrefix = "SonarSource/sonarqube-scan-action@"
+	trustedSonarScannerSHAsEnv      = "TRUSTED_SONAR_SCANNER_SHAS"
 	trustedSonarMaterializerPath    = "trusted/scripts/materialize-sonar-source/main.go"
 	trustedSonarExpectedConcurrency = "sonar-pr-${{ github.event.workflow_run.pull_requests[0].number || format('{0}-{1}', github.event.workflow_run.head_repository.id, github.event.workflow_run.head_branch) }}"
 	debugAuthorizeScriptSHA256      = "e7305c7b816eae30ff48df8753a890a056fd589bc5b7bf7830598063f67cfd32"
@@ -49,6 +50,7 @@ const (
 )
 
 var pinnedAction = regexp.MustCompile(`@[0-9a-f]{40}$`)
+var scannerSHAs = regexp.MustCompile(`^[0-9a-f]{40}(,[0-9a-f]{40})*$`)
 
 // Workflow adds source metadata to the shared, typed GitHub Actions model.
 // Policy validation consumes schema.GithubWorkflow, GithubJob, and GithubStep
@@ -670,6 +672,7 @@ func validateProtectedPolicyTopology(workflows map[string]Workflow) error {
 	policyJob, ok := policy.Jobs.Values["policy"]
 	if !ok || !hasTrigger(policy, "pull_request_target") || len(policyJob.Steps) < 3 ||
 		!isProtectedBaseCheckout(policyJob.Steps[0]) ||
+		scalarValue(policyJob.Steps[2].Env[trustedSonarScannerSHAsEnv]) != "${{ vars.TRUSTED_SONAR_SCANNER_SHAS }}" ||
 		!strings.Contains(policyJob.Steps[2].Run, "scripts/materialize-policy-candidate") ||
 		!strings.Contains(policyJob.Steps[2].Run, "go run ./scripts/check-workflow-policy --candidate-root") {
 		return errors.New("trusted workflow policy must check out only the implicit protected base revision and inspect candidate configuration as data")
@@ -999,6 +1002,20 @@ func validateTrustedSonarMaterializer(materialize *schema.GithubStep) error {
 }
 
 func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
+	approvedSHAs := os.Getenv(trustedSonarScannerSHAsEnv)
+	if !scannerSHAs.MatchString(approvedSHAs) {
+		return fmt.Errorf("%s must contain a comma-separated list of full lowercase commit SHAs", trustedSonarScannerSHAsEnv)
+	}
+	approvedScanner := false
+	for _, sha := range strings.Split(approvedSHAs, ",") {
+		if scanner.Uses == trustedSonarScannerActionPrefix+sha {
+			approvedScanner = true
+			break
+		}
+	}
+	if !approvedScanner {
+		return fmt.Errorf("trusted SonarCloud scanner action is not approved by %s", trustedSonarScannerSHAsEnv)
+	}
 	expectedArgs := strings.Join(strings.Fields(`
 -Dsonar.projectBaseDir=analysis
 -Dsonar.host.url=https://sonarcloud.io
@@ -1016,7 +1033,7 @@ func validateTrustedSonarScanner(scanner *schema.GithubStep) error {
 -Dsonar.qualitygate.wait=true`), " ")
 	legacyExpectedArgs := strings.Replace(expectedArgs, "-Dsonar.scm.provider=git ", "", 1)
 	args := strings.Join(strings.Fields(scanner.With["args"]), " ")
-	if scanner.Name != "Scan passive pull-request data with SonarCloud" || scanner.Uses != trustedSonarScannerAction ||
+	if scanner.Name != "Scan passive pull-request data with SonarCloud" ||
 		scanner.With["scannerVersion"] != "8.1.0.6389" ||
 		scanner.With["scannerBinariesUrl"] != "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli" ||
 		scanner.With["skipSignatureVerification"] != "false" ||

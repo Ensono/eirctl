@@ -170,8 +170,8 @@ The scanner is the only command or action after materialization. It runs
 from the trusted `analysis` root and forces the SonarCloud endpoint,
 organization (`ensono`), project (`Ensono_eirctl`),
 source/test/report paths, PR number/branch/base, immutable revision, and
-quality-gate wait. The action is pinned to full SHA
-`22918119ff8e1ca75a623e15c8296b6ea4fbe28f`; its CLI is fixed at
+quality-gate wait. The action is pinned to a full SHA approved in the
+repository Actions variable `TRUSTED_SONAR_SCANNER_SHAS`; its CLI is fixed at
 `8.1.0.6389`, binaries URL at
 `https://binaries.sonarsource.com/Distribution/sonar-scanner-cli`, and
 signature verification remains enabled. `SONAR_TOKEN` exists only in
@@ -179,6 +179,19 @@ this scanner step. The pull-request copy of
 `sonar-project.properties`, `.git`, workflows, scripts, local
 actions, dependency metadata and hooks, containers, archives, and
 binaries are never materialized.
+
+Set `TRUSTED_SONAR_SCANNER_SHAS` to a comma-separated list of reviewed
+40-character lowercase commit SHAs, with no spaces. The trusted policy reads
+this variable from the protected-base workflow, not from pull-request files.
+The immutable dependency check uses the same variable. Missing or malformed
+values fail closed; local invocations of either check also require it in the
+environment. Restrict permission to modify Actions variables to trusted
+maintainers because changing this list changes the approved scanner code.
+For an upgrade, approve both the current and replacement SHA, merge the
+workflow update, and then remove the old SHA.
+Set the variable before merging the variable-based policy; until it is set,
+both CI checks fail. Pull requests based on an older policy workflow must be
+rebased after the policy change merges.
 
 This boundary narrows, but cannot eliminate, the risk that the trusted
 scanner parser processes hostile Go source and passive reports while

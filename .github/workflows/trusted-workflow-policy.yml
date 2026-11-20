@@ -30,6 +30,7 @@ jobs:
         id: candidate
         env:
           PULL_REQUEST: ${{ github.event.pull_request.number }}
+          TRUSTED_SONAR_SCANNER_SHAS: ${{ vars.TRUSTED_SONAR_SCANNER_SHAS }}
         run: |
           tmp_root="$(mktemp -d)"
           candidate_root="$tmp_root/candidate"

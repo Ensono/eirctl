@@ -37,9 +37,20 @@ fi
 if grep -RIn --include='*.yml' --include='*.yaml' 'sonar:scanner:cli' .github/workflows >/dev/null; then
   fail "GitHub Actions must not invoke the container-backed sonar:scanner:cli task"
 fi
+approved_scanner_shas="${TRUSTED_SONAR_SCANNER_SHAS:-}"
+[[ "$approved_scanner_shas" =~ ^[0-9a-f]{40}(,[0-9a-f]{40})*$ ]] ||
+  fail "TRUSTED_SONAR_SCANNER_SHAS must contain a comma-separated list of full lowercase commit SHAs"
+IFS=',' read -r -a scanner_shas <<< "$approved_scanner_shas"
 for workflow in .github/workflows/pr.yml .github/workflows/trusted-sonarcloud-pr.yml; do
   [[ -f "$workflow" ]] || fail "missing SonarCloud workflow: $workflow"
-  grep -Fq 'SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1' "$workflow" ||
+  approved=false
+  for sha in "${scanner_shas[@]}"; do
+    if grep -Eq "^[[:space:]]*(-[[:space:]]*)?uses:[[:space:]]*SonarSource/sonarqube-scan-action@${sha}([[:space:]]*(#.*)?)?$" "$workflow"; then
+      approved=true
+      break
+    fi
+  done
+  "$approved" ||
     fail "$workflow must use the reviewed immutable official scanner action"
   grep -Eq 'scannerVersion:[[:space:]]*8\.1\.0\.6389$' "$workflow" ||
     fail "$workflow must pin the reviewed SonarScanner CLI version"
