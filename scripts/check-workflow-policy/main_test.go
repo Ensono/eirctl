@@ -9,8 +9,10 @@ import (
 	"github.com/Ensono/eirctl/internal/schema"
 )
 
+const currentScannerSHA = "59202af334b4ba7b5db01b701b8e79f8b3bef0f4"
+
 func TestMain(m *testing.M) {
-	if err := os.Setenv(trustedSonarScannerSHAsEnv, "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"); err != nil {
+	if err := os.Setenv(trustedSonarScannerSHAsEnv, currentScannerSHA); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())
@@ -858,26 +860,25 @@ func TestMaterializerArchivesOnlyConfigurationData(t *testing.T) {
 }
 
 func TestTrustedScannerApprovals(t *testing.T) {
-	const oldSHA = "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
-	const newSHA = "59202af334b4ba7b5db01b701b8e79f8b3bef0f4"
+	const previousSHA = "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
 	cases := []struct {
 		name     string
 		approved string
 		scanner  string
 		wantFail bool
 	}{
-		{name: "current", approved: oldSHA, scanner: oldSHA},
-		{name: "replacement approved", approved: oldSHA + "," + newSHA, scanner: newSHA},
-		{name: "unapproved", approved: oldSHA, scanner: newSHA, wantFail: true},
-		{name: "missing", scanner: oldSHA, wantFail: true},
-		{name: "mutable", approved: "latest", scanner: oldSHA, wantFail: true},
-		{name: "trailing comma", approved: oldSHA + ",", scanner: oldSHA, wantFail: true},
+		{name: "current", approved: currentScannerSHA, scanner: currentScannerSHA},
+		{name: "replacement approved", approved: currentScannerSHA + "," + previousSHA, scanner: previousSHA},
+		{name: "unapproved", approved: currentScannerSHA, scanner: previousSHA, wantFail: true},
+		{name: "missing", scanner: currentScannerSHA, wantFail: true},
+		{name: "mutable", approved: "latest", scanner: currentScannerSHA, wantFail: true},
+		{name: "trailing comma", approved: currentScannerSHA + ",", scanner: currentScannerSHA, wantFail: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(trustedSonarScannerSHAsEnv, tc.approved)
 			root := copyWorkflowRoot(t, func(content string) string {
-				return strings.Replace(content, oldSHA, tc.scanner, 1)
+				return strings.Replace(content, trustedSonarScannerActionPrefix+currentScannerSHA, trustedSonarScannerActionPrefix+tc.scanner, 1)
 			})
 			if err := Validate(root); (err != nil) != tc.wantFail {
 				t.Fatalf("Validate() error = %v, want failure %v", err, tc.wantFail)
@@ -1025,7 +1026,7 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 			return strings.Replace(content, "    runs-on: ubuntu-24.04", "    runs-on: ubuntu-24.04\n    services:\n      database:\n        image: postgres:latest", 1)
 		}, wantFail: true},
 		{name: "alternate scanner action", mutate: func(content string) string {
-			return strings.Replace(content, "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", 1)
+			return strings.Replace(content, trustedSonarScannerActionPrefix+currentScannerSHA, "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", 1)
 		}, wantFail: true},
 		{name: "equivalent flow trigger syntax", mutate: func(content string) string {
 			return strings.Replace(content, trigger, "on: {workflow_run: {workflows: [Lint and Test], types: [completed]}}", 1)
