@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -194,8 +195,9 @@ func TestMaterializeWritesExclusiveFilesAndRechecksCurrentHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
-		t.Fatalf("mode = %o", info.Mode().Perm())
+	mode := info.Mode().Perm()
+	if mode&0o111 != 0 || (runtime.GOOS != "windows" && mode != 0o644) {
+		t.Fatalf("mode = %o", mode)
 	}
 }
 
@@ -246,6 +248,9 @@ func TestWriteExclusiveRejectsExistingFilesAndShortWrites(t *testing.T) {
 	})
 
 	t.Run("symlink parent", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("creating symlinks on Windows requires elevated privileges")
+		}
 		root := t.TempDir()
 		target := t.TempDir()
 		if err := os.Symlink(target, filepath.Join(root, "pkg")); err != nil {

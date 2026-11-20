@@ -53,11 +53,50 @@ type RequiredInput struct {
 	// It checks complete env vars - merged from global > context > pipeline > task
 	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
 	// Args checks any args supplied after `--`
+	//
+	// NOTE: Args is currently parsed but not validated and its semantics are
+	// unresolved; it is intentionally not available on pipeline stages.
 	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
 }
 
 func (ri *RequiredInput) HasRequired() bool {
 	return (len(ri.Args) + len(ri.Vars) + len(ri.Env)) > 0
+}
+
+// StageRequiredInput declares the required inputs permitted on a pipeline stage.
+// Args are intentionally omitted pending a design decision.
+type StageRequiredInput struct {
+	// Vars is a list of required variables by the stage. It is case sensitive.
+	Vars []string `yaml:"vars,omitempty" json:"vars,omitempty"`
+	// Env identifies any missing environment variables for the stage.
+	Env []string `yaml:"env,omitempty" json:"env,omitempty"`
+}
+
+// Merge additively combines the stage-level required inputs from other into ri,
+// de-duplicating entries, so a child task must satisfy both its own
+// requirements and those declared by its parent stages.
+func (ri *RequiredInput) Merge(other *StageRequiredInput) *RequiredInput {
+	if other == nil {
+		return ri
+	}
+	ri.Env = mergeUniqueStrings(ri.Env, other.Env)
+	ri.Vars = mergeUniqueStrings(ri.Vars, other.Vars)
+	return ri
+}
+
+func mergeUniqueStrings(lists ...[]string) []string {
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, list := range lists {
+		for _, v := range list {
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 var ErrRequiredInputMissing = errors.New("missing required input")

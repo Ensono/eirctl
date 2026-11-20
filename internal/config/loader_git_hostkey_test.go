@@ -113,6 +113,7 @@ func TestKnownHostsFilesUsesDefaultUserFile(t *testing.T) {
 		t.Fatalf("write default known_hosts: %v", err)
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	paths := knownHostsFiles(&SSHConfigAuth{})
 	if len(paths) == 0 || paths[0] != defaultFile {
 		t.Fatalf("default known-host file was not selected first: %v", paths)
@@ -155,7 +156,8 @@ func TestSSHTrustOptionsPropagateFromConfigAndCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode SSH config: %v", err)
 	}
-	t.Setenv(GitSshCommandVar, fmt.Sprintf("ssh -o UserKnownHostsFile=%s -o StrictHostKeyChecking=no -o Port=2222", configured))
+	commandPath := strings.ReplaceAll(configured, `\`, `\\`)
+	t.Setenv(GitSshCommandVar, fmt.Sprintf("ssh -o UserKnownHostsFile=%s -o StrictHostKeyChecking=no -o Port=2222", commandPath))
 	command := parseGitSshCommandEnv()
 	if err := processSSHConfig(sshFile, command, "alias"); err != nil {
 		t.Fatalf("process SSH config: %v", err)
@@ -265,12 +267,12 @@ func TestProcessSSHConfigPreservesIncludedKnownHostsPaths(t *testing.T) {
 
 	includedPath := filepath.Join(directory, "included-ssh-config")
 	includedConfig := fmt.Sprintf(`Host alias
-  UserKnownHostsFile %q
+	UserKnownHostsFile "%s"
   UserKnownHostsFile %s
   UserKnownHostsFile %s %s
-  UserKnownHostsFile %q %s
-  UserKnownHostsFile %s %q %s
-  GlobalKnownHostsFile %q
+	UserKnownHostsFile "%s" %s
+	UserKnownHostsFile %s "%s" %s
+	GlobalKnownHostsFile "%s"
   GlobalKnownHostsFile %s
   GlobalKnownHostsFile %s %s
 `, userPaths[0], strings.ReplaceAll(userPaths[1], " ", `\ `), userPaths[2], userPaths[3], userPaths[4], userPaths[5], userPaths[6], userPaths[7], userPaths[8], globalPaths[0], strings.ReplaceAll(globalPaths[1], " ", `\ `), globalPaths[2], globalPaths[3])

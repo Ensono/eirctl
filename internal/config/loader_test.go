@@ -189,9 +189,14 @@ func TestLoader_Load_task_check(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.Write([]byte(`tasks:
+	if _, err := f.Write([]byte(`tasks:
   task:check:default:vars:
-    command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"`))
+    command: "echo -n 'os: {{ .Current.OS }} arch: {{ .Current.Arch }}'"`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
 	cfg, err := cl.Load(f.Name())

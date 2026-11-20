@@ -133,6 +133,54 @@ func Test_Denormalize_correct_stage_definitions(t *testing.T) {
 	}
 }
 
+func Test_Denormalize_additive_required(t *testing.T) {
+	// child task declares its own required env
+	childTask := task.FromCommands("smoke", "true")
+	childTask.Required = &task.RequiredInput{Env: []string{"COMMIT_SHA"}}
+
+	// inner pipeline stage adds a stage-level required env on the task
+	innerStage := scheduler.NewStage("smoke", func(s *scheduler.Stage) {
+		s.Task = childTask
+		s.Required = &task.StageRequiredInput{Env: []string{"AWS_REGION"}}
+	})
+	innerPipeline, _ := scheduler.NewExecutionGraph("inner", innerStage)
+
+	// outer pipeline references the inner pipeline and adds another required env
+	outerStage := scheduler.NewStage("deploy", func(s *scheduler.Stage) {
+		s.Pipeline = innerPipeline
+		s.Required = &task.StageRequiredInput{Env: []string{"ENVIRONMENT"}}
+	})
+	graph, err := scheduler.NewExecutionGraph("root", outerStage)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ng, err := graph.Denormalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outer, _ := ng.Node("root->deploy")
+	if outer == nil || outer.Pipeline == nil {
+		t.Fatal("expected nested pipeline stage")
+	}
+	leaf, _ := outer.Pipeline.Node("root->deploy->smoke")
+	if leaf == nil || leaf.Task == nil {
+		t.Fatal("expected leaf task stage")
+	}
+
+	want := []string{"COMMIT_SHA", "AWS_REGION", "ENVIRONMENT"}
+	got := leaf.Task.Required.Env
+	if len(got) != len(want) {
+		t.Fatalf("required env - got %v, want %v", got, want)
+	}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("required env missing %s, got %v", w, got)
+		}
+	}
+}
+
 func TestExecutionGraph_EnvFileMerge(t *testing.T) {
 	t.Parallel()
 

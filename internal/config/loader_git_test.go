@@ -102,9 +102,15 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 `))
 	t.Setenv("HOME", tmpHomeDir)
+	t.Setenv("USERPROFILE", tmpHomeDir)
+	t.Setenv(config.GitSshCommandVar, "")
 	return func() {
 		os.RemoveAll(tmpHomeDir)
 	}
+}
+
+func shellQuotePath(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
 }
 
 func Test_NewGitSource_ValidInput(t *testing.T) {
@@ -191,7 +197,7 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				t.Setenv(config.GitSshCommandVar, "ssh -i "+tempFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -i "+shellQuotePath(tempFile.Name()))
 				return tempFile.Name(), "", func() {
 					os.Remove(tempFile.Name())
 				}
@@ -209,7 +215,7 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				t.Setenv(config.GitSshCommandVar, "ssh -F "+tempFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+shellQuotePath(tempFile.Name()))
 				return "", tempFile.Name(), func() {
 					os.Remove(tempFile.Name())
 				}
@@ -236,7 +242,7 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				t.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name())
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+shellQuotePath(sshConfFile.Name())+" -i "+shellQuotePath(sshIdFile.Name()))
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
 					os.Remove(sshConfFile.Name())
 					os.Remove(sshIdFile.Name())
@@ -264,7 +270,7 @@ AAAECpHtGcC8b9PcJOr2CYYatl0UyZdgRG8+M6Rm/Z6ncY4IkEgSqxoxEMTMAPeOfH9qic
 wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 -----END OPENSSH PRIVATE KEY-----
 				`))
-				t.Setenv(config.GitSshCommandVar, "ssh -F "+sshConfFile.Name()+" -i "+sshIdFile.Name()+" -o Hostname=foo.bar -oPort=1234")
+				t.Setenv(config.GitSshCommandVar, "ssh -F "+shellQuotePath(sshConfFile.Name())+" -i "+shellQuotePath(sshIdFile.Name())+" -o Hostname=foo.bar -oPort=1234")
 				return sshIdFile.Name(), sshConfFile.Name(), func() {
 					os.Unsetenv(config.GitSshCommandVar)
 					os.Remove(sshConfFile.Name())
@@ -322,7 +328,7 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", tempFile.Name()))
+				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -o Hostname=foo.bar -o Port=1234 -F %s", shellQuotePath(tempFile.Name())))
 				return "", tempFile.Name(), func() {
 					os.Remove(tempFile.Name())
 				}
@@ -340,7 +346,7 @@ func Test_NewGitSource_OptionsParam_SSHCommand(t *testing.T) {
 				Port 4443
 				StrictHostKeyChecking no
 				`))
-				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", tempFile.Name()))
+				t.Setenv(config.GitSshCommandVar, fmt.Sprintf("ssh -oHostname=foo.bar -oPort=1234 -F %s", shellQuotePath(tempFile.Name())))
 				return "", tempFile.Name(), func() {
 					os.Remove(tempFile.Name())
 				}

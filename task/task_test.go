@@ -56,6 +56,40 @@ func TestNewTask_WithVariations(t *testing.T) {
 	}
 }
 
+func TestRequiredInput_Merge(t *testing.T) {
+	t.Run("additive and de-duplicated", func(t *testing.T) {
+		base := &task.RequiredInput{
+			Env:  []string{"AWS_REGION", "COMMIT_SHA"},
+			Vars: []string{"Version"},
+		}
+		got := base.Merge(&task.StageRequiredInput{
+			Env:  []string{"COMMIT_SHA", "DOMAIN"},
+			Vars: []string{"Tag"},
+		})
+
+		assertStrings(t, "env", got.Env, []string{"AWS_REGION", "COMMIT_SHA", "DOMAIN"})
+		assertStrings(t, "vars", got.Vars, []string{"Version", "Tag"})
+	})
+
+	t.Run("nil other is a no-op", func(t *testing.T) {
+		base := &task.RequiredInput{Env: []string{"AWS_REGION"}}
+		got := base.Merge(nil)
+		assertStrings(t, "env", got.Env, []string{"AWS_REGION"})
+	})
+}
+
+func assertStrings(t *testing.T, name string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s: got %v, wanted %v", name, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("%s[%d]: got %s, wanted %s", name, i, got[i], want[i])
+		}
+	}
+}
+
 func Test_HandleOutputCapture(t *testing.T) {
 	ttests := map[string]struct {
 		b       []byte
