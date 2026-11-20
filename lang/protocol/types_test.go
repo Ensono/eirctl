@@ -129,41 +129,41 @@ func TestRange_Contains(t *testing.T) {
 }
 
 func Test_SymbolKindString(t *testing.T) {
-    ttests := map[string]struct {
-        kind protocol.SymbolKind
-        want string
-    }{
-        "task": {
-            kind: protocol.SymbolKindTask,
-            want: "task",
-        },
-        "pipeline": {
-            kind: protocol.SymbolKindPipeline,
-            want: "pipeline",
-        },
-        "context": {
-            kind: protocol.SymbolKindContext,
-            want: "context",
-        },
-        "watcher": {
-            kind: protocol.SymbolKindWatcher,
-            want: "watcher",
-        },
-        "stage": {
-            kind: protocol.SymbolKindStage,
-            want: "stage",
-        },
-        "import": {
-            kind: protocol.SymbolKindImport,
-            want: "import",
-        },
-    }
-    for name, tt := range ttests {
-        t.Run(name, func(t *testing.T) {
-            got := tt.kind.String()
-            if got != tt.want {
-                t.Errorf("SymbolKind.String() = %v, want %v", got, tt.want)
-            }
-        })
-    }
+	ttests := map[string]struct {
+		kind protocol.SymbolKind
+		want string
+	}{
+		"task": {
+			kind: protocol.SymbolKindTask,
+			want: "task",
+		},
+		"pipeline": {
+			kind: protocol.SymbolKindPipeline,
+			want: "pipeline",
+		},
+		"context": {
+			kind: protocol.SymbolKindContext,
+			want: "context",
+		},
+		"watcher": {
+			kind: protocol.SymbolKindWatcher,
+			want: "watcher",
+		},
+		"stage": {
+			kind: protocol.SymbolKindStage,
+			want: "stage",
+		},
+		"import": {
+			kind: protocol.SymbolKindImport,
+			want: "import",
+		},
+	}
+	for name, tt := range ttests {
+		t.Run(name, func(t *testing.T) {
+			got := tt.kind.String()
+			if got != tt.want {
+				t.Errorf("SymbolKind.String() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
