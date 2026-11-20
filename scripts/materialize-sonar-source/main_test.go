@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,25 +38,31 @@ func TestValidateTreeAcceptsOnlyBoundedNonExecutableGoBlobs(t *testing.T) {
 	}
 }
 
+func TestValidateTreeAcceptsLargeTreesButStillValidatesEveryEntry(t *testing.T) {
+	size := int64(256 * 1024)
+	small := int64(4096)
+	tree := treeResponse{Tree: []treeEntry{
+		{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &size},
+	}}
+	for index := 0; index < 402; index++ {
+		tree.Tree = append(tree.Tree, treeEntry{Path: strings.Repeat("a", 161) + "/" + decimal(index) + ".go", Mode: "100644", Type: "blob", SHA: testSHA(decimal(index)), Size: &small})
+	}
+	selected, _, err := validateTree(tree)
+	if err != nil || len(selected) != len(tree.Tree) {
+		t.Fatalf("selected %d entries, error = %v", len(selected), err)
+	}
+	tree.Tree[len(tree.Tree)-1].Path = "../unsafe"
+	if _, _, err := validateTree(tree); err == nil {
+		t.Fatal("validateTree() accepted an unsafe entry after 384 entries")
+	}
+}
+
 func TestValidateTreeRejectsHostileEntries(t *testing.T) {
 	one := int64(1)
 	valid := func() treeResponse {
 		return treeResponse{Tree: []treeEntry{{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &one}}}
 	}
-	manyEntries := valid()
-	for index := 1; index < maxTreeEntries+1; index++ {
-		manyEntries.Tree = append(manyEntries.Tree, treeEntry{Path: "dir-" + decimal(index), Mode: "040000", Type: "tree", SHA: testSHA(decimal(index))})
-	}
-	manyGoFiles := treeResponse{}
-	for index := 0; index < maxGoFiles+1; index++ {
-		manyGoFiles.Tree = append(manyGoFiles.Tree, treeEntry{Path: "file-" + decimal(index) + ".go", Mode: "100644", Type: "blob", SHA: testSHA(decimal(index)), Size: &one})
-	}
-	large := int64(maxFileBytes + 1)
-	aggregate := treeResponse{}
-	chunk := int64(maxFileBytes)
-	for index := 0; index < maxTotalBytes/maxFileBytes+1; index++ {
-		aggregate.Tree = append(aggregate.Tree, treeEntry{Path: "aggregate-" + decimal(index) + ".go", Mode: "100644", Type: "blob", SHA: testSHA("aggregate-" + decimal(index)), Size: &chunk})
-	}
+	large := int64(apiByteBudget + 1)
 
 	cases := []struct {
 		name string
@@ -63,7 +70,6 @@ func TestValidateTreeRejectsHostileEntries(t *testing.T) {
 	}{
 		{name: "truncated tree", tree: treeResponse{Truncated: true, Tree: valid().Tree}},
 		{name: "empty tree", tree: treeResponse{}},
-		{name: "too many tree entries", tree: manyEntries},
 		{name: "symlink", tree: treeResponse{Tree: []treeEntry{{Path: "link", Mode: "120000", Type: "blob", SHA: testSHA("link"), Size: &one}}}},
 		{name: "submodule", tree: treeResponse{Tree: []treeEntry{{Path: "module", Mode: "160000", Type: "commit", SHA: testSHA("module")}}}},
 		{name: "unknown mode", tree: treeResponse{Tree: []treeEntry{{Path: "main.go", Mode: "100600", Type: "blob", SHA: testSHA("main"), Size: &one}}}},
@@ -74,21 +80,48 @@ func TestValidateTreeRejectsHostileEntries(t *testing.T) {
 		{name: "dot path", tree: treeResponse{Tree: []treeEntry{{Path: "./main.go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &one}}}},
 		{name: "backslash path", tree: treeResponse{Tree: []treeEntry{{Path: `dir\main.go`, Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &one}}}},
 		{name: "control character path", tree: treeResponse{Tree: []treeEntry{{Path: "dir/ma\nin.go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &one}}}},
-		{name: "excessive path", tree: treeResponse{Tree: []treeEntry{{Path: strings.Repeat("a", maxPathBytes-2) + ".go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &one}}}},
 		{name: "duplicate normalized path", tree: treeResponse{Tree: []treeEntry{
 			{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("one"), Size: &one},
 			{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("two"), Size: &one},
 		}}},
 		{name: "missing blob size", tree: treeResponse{Tree: []treeEntry{{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("main")}}}},
 		{name: "excessive blob size", tree: treeResponse{Tree: []treeEntry{{Path: "main.go", Mode: "100644", Type: "blob", SHA: testSHA("main"), Size: &large}}}},
-		{name: "too many Go files", tree: manyGoFiles},
-		{name: "excessive aggregate bytes", tree: aggregate},
 		{name: "no eligible Go source", tree: treeResponse{Tree: []treeEntry{{Path: "README.md", Mode: "100644", Type: "blob", SHA: testSHA("readme"), Size: &one}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, _, err := validateTree(tc.tree); err == nil {
 				t.Fatal("validateTree() unexpectedly accepted hostile tree")
+			}
+		})
+	}
+}
+
+func TestAPIClientSharesBudgetAcrossResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "at limit", size: apiByteBudget - 2},
+		{name: "over limit", size: apiByteBudget - 1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, "{}")
+				if r.URL.Path == "/second" {
+					_, _ = io.WriteString(w, strings.Repeat(" ", tc.size-2))
+				}
+			}))
+			defer server.Close()
+			var result struct{}
+			client := testClient(t, server)
+			if err := client.get(context.Background(), "/first", &result); err != nil {
+				t.Fatal(err)
+			}
+			err := client.get(context.Background(), "/second", &result)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("get() error = %v, want error %v", err, tc.wantErr)
 			}
 		})
 	}
@@ -273,7 +306,7 @@ func testConfig(apiURL, headSHA, output string) config {
 	return config{
 		APIURL: apiURL, BaseRepository: testRepository, BaseBranch: "main",
 		HeadRepository: testRepository, HeadSHA: headSHA, PullRequest: 17,
-		Output: output, Bounds: reviewedBounds, Token: "test-token",
+		Output: output, Token: "test-token",
 	}
 }
 
