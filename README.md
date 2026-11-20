@@ -29,7 +29,12 @@ Whilst it is built within the Ensono ecosystem and is used within the Ensono Ind
 
 ## Documentation
 
-The canonical documentation entry point is [docs/index.adoc](./docs/index.adoc). It links to installation, imports, artifacts, watchers, CI generation, graph internals, V2 migration, CI security, and local documentation builds.
+The canonical documentation entry point is [docs/index.adoc](./docs/index.adoc). It links to installation, editor integration, imports, artifacts, watchers, CI generation, graph internals, V2 migration, CI security, and local documentation builds.
+
+### Editor integration
+
+- [VS Code extension](./vscode-extension/README.md): bundled language server, process/TCP setup, and troubleshooting.
+- [Neovim and Vim](./docs/editors.adoc): standalone language server installation, built-in Neovim LSP, vim-lsp/coc.nvim, and setup with lazy.nvim, vim-plug, packer.nvim, dein.vim, mini.deps, native packages, or Pathogen.
 
 ## Development prerequisites
 
@@ -254,6 +259,10 @@ tasks:
       - ...build...
     condition: git diff --exit-code
 ```
+
+> **Note:** For long-running processes in container tasks, wrap your final
+> command in `exec` (e.g. `exec node my-test.js`) so it receives cancellation
+> signals immediately. See [container-signal-handling](./docs/troubleshooting.adoc#container-task signal-handling) for details.
 
 ## Pipelines
 
