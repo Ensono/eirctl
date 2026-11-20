@@ -8,7 +8,7 @@ argument-hint: "Describe the project command or workflow to run via eirctl"
 
 ## Purpose
 
-Use `eirctl` as the project task runner and tool execution boundary. Prefer existing `eirctl.yaml` tasks, pipelines, and contexts over direct host execution.
+Use `eirctl` as the project task runner and tool execution boundary.
 
 In the `eirctl` repository itself, start from the root `eirctl.yaml` and its imported shared definitions under `shared/` before creating anything new. This repo already has build, test, lint, coverage, schema generation, and security automation defined.
 
@@ -206,6 +206,7 @@ For CI workflows:
 - Use `eirctl generate` when the project wants CI config generated from eirctl pipelines.
 - Keep local and CI behavior aligned by using the same task names and contexts.
 - Avoid installing language or toolchain dependencies differently in CI when the `eirctl` context already defines them.
+- For trusted workflow command changes, check candidate YAML with the protected-base checker and land any needed reviewed policy and helper updates before switching the workflow.
 
 ## Safety
 
@@ -230,5 +231,3 @@ Before direct tool execution, confirm:
 - If it is environment-dependent, have container runtime access, network access, certificate trust, and required template values been checked?
 - If it is credential-dependent, has the user explicitly supplied the required secret out of band?
 - If the change touches shared automation or schemas, have the relevant repo tasks been rerun?
-
-If reproducibility matters, use `eirctl`.
