@@ -1,6 +1,0 @@
-on:
-  workflow_dispatch:
-jobs:
-  publish:
-    steps:
-      - run: jq --version

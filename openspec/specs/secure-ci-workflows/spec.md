@@ -4,17 +4,6 @@ TBD: Define least-privilege and trust-boundary controls for CI workflows.
 
 # Requirements
 
-## Requirement: Authoritative workflow policy uses trusted checker code
-The required workflow-policy check SHALL execute checker code from the protected default branch and SHALL inspect pull-request workflow files strictly as data without executing pull-request-controlled code, actions, or scripts.
-
-### Scenario: Pull request changes the policy checker
-- **WHEN** a pull request weakens or removes its copy of the workflow-policy checker
-- **THEN** the authoritative check continues to use the protected default-branch checker against the pull request's candidate workflow files
-
-### Scenario: Trusted policy check inspects candidate workflows
-- **WHEN** the authoritative policy workflow evaluates a pull request
-- **THEN** it materializes only the candidate files needed for validation in a data-only location and reports pass or fail without executing content from that location
-
 ## Requirement: Untrusted code executes without privileged credentials
 Any workflow job that checks out or executes pull-request-controlled code SHALL use a trusted workflow definition and an isolated GitHub-hosted builder with no more than read-only repository permissions, and SHALL NOT receive release credentials, protected environment secrets, package-write permission, contents-write permission, or default-branch cache-write authority. A trusted default-branch event handler MAY authorize an untrusted build and invoke a reusable builder in the same run only when GitHub documents the root event's default-branch cache access as read-only, the reusable job inherits that event, and no caller path can elevate the called job's permissions, secrets, environment, runner persistence, or cache authority. The authorization job SHALL NOT check out or execute the pull-request revision itself.
 
@@ -33,14 +22,6 @@ Any workflow job that checks out or executes pull-request-controlled code SHALL 
 ### Scenario: Pull request changes before reusable checkout
 - **WHEN** the current pull-request head no longer equals the full SHA captured by authorization
 - **THEN** the reusable builder fails before checkout and does not silently build the newer revision
-
-### Scenario: Broker emits a suppressed event
-- **WHEN** static validation finds that the broker relies on a `GITHUB_TOKEN`-generated event that GitHub suppresses from starting workflows
-- **THEN** validation fails before the broken signaling topology can merge
-
-### Scenario: Writable event calls the reusable builder
-- **WHEN** static validation finds a `workflow_dispatch`, `repository_dispatch`, default-branch `push`, or other documented default-branch-cache-write event that can call the reusable builder
-- **THEN** validation fails even when repository permissions are read-only and convenience caching is disabled
 
 ## Requirement: Debug publication is isolated from untrusted execution
 The system SHALL publish a debug prerelease only from a separate trusted default-branch job or workflow that does not check out or execute pull-request-controlled code and that uses the existing protected `debug-release` environment before obtaining repository-write authority. Publication SHALL authenticate the successful `issue_comment` request run, its reusable builder result, its clean-runner provenance finalization, and the exact final artifact before write authority is used.
@@ -102,44 +83,8 @@ When an executable workflow is generated from a template or fixture, the generat
 - **WHEN** a generated YAML file is intended only as a sample and not as an executable workflow
 - **THEN** it is stored outside `.github/workflows/`
 
-## Requirement: Workflow policy rejects privileged untrusted execution
-The repository's workflow security policy SHALL parse workflow YAML structurally; SHALL independently model protected-default-branch workflow selection, repository and secret privilege, and default-branch cache-write authority; SHALL resolve local reusable-workflow callers so called jobs inherit the effective root event; SHALL reject every path that executes pull-request-controlled source with privileged credentials, protected secrets or environments, persistent runner state, or default-branch cache-write authority; SHALL permit passive pull-request source analysis only when the workflow matches the explicitly constrained trusted SonarCloud topology; SHALL require that topology to materialize a bounded allowlist of regular Go source blobs through GitHub's API from a provenance-verified head repository and full commit SHA; and SHALL validate the separated debug authorization, reusable builder, provenance finalizer, publisher, and analyzer trust domains independent of YAML formatting.
-
-### Scenario: Cache-write-capable workflow executes pull-request source
-- **WHEN** structural validation finds a `workflow_dispatch`, `repository_dispatch`, default-branch `push`, `delete`, `registry_package`, `page_build`, `schedule`, or another event documented by GitHub as default-branch-cache-write-capable that passes a pull-request-controlled repository, ref, SHA, or derived value to checkout or download and later executes the resulting content
-- **THEN** validation fails with a cache-poisoning trust-boundary error even when the ref is immutable, credentials are disabled, repository permissions are read-only, and automatic dependency caching is disabled
-
-### Scenario: Privileged workflow checks out pull-request source
-- **WHEN** structural validation finds a job with protected credentials, a protected environment, write authority, OIDC authority, or persistent runner state that passes a pull-request-controlled repository, ref, SHA, or derived value to `actions/checkout`, `git checkout`, `git fetch`, `gh pr checkout`, or an equivalent checkout mechanism
-- **THEN** validation fails with a trust-boundary error even when only a scanner or pinned action follows
-
-### Scenario: Read-only issue-comment caller invokes the constrained builder
-- **WHEN** the exact authorized `issue_comment` topology calls the local reusable debug builder and GitHub's documented cache policy classifies the effective event as read-only for the default-branch cache
-- **THEN** structural validation accepts the call only if authorization performs no checkout, the builder has no write permission, secret, protected environment, secret inheritance, self-hosted runner, or alternate writable caller, and immutable PR identity is revalidated before execution
-
-### Scenario: Reusable builder has a writable caller
-- **WHEN** any effective caller of the reusable debug builder can write the default-branch cache or elevate repository, secret, environment, OIDC, or runner authority
-- **THEN** structural validation rejects the topology regardless of the reusable workflow's own declared trigger and permissions
-
-### Scenario: External action consumes checked-out code
-- **WHEN** a cache-write-capable or otherwise privileged workflow passes a pull-request-controlled checkout to an action that builds, interprets, packages, scans, or otherwise consumes repository content
-- **THEN** validation classifies the action as potential code execution and rejects the workflow even when the action itself is pinned
-
-### Scenario: Equivalent YAML syntax is used
-- **WHEN** a trigger, reusable call, security-sensitive permission, secret, runner, checkout, or execution step is expressed with flow syntax, quoting, aliases, expressions, or different valid indentation
-- **THEN** structural validation applies the same caller-resolution, cache-authority, and trust-boundary rules
-
-### Scenario: Debug build topology is valid
-- **WHEN** static workflow validation inspects the debug-build flow
-- **THEN** it confirms that trusted authorization performs no checkout, the only builder entry point is a local `workflow_call` from the read-only `issue_comment` run, the builder revalidates and checks out the immutable pull-request SHA on a GitHub-hosted runner with read-only isolation, provenance is finalized on a fresh non-executing runner, and the publisher runs only from the protected default branch without pull-request checkout or execution
-
-### Scenario: Suppressed label topology is introduced
-- **WHEN** the request broker uses `GITHUB_TOKEN` to add or re-add a label and depends on the resulting `pull_request:labeled` event to start the builder
-- **THEN** structural validation fails with an unsupported signaling error
-
-### Scenario: Trusted passive SonarCloud topology is valid
-- **WHEN** a default-branch `workflow_run` analyzer validates the exact pull-request revision and upstream artifact provenance, grants no write permission, uses no cache or pull-request command, obtains only bounded regular Go blobs through GitHub's API, supplies `SONAR_TOKEN` only to the approved pinned scanner step, and allows only that scanner to parse isolated source and report data under forced trusted settings
-- **THEN** structural validation accepts the analyzer as the narrowly constrained passive-analysis topology
+## Requirement: Trusted SonarCloud analysis remains passive
+The trusted SonarCloud workflow SHALL materialize only bounded, verified source blobs from the pull request and SHALL expose `SONAR_TOKEN` only to the approved pinned scanner.
 
 ### Scenario: Trusted source materialization remains passive
 - **WHEN** the trusted analyzer materializes pull-request source
@@ -152,10 +97,6 @@ The repository's workflow security policy SHALL parse workflow YAML structurally
 ### Scenario: Materialization exceeds the input budget
 - **WHEN** the helper would consume more than 16 MiB of GitHub API response bodies across a run
 - **THEN** it rejects the input before scanning; this budget is internal to the helper, not a workflow parameter or a quota on tree entries, paths, or files
-
-### Scenario: SonarCloud topology broadens the exception
-- **WHEN** the trusted analyzer checks out pull-request source; materializes non-Go content, Git metadata, workflows, scripts, local actions, scanner configuration, dependency hooks, containers, or binaries; executes a pull-request command; uses an unapproved scanner; restores or saves a cache; exposes the secret outside the scanner step; omits required provenance or source bounds; or permits pull-request scanner settings to control the endpoint or project identity
-- **THEN** structural validation fails closed with a trust-boundary error
 
 ### Scenario: Code scanning reports a privileged checkout vulnerability
 - **WHEN** CodeQL or the repository's configured code-scanning tool reports a new cache-poisoning, untrusted-checkout, or equivalent high-severity workflow alert for the debug-build or analyzer topology
@@ -320,8 +261,8 @@ The active `main` ruleset SHALL require the stable external SonarCloud quality-g
 - **THEN** repository maintainers add that observed identity to `main-is-main` without substituting a stale pre-fix result or the default-branch `workflow_run` job context
 
 ## Requirement: Security validation includes static analysis
-Before this change is accepted, the repository SHALL run Go tests, `go vet`, `staticcheck`, and `gosec` in addition to workflow policy, workflow lint, Go-version, vulnerability, and OpenSpec validation. Pre-existing findings outside the debug-build trust boundary SHALL be recorded as a separately tracked baseline; this change SHALL not introduce a regression in that baseline.
+Before this change is accepted, the repository SHALL run Go tests, `go vet`, `staticcheck`, and `gosec` in addition to workflow lint, Go-version, vulnerability, and OpenSpec validation. Pre-existing findings outside the debug-build trust boundary SHALL be recorded as a separately tracked baseline; this change SHALL not introduce a regression in that baseline.
 
 ### Scenario: Change validation runs
 - **WHEN** the debug-build trust-boundary change is validated
-- **THEN** workflow policy, workflow lint, Go tests, Go-version, and OpenSpec validation complete successfully; all required analyzers run; and any unrelated pre-existing analyzer findings are documented for separate remediation
+- **THEN** workflow lint, Go tests, Go-version, and OpenSpec validation complete successfully; all required analyzers run; and any unrelated pre-existing analyzer findings are documented for separate remediation

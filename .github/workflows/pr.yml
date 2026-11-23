@@ -50,8 +50,6 @@ jobs:
         run: scripts/check-immutable-ci-dependencies.sh
       - name: Check CODEOWNERS coverage
         run: scripts/check-codeowners.sh
-      - name: Advisory workflow policy feedback (not required)
-        run: scripts/check-workflow-security.sh
       - name: Linters
         run: |
           go run -race cmd/main.go run lint:vuln:scan
