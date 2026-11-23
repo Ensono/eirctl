@@ -195,8 +195,9 @@ func TestMaterializeWritesExclusiveFilesAndRechecksCurrentHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
-		t.Fatalf("mode = %o", info.Mode().Perm())
+	mode := info.Mode().Perm()
+	if mode&0o111 != 0 || (runtime.GOOS != "windows" && mode != 0o644) {
+		t.Fatalf("mode = %o", mode)
 	}
 }
 

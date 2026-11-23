@@ -159,7 +159,8 @@ func TestSSHTrustOptionsPropagateFromConfigAndCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode SSH config: %v", err)
 	}
-	t.Setenv(GitSshCommandVar, fmt.Sprintf("ssh -o UserKnownHostsFile=%s -o StrictHostKeyChecking=no -o Port=2222", configured))
+	commandPath := strings.ReplaceAll(configured, `\`, `\\`)
+	t.Setenv(GitSshCommandVar, fmt.Sprintf("ssh -o UserKnownHostsFile=%s -o StrictHostKeyChecking=no -o Port=2222", commandPath))
 	command := parseGitSshCommandEnv()
 	if err := processSSHConfig(sshFile, command, "alias"); err != nil {
 		t.Fatalf("process SSH config: %v", err)
