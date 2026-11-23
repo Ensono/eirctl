@@ -80,6 +80,7 @@ tasks:
     context: go1x
     command:
       - |
+        set -eo pipefail
         unset GOTOOLCHAIN
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
@@ -97,11 +98,23 @@ tasks:
           $(GOFLAGS="-buildvcs=false" go list ./... | grep -Ev '{{ .GoExcludePkgRegex }}')
           {{- else -}}
           ./...
-          {{- end -}} | tee .coverage/test.out
-        cat .coverage/test.out | .deps/bin/go-junit-report -set-exit-code > .coverage/report-junit.xml
+          {{- end -}} | tee .coverage/test.out || test_result=$?
+        .deps/bin/go-junit-report -set-exit-code < .coverage/test.out > .coverage/report-junit.xml
+        exit "${test_result:-0}"
     env:
       GOFLAGS: -buildvcs=false
-    allow_failure: true
+
+  coverage:cobertura:
+    context: go1x
+    description: Converts Go coverage to Cobertura for GitHub Code Quality
+    command:
+      - |
+        set -e
+        unset GOTOOLCHAIN
+        mkdir -p .deps
+        export GOPATH="$PWD/.deps" GOBIN="$PWD/.deps/bin"
+        go install github.com/boumenot/gocover-cobertura@v1.5.0
+        .deps/bin/gocover-cobertura -strict -by-files < .coverage/out > .coverage/coverage.xml
 
   coverage_merge:
     description: For the pipeline to merge Linux and Windows test run coverages together
@@ -125,6 +138,24 @@ tasks:
     command:
       - |
         exec golangci-lint run
+
+  go:quality:check:
+    context: golint
+    description: Fails on Go cyclomatic complexity findings
+    command:
+      - |
+        exec golangci-lint run --enable-only=gocyclo \
+          --max-issues-per-linter=0 --max-same-issues=0 --uniq-by-line=false
+
+  go:quality:sarif:
+    context: golint
+    description: Reports Go vet and cyclomatic complexity findings as SARIF
+    command:
+      - |
+        mkdir -p .eirctl
+        exec golangci-lint run --enable-only=gocyclo,govet \
+          --issues-exit-code=0 --max-issues-per-linter=0 --max-same-issues=0 \
+          --uniq-by-line=false --output.sarif.path=.eirctl/go-quality.sarif
 
   releaser:
     context: goreleaser

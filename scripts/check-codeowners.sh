@@ -11,7 +11,7 @@ fail() {
 }
 
 [[ -f "$file" ]] || fail "missing $file"
-for path in '/.github/CODEOWNERS' '/.github/workflows/**' '/sonar-project.properties'; do
+for path in '/.github/CODEOWNERS' '/.github/workflows/**'; do
   grep -Fxq "$path $owner" "$file" || fail "$path must be owned by $owner"
 done
 

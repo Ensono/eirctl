@@ -26,19 +26,6 @@ contexts:
       container_args:
         - "${EIRCTL_CONTAINER_ARG}"
 
-  sonar:
-    container:
-      name: mirror.gcr.io/sonarsource/sonar-scanner-cli:12.0.0.3214_8.0.1@sha256:97c145e4f8fe1786906c604272d17901e745051bc6c8173582f31aac8d0eb7fe
-      entrypoint: /usr/bin/env
-      enable_mount: true
-      container_args:
-        - "${EIRCTL_CONTAINER_ARG}"
-    envfile:
-      exclude:
-        - HOME
-        - JAVA_HOME
-        - PATH
-
   owasp:
     container:
       name: ghcr.io/zaproxy/zaproxy:stable
@@ -177,19 +164,6 @@ tasks:
       env:
         - IMAGE_REPOSITORY_URI
         - EXTRA_TAGS
-
-  sonar:scanner:cli:
-    context: sonar
-    description: |
-      Sonar Task can can be enhanced with SonarScannerArgsList ; separated `--set SonarScannerArgsList="-Dsonar.prop=foo;-Dsonar.prop=bar"` list or `-- -Dsonar.prop=foo` or Sonar Environment variables.
-
-      e.g. `SONAR_TOKEN=$SONAR_TOKEN eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13 -Dsonar.scm.revision=0.0.13`
-    command:
-      - |
-        sonar-scanner {{ if .SonarScannerArgsList }}{{ range ( .SonarScannerArgsList | splitList ";") }}{{ . }} {{ end }}{{ end }}{{ .Args }}
-    required:
-      env:
-        - SONAR_TOKEN
 
   owasp:full:scan:
     context: owasp

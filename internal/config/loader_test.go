@@ -25,6 +25,13 @@ import (
 
 var sampleCfg = []byte(`{"tasks": {"task1": {"command": ["true"]}}}`)
 
+func isolateConfigTestHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 // createFilesystemTestRepo creates a real, filesystem-backed Git repo in a tmp dir.
 func createFilesystemTestRepo(t *testing.T, files map[string]string, branch string) (repo *git.Repository, dir string) {
 	t.Helper()
@@ -204,6 +211,8 @@ func TestLoader_Load_task_check(t *testing.T) {
 }
 
 func Test_LoadImport(t *testing.T) {
+	isolateConfigTestHome(t)
+
 	tmpFile, err := os.CreateTemp("", "imprt-tes*")
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +233,7 @@ tasks:
 			t.Errorf("failed to write bytes to response stream")
 		}
 	}))
+	defer testSrv.Close()
 	loaderTYaml := fmt.Sprintf(`import:
   - %s
   - %s
@@ -236,7 +246,10 @@ tasks:
 	}
 
 	cl := config.NewConfigLoader(config.NewConfig())
-	cfg, _ := cl.Load(tmpFile.Name())
+	cfg, err := cl.Load(tmpFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if cfg == nil {
 		t.Fatal("got nil cfg")
@@ -286,6 +299,7 @@ func TestLoader_LoadDirImport(t *testing.T) {
 // TODO: tests for StringSlice in Unmarshall & Clash key
 
 func TestLoader_ReadConfigFromURL(t *testing.T) {
+	isolateConfigTestHome(t)
 	// yaml needs to be run separately "¯\_(ツ)_/¯"
 	t.Run("yaml parsed correctly", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -300,11 +314,12 @@ tasks:
 				t.Errorf("failed to write bytes to response stream")
 			}
 		}))
+		defer srv.Close()
 
 		cl := config.NewConfigLoader(config.NewConfig())
 		m, err := cl.Load(srv.URL)
 		if err != nil {
-			t.Fatal("got error, wanted nil")
+			t.Fatalf("got error, wanted nil: %v", err)
 		}
 		if len(m.Tasks) != 1 {
 			t.Errorf("got %v count, wanted %v task count", len(m.Tasks), 1)
@@ -313,10 +328,12 @@ tasks:
 }
 
 func TestLoader_errors(t *testing.T) {
+	isolateConfigTestHome(t)
 	t.Run("on failed status code", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.WriteHeader(500)
 		}))
+		defer srv.Close()
 		cl := config.NewConfigLoader(config.NewConfig())
 		_, err := cl.Load(srv.URL)
 		if err == nil {
@@ -724,6 +741,7 @@ tasks:
 }
 
 func Test_ImportFiles_URL(t *testing.T) {
+	isolateConfigTestHome(t)
 	scriptContent := "#!/bin/bash\necho from url\n"
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -1408,6 +1426,7 @@ tasks:
 }
 
 func Test_ImportFiles_URL_Non200Status(t *testing.T) {
+	isolateConfigTestHome(t)
 	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))

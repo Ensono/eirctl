@@ -110,7 +110,7 @@ Recommended context choices:
 - Use an executable context only when a host-installed binary is intentionally part of the workflow.
 - Leave a task without a context only for simple shell-safe logic that is genuinely portable, or when Docker itself is the tool being exercised.
 
-In the `eirctl` repo specifically, check whether one of the existing contexts already fits before adding another, for example `go1x`, `golint`, `goreleaser`, `bash`, `yamllint`, `trivy:container`, or `sonar`.
+In the `eirctl` repo specifically, check whether one of the existing contexts already fits before adding another, for example `go1x`, `golint`, `goreleaser`, `bash`, `yamllint`, or `trivy:container`.
 
 Container contexts should prefer pinned image tags over `latest`.
 
@@ -177,19 +177,17 @@ When deciding whether an example is safe to run immediately, separate commands i
 
 - Inspection-only: `eirctl --version`, `eirctl validate`, `eirctl list`, `eirctl show <name>`, `eirctl graph <pipeline-name>`.
 - Repo-local but environment-dependent: tasks using container contexts, Docker socket access, network downloads, or required template variables.
-- Credential-dependent: tasks such as `sonar:scanner:cli` that require secrets or service auth.
+- Credential-dependent: tasks that require secrets or service auth.
 - Illustrative cross-project examples: examples such as Terraform workflows that show the intended pattern but are not guaranteed to exist in the current repo.
 
 Use `--` to forward extra arguments when the task is designed to consume them:
 
 - `eirctl run task lint:yaml -- docs/example.yaml`
-- `eirctl run task sonar:scanner:cli -- -Dsonar.projectVersion=0.0.13`
 - `eirctl run task terraform:plan -- -var-file=dev.tfvars`
 
 Be explicit about what those examples mean:
 
 - In this repo, `eirctl run task lint:yaml -- docs/example.yaml` is a valid example of argument forwarding, but the underlying task still lints `.` and appends `.Args`; it is not limited to only the forwarded file.
-- In this repo, `eirctl run task sonar:scanner:cli -- ...` is a valid command shape, but it requires `SONAR_TOKEN` and usually project-specific scanner settings.
 - `eirctl run task terraform:plan -- ...` is an illustrative example for projects that define Terraform tasks. Do not assume it exists in the current repo unless `eirctl list` or `eirctl show <name>` confirms it.
 
 For repo task execution examples, state prerequisites up front:
@@ -213,7 +211,7 @@ For CI workflows:
 - Do not run destructive or publishing tasks such as `terraform apply`, `terraform destroy`, `helm upgrade`, `kubectl delete`, `goreleaser`, or image pushes without explicit user approval.
 - Do not expose secrets in task definitions, command output, or examples.
 - Prefer synthetic placeholder values in documentation and tests.
-- If a command needs a secret such as `SONAR_TOKEN`, state that prerequisite plainly and do not attempt to source or echo the secret.
+- If a command needs a secret, state that prerequisite plainly and do not attempt to source or echo the secret.
 - If a command failed because of host constraints such as Docker socket permissions or TLS trust, report that as an environment prerequisite rather than implying the command syntax is wrong.
 
 ## Agent Checklist
