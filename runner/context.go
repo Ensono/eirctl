@@ -61,6 +61,8 @@ type ContainerContext struct {
 	//
 	// the special case of adding all capabilities can be done via `--cap-add=ALL`
 	capabilities []string
+	// gracefulStopTime is the number of seconds to wait for a container to stop gracefully before sending a SIGKILL
+	gracefulStopTime *int
 }
 
 type ContainerContextOpt func(cc *ContainerContext)

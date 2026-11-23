@@ -27,6 +27,7 @@ require (
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pb33f/ordered-map/v2 v2.3.2
+	github.com/rs/zerolog v1.35.1
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
