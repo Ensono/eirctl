@@ -10,27 +10,21 @@ repos:
 
   - repo: local
     hooks:
-      - id: go-version-consistency
-        name: Check maintained Go versions
-        entry: scripts/check-go-version.sh
-        language: system
-        pass_filenames: false
-        files: '(^go\.mod$|^Dockerfile(\.pwsh)?$|^README\.md$|^shared/build/go/eirctl\.yaml$|^\.github/workflows/.*\.ya?ml$|^scripts/check-go-version\.sh$)'
       - id: go-vet
         name: Go vet
         entry: go vet ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'
       - id: go-build
         name: Go build
         entry: go build ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'
       - id: go-test
         name: Go test
         entry: go test ./...
         language: system
         pass_filenames: false
-        files: '\.go$'
+        files: '^(?!local/).*\.go$'

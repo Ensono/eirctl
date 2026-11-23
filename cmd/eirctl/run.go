@@ -21,6 +21,8 @@ var (
 
 type runFlags struct {
 	showGraphOnly, detailedSummary bool
+	contextName                    string
+	imports                        []string
 }
 
 type runCmd struct {
@@ -48,7 +50,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		Args:         cobra.MinimumNArgs(0),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
 				return err
 			}
@@ -81,7 +83,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
 				return err
 			}
@@ -91,6 +93,9 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			}
 			if argsStringer.pipelineName == nil {
 				return fmt.Errorf("pipeline: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
+			}
+			if runner.flags.contextName != "" {
+				return errors.New("the context flag can only be used when running a task")
 			}
 			return runner.runPipeline(argsStringer.pipelineName, taskRunner, conf.Summary)
 		},
@@ -104,7 +109,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conf, err := rootCmd.initConfig()
+			conf, err := rootCmd.initConfig(runner.flags.imports...)
 			if err != nil {
 				return err
 			}
@@ -116,7 +121,7 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 			if argsStringer.taskName == nil {
 				return fmt.Errorf("task: %s is %w", args[0], ErrSpecifiedObjectIsNotFound)
 			}
-			return runner.runTask(argsStringer.taskName, taskRunner)
+			return runner.runTask(runner.taskWithContext(argsStringer.taskName), taskRunner)
 		},
 	})
 
@@ -138,6 +143,8 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 
 	rc.PersistentFlags().BoolVarP(&f.showGraphOnly, "graph-only", "", false, "Show only the denormalized graph")
 	rc.PersistentFlags().BoolVarP(&f.detailedSummary, "detailed", "", false, "Show detailed summary, otherwise will be summarised by top level stages only")
+	rc.PersistentFlags().StringVarP(&f.contextName, "context", "", "", "override the context used when running a task")
+	rc.PersistentFlags().StringArrayVarP(&f.imports, "import", "", nil, "import an additional config file, can be repeated; entries in imported files take precedence over any existing ones with the same name")
 
 	rootCmd.Cmd.AddCommand(rc)
 }
@@ -145,16 +152,30 @@ func newRunCmd(rootCmd *EirCtlCmd) {
 func (r *runCmd) runTarget(taskRunner *runner.TaskRunner, conf *config.Config, argsStringer *argsToStringsMapper) (err error) {
 
 	if argsStringer.pipelineName != nil {
+		if r.flags.contextName != "" {
+			return errors.New("the context flag can only be used when running a task")
+		}
 		return r.runPipeline(argsStringer.pipelineName, taskRunner, conf.Summary)
 	}
 
 	if argsStringer.taskName != nil {
-		if err := r.runTask(argsStringer.taskName, taskRunner); err != nil {
+		if err := r.runTask(r.taskWithContext(argsStringer.taskName), taskRunner); err != nil {
 			return fmt.Errorf("task `%s` failed: %w", argsStringer.taskOrPipelineName, err)
 		}
 	}
 
 	return nil
+}
+
+func (r *runCmd) taskWithContext(t *task.Task) *task.Task {
+	if r.flags.contextName == "" {
+		return t
+	}
+
+	taskWithContext := task.NewTask(t.Name)
+	taskWithContext.FromTask(t)
+	taskWithContext.Context = r.flags.contextName
+	return taskWithContext
 }
 
 func (r *runCmd) runPipeline(g *scheduler.ExecutionGraph, taskRunner *runner.TaskRunner, summary bool) error {

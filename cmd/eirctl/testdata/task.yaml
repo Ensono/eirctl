@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=../../../schemas/schema_v1.json
 
 contexts:
+  context:env:
+    env:
+      FOO: supplied-by-context
   context:v1:
     executable:
       bin: foo
@@ -20,6 +23,8 @@ contexts:
         - HOME
         - PATH
 tasks:
+  task:context:override:
+    command: "echo '{{ .Env.FOO }}'"
   task:task1:
     command: "echo 'This is {{index .ArgsList 0}} argument'"
     env:

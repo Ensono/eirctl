@@ -2,9 +2,12 @@
 contexts:
   go1x:
     container:
-      name: mirror.gcr.io/golang:1.26.6-trixie@sha256:b75d466dd608587fd66cca705a307ba65b889827d06ad61d6a75f0482b51b7c7
+      name: mirror.gcr.io/golang:1.27.1-trixie@sha256:433790e515d27dc6003e847e644cc0af956985cf315c1c58a3b73ee2dd305183
       enable_dind: true
       enable_mount: true
+      shell: bash
+      shell_args:
+        - -c
     envfile:
       exclude:
         - GO
@@ -13,7 +16,7 @@ contexts:
 
   golint:
     container:
-      name: mirror.gcr.io/golangci/golangci-lint:v2.11.3-alpine@sha256:b1c3de5862ad0a95b4e45a993b0f00415835d687e4f12c845c7493b86c13414e
+      name: mirror.gcr.io/golangci/golangci-lint:v2.13.2-alpine@sha256:da1f79b184ff1d98781648407d05a99b9cba7b282aa3416b0a0eac102a3b0557
       enable_mount: true
     envfile:
       exclude:
@@ -48,9 +51,7 @@ tasks:
       - |
         mkdir -p .coverage .deps
         export GOPATH="${PWD}/.deps" GOBIN="${PWD}/.deps/bin"
-        go install github.com/jstemmer/go-junit-report@v0.9.1
-        go install github.com/axw/gocov/gocov@v1.0.0
-        go install github.com/AlekSi/gocov-xml@v1.0.0
+        go install github.com/jstemmer/go-junit-report/v2@latest
     allow_failure: true
 
   coverage_merge_prereqs:
@@ -82,9 +83,22 @@ tasks:
         unset GOTOOLCHAIN
         mkdir -p .coverage .deps
         export GOPATH=$PWD/.deps GOBIN=$PWD/.deps/bin
-        CGO_ENABLED=1 go test ./... -v -coverpkg=${ROOT_PKG_NAME:=github.com/Ensono}/... -race -mod=readonly -shuffle=on -buildvcs=false -coverprofile=.coverage/out -count=1 -run=$GO_TEST_RUN_ARGS | tee .coverage/test.out
-        cat .coverage/test.out | .deps/bin/go-junit-report > .coverage/report-junit.xml
-        .deps/bin/gocov convert .coverage/out | .deps/bin/gocov-xml > .coverage/report-cobertura.xml
+        CGO_ENABLED=1 go test \
+          -buildvcs=false \
+          -v \
+          -race \
+          -cover {{ if .GoCoverPackages }}-coverpkg={{ .GoCoverPackages }}{{ end }} \
+          -mod=readonly \
+          -shuffle=on \
+          -coverprofile=.coverage/out \
+          -count=1 \
+          -run=${GO_TEST_RUN_ARGS:-.} \
+          {{ if .GoExcludePkgRegex -}}
+          $(GOFLAGS="-buildvcs=false" go list ./... | grep -Ev '{{ .GoExcludePkgRegex }}')
+          {{- else -}}
+          ./...
+          {{- end -}} | tee .coverage/test.out
+        cat .coverage/test.out | .deps/bin/go-junit-report -set-exit-code > .coverage/report-junit.xml
     env:
       GOFLAGS: -buildvcs=false
     allow_failure: true
@@ -110,18 +124,20 @@ tasks:
     allow_failure: false
     command:
       - |
-        golangci-lint run
+        exec golangci-lint run
 
   releaser:
     context: goreleaser
     command:
       - |
-        release
+        execrelease
 
 pipelines:
   test:unit:
     - task: clean
     - task: test_prereqs
+      depends_on:
+        - clean
     - task: test
       depends_on:
         - clean
@@ -132,12 +148,6 @@ pipelines:
     - task: coverage_merge
       depends_on:
         - coverage_merge_prereqs
-
-  show:coverage:
-    - pipeline: test:unit
-    - task: show_coverage
-      depends_on:
-        - test:unit
 
   go:linters:
     - task: go:lint

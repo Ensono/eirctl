@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -47,15 +46,17 @@ type Loader struct {
 
 // NewConfigLoader is Loader constructor
 func NewConfigLoader(dst *Config) Loader {
+	homeDir := utils.MustGetUserHomeDir()
+
 	cl := Loader{
 		dst:           dst,
 		imports:       make(map[string]bool),
-		homeDir:       utils.MustGetUserHomeDir(),
+		homeDir:       homeDir,
 		dir:           utils.MustGetwd(),
 		strictDecoder: false,
 	}
 
-	cache := NewCache().WithWriteImport(cl.writeImportedFile)
+	cache := NewCache(homeDir).WithWriteImport(cl.writeImportedFile)
 	cl.cache = cache
 	return cl
 }
@@ -79,11 +80,14 @@ type loaderContext struct {
 	Dir string
 }
 
-// Load loads and parses requested config file
-// This only called from the command itself and would be initially pointing to the local eirctl.yaml
+// Load loads and parses requested config file.
+//
+// The first argument is the primary config file. Any additional imports are
+// loaded afterwards and merged with override precedence, matching the
+// behaviour of CLI-supplied `--import` entries.
 //
 // NOTE: it then recursively builds a full config definition based on all the imports
-func (cl *Loader) Load(file string) (*Config, error) {
+func (cl *Loader) Load(file string, extraImports ...string) (*Config, error) {
 	cl.reset()
 	lc := &loaderContext{
 		Dir: cl.dir,
@@ -102,7 +106,7 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	}
 
 	if !utils.IsURL(file) && !filepath.IsAbs(file) {
-		file = path.Join(cl.dir, file)
+		file = filepath.Join(cl.dir, file)
 	}
 
 	def, err := cl.load(schema.ImportEntry{Src: file})
@@ -121,13 +125,43 @@ func (cl *Loader) Load(file string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cl.dst.Variables.Set("Root", cl.dir)
 
 	logrus.Debugf("config %s loaded", file)
 	cl.dst.SourceFile = file
 
+	if err := cl.loadOverrideImports(extraImports); err != nil {
+		return nil, err
+	}
+
+	cl.dst.Variables.Set("Root", cl.dir)
+
 	// validate config
 	return cl.Validate()
+}
+
+func (cl *Loader) loadOverrideImports(files []string) error {
+	for _, file := range files {
+		if !utils.IsURL(file) && !filepath.IsAbs(file) {
+			file = filepath.Join(cl.dir, file)
+		}
+
+		def, err := cl.load(schema.ImportEntry{Src: file})
+		if err != nil {
+			return err
+		}
+
+		importedCfg, err := buildFromDefinition(def, &loaderContext{Dir: cl.dir})
+		if err != nil {
+			return err
+		}
+
+		if err := cl.dst.mergeOverride(importedCfg); err != nil {
+			return err
+		}
+		logrus.Debugf("import %s loaded", file)
+	}
+
+	return nil
 }
 
 // LoadGlobalConfig load global config file  - ~/.eirctl/config.yaml
@@ -136,7 +170,7 @@ func (cl *Loader) LoadGlobalConfig() (*Config, error) {
 		return nil, nil
 	}
 
-	file := path.Join(cl.homeDir, ".eirctl", "config.yaml")
+	file := filepath.Join(cl.homeDir, ".eirctl", "config.yaml")
 	if !utils.FileExists(file) {
 		return cl.dst, nil
 	}
@@ -465,6 +499,7 @@ func (cl *Loader) readFile(entry schema.ImportEntry) (*ConfigDefinition, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", entry.Src, err)
 	}
+	defer data.Close()
 
 	cm := &ConfigDefinition{}
 

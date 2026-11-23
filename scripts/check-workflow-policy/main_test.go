@@ -9,6 +9,15 @@ import (
 	"github.com/Ensono/eirctl/internal/schema"
 )
 
+const currentScannerSHA = "59202af334b4ba7b5db01b701b8e79f8b3bef0f4"
+
+func TestMain(m *testing.M) {
+	if err := os.Setenv(trustedSonarScannerSHAsEnv, currentScannerSHA); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 func TestPrivilegedPRExecutionFixtures(t *testing.T) {
 	cases := []struct {
 		name string
@@ -850,6 +859,43 @@ func TestMaterializerArchivesOnlyConfigurationData(t *testing.T) {
 	}
 }
 
+func TestTrustedScannerApprovals(t *testing.T) {
+	const previousSHA = "22918119ff8e1ca75a623e15c8296b6ea4fbe28f"
+	cases := []struct {
+		name     string
+		approved string
+		scanner  string
+		wantFail bool
+	}{
+		{name: "current", approved: currentScannerSHA, scanner: currentScannerSHA},
+		{name: "replacement approved", approved: currentScannerSHA + "," + previousSHA, scanner: previousSHA},
+		{name: "unapproved", approved: currentScannerSHA, scanner: previousSHA, wantFail: true},
+		{name: "missing", scanner: currentScannerSHA, wantFail: true},
+		{name: "mutable", approved: "latest", scanner: currentScannerSHA, wantFail: true},
+		{name: "trailing comma", approved: currentScannerSHA + ",", scanner: currentScannerSHA, wantFail: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(trustedSonarScannerSHAsEnv, tc.approved)
+			root := copyWorkflowRoot(t, func(content string) string {
+				return strings.Replace(content, trustedSonarScannerActionPrefix+currentScannerSHA, trustedSonarScannerActionPrefix+tc.scanner, 1)
+			})
+			if err := Validate(root); (err != nil) != tc.wantFail {
+				t.Fatalf("Validate() error = %v, want failure %v", err, tc.wantFail)
+			}
+		})
+	}
+}
+
+func TestTrustedPolicyRequiresRepositoryScannerApprovals(t *testing.T) {
+	root := copyWorkflowRootFile(t, "trusted-workflow-policy.yml", func(content string) string {
+		return strings.Replace(content, "${{ vars.TRUSTED_SONAR_SCANNER_SHAS }}", "attacker-controlled", 1)
+	})
+	if err := Validate(root); err == nil {
+		t.Fatal("Validate() accepted an untrusted scanner approval source")
+	}
+}
+
 func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 	const (
 		trigger      = "on:\n  workflow_run:\n    workflows: [Lint and Test]\n    types: [completed]"
@@ -917,11 +963,8 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 		{name: "helper permitting unsafe paths", mutate: func(content string) string {
 			return strings.Replace(content, materializer, "go run trusted/scripts/materialize-unsafe-paths/main.go", 1)
 		}, wantFail: true},
-		{name: "missing source bounds", mutate: func(content string) string {
-			return strings.Replace(content, "          --bounds tree=384,go=160,path=160,file=131072,total=1048576", "", 1)
-		}, wantFail: true},
-		{name: "expanded source bounds", mutate: func(content string) string {
-			return strings.Replace(content, "tree=384,go=160,path=160,file=131072,total=1048576", "tree=9999,go=9999,path=9999,file=999999,total=9999999", 1)
+		{name: "workflow-supplied source bounds", mutate: func(content string) string {
+			return strings.Replace(content, "--output analysis/source", "--output analysis/source --bounds 99999999", 1)
 		}, wantFail: true},
 		{name: "generic source archive extraction", mutate: func(content string) string {
 			return strings.Replace(content, materializer, "gh api repos/example/repository/tarball/main | tar -x", 1)
@@ -983,7 +1026,7 @@ func TestTrustedSonarCloudAnalyzerPolicy(t *testing.T) {
 			return strings.Replace(content, "    runs-on: ubuntu-24.04", "    runs-on: ubuntu-24.04\n    services:\n      database:\n        image: postgres:latest", 1)
 		}, wantFail: true},
 		{name: "alternate scanner action", mutate: func(content string) string {
-			return strings.Replace(content, "SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", 1)
+			return strings.Replace(content, trustedSonarScannerActionPrefix+currentScannerSHA, "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", 1)
 		}, wantFail: true},
 		{name: "equivalent flow trigger syntax", mutate: func(content string) string {
 			return strings.Replace(content, trigger, "on: {workflow_run: {workflows: [Lint and Test], types: [completed]}}", 1)

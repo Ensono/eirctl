@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../../schemas/schema_v1.json
+# fixture used to verify entries supplied via `--import` on the CLI
+# take precedence over any existing entries with the same name
+
+contexts:
+  context:env:
+    env:
+      FOO: supplied-by-cli-import
+
+tasks:
+  task:from:cli:import:
+    command: "echo 'hello from cli import'"

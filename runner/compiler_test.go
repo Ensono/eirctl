@@ -95,3 +95,51 @@ func TestTaskCompiler_CompileTask(t *testing.T) {
 		t.Error("var interpolation failed")
 	}
 }
+
+func TestTaskCompiler_CompileTask_ReusedContextUsesLatestEnvironment(t *testing.T) {
+	tc := runner.NewTaskCompiler()
+	executionContext := runner.NewExecutionContext(
+		&shBin,
+		"/tmp",
+		variables.FromMap(map[string]string{"HOME": "/root"}),
+		utils.NewEnvFile(),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	tsk := task.NewTask("reused-context")
+	tsk.Commands = []string{"true"}
+
+	oldArtifactEnv := variables.FromMap(map[string]string{"AWS_ACCESS_KEY_ID": "old"})
+	_, err := tc.CompileTask(
+		tsk,
+		executionContext,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		oldArtifactEnv.Merge(executionContext.Env),
+		variables.NewVariables(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newArtifactEnv := variables.FromMap(map[string]string{"AWS_ACCESS_KEY_ID": "new"})
+	job, err := tc.CompileTask(
+		tsk,
+		executionContext,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		newArtifactEnv.Merge(executionContext.Env),
+		variables.NewVariables(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := job.Env.Get("AWS_ACCESS_KEY_ID"); got != "new" {
+		t.Errorf("got AWS_ACCESS_KEY_ID %q, wanted latest value %q", got, "new")
+	}
+}

@@ -23,13 +23,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: 1.26.6
+          go-version: 1.27.1
           cache: false
 
       - name: Materialize candidate policy data without execution
         id: candidate
         env:
           PULL_REQUEST: ${{ github.event.pull_request.number }}
+          TRUSTED_SONAR_SCANNER_SHAS: ${{ vars.TRUSTED_SONAR_SCANNER_SHAS }}
         run: |
           tmp_root="$(mktemp -d)"
           candidate_root="$tmp_root/candidate"
