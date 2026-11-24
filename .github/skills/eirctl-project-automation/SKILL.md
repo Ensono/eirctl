@@ -206,7 +206,6 @@ For CI workflows:
 - Use `eirctl generate` when the project wants CI config generated from eirctl pipelines.
 - Keep local and CI behavior aligned by using the same task names and contexts.
 - Avoid installing language or toolchain dependencies differently in CI when the `eirctl` context already defines them.
-- For trusted workflow command changes, check candidate YAML with the protected-base checker and land any needed reviewed policy and helper updates before switching the workflow.
 
 ## Safety
 

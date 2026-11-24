@@ -55,9 +55,7 @@ OpenSSF Scorecard reports every such form as `Dangerous-Workflow`,
 even when a separate condition proves that the revision came from
 protected `main`.
 
-The authoritative pull-request policy workflow therefore relies on
-`pull_request_target`'s implicit protected base revision and omits the
-checkout `ref` entirely. Trusted release workflows use the literal
+Trusted release workflows use the literal
 `main` ref, then immediately compare the checked-out commit to
 `github.event.workflow_run.head_sha` supplied through an environment
 variable. The release job fails closed before GitVersion, builds,
@@ -65,24 +63,7 @@ registry login, tagging, or publication if protected `main` has
 advanced or the completed upstream run does not match. Release checkouts
 never persist credentials. The binary release job has job-level
 `contents: write`, used to create the Git Data API tag after the build
-and to publish the GitHub Release. The structural checker rejects the
-Scorecard dynamic checkout forms and requires this
-static-checkout-plus-verification and non-persistent-credential topology
-for every release job.
-
-=== Authoritative workflow policy
-
-*Trusted workflow policy* is the stable required check name for branch
-protection. It runs from the protected base revision through
-`pull_request_target`, checks out only that base SHA, and materializes
-pull-request workflow/configuration files as data before passing them to
-the base-branch checker with `--candidate-root`. It never executes
-candidate scripts or local actions.
-
-The `Lint and Test` workflow's *Advisory workflow policy feedback (not
-required)* step runs against the pull-request checkout only for fast
-contributor feedback. It is not an authoritative security boundary and
-must not be configured as the required workflow-policy check.
+and to publish the GitHub Release.
 
 === Ownership governance
 
@@ -181,17 +162,13 @@ actions, dependency metadata and hooks, containers, archives, and
 binaries are never materialized.
 
 Set `TRUSTED_SONAR_SCANNER_SHAS` to a comma-separated list of reviewed
-40-character lowercase commit SHAs, with no spaces. The trusted policy reads
-this variable from the protected-base workflow, not from pull-request files.
-The immutable dependency check uses the same variable. Missing or malformed
-values fail closed; local invocations of either check also require it in the
+40-character lowercase commit SHAs, with no spaces. The immutable dependency
+check uses this variable. Missing or malformed values fail closed; local
+invocations of the check also require it in the
 environment. Restrict permission to modify Actions variables to trusted
 maintainers because changing this list changes the approved scanner code.
 For an upgrade, approve both the current and replacement SHA, merge the
 workflow update, and then remove the old SHA.
-Set the variable before merging the variable-based policy; until it is set,
-both CI checks fail. Pull requests based on an older policy workflow must be
-rebased after the policy change merges.
 
 This boundary narrows, but cannot eliminate, the risk that the trusted
 scanner parser processes hostile Go source and passive reports while
@@ -251,12 +228,11 @@ ref rather than the shared default branch.
 
 A reusable workflow does not create a new root trust event. The
 https://docs.github.com/en/actions/sharing-automations/reusing-workflows[caller invokes it as a job],
-its permissions can only be maintained or reduced, and this repository's
-policy resolves every local caller transitively. The debug builder
+and its permissions can only be maintained or reduced. The debug builder
 therefore inherits the authorized request run's effective
 `issue_comment` event and read-only default-branch cache boundary. A
 `workflow_dispatch`, `repository_dispatch`, default-branch `push`, or
-other documented cache-writing caller is rejected even if the called
+other documented cache-writing event must not call the builder even if the called
 workflow declares `contents: read`, disables checkout credentials, and
 sets `setup-go` caching to `false`. Disabling convenience caching is
 defense in depth; pull-request code can otherwise address the cache
