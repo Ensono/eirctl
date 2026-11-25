@@ -41,7 +41,7 @@ pipelines:
       variables:
         GoExcludePkgRegex: "/(vscode-extension|scripts|local)(/|$)"
         GoCoverPackages: github.com/Ensono/eirctl/...
-    - task: sonar:coverage:prep
+    - task: coverage:cobertura
       depends_on:
         - test:unit
 
@@ -88,9 +88,6 @@ pipelines:
 
   trivy:scan:fs:
     - task: trivy:filesystem:scan
-
-  sonar:scan:
-    - task: sonar:scanner:cli
 
   show:coverage:
     - pipeline: test:unit
@@ -273,15 +270,3 @@ tasks:
     context: go1x
     command:
       - go mod tidy
-
-  sonar:coverage:prep:
-    context: bash
-    command:
-      - |
-        # SonarCloud expects relative file paths, but Go generates coverage with full module paths
-        # Convert from 'github.com/Ensono/eirctl/path/file.go' to 'path/file.go'
-        sed -i 's|github.com/Ensono/eirctl/||g' .coverage/out
-        echo "Coverage file first 20 lines after conversion:"
-        head -20 .coverage/out
-        echo "Coverage file line count:"
-        wc -l .coverage/out

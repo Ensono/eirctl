@@ -38,6 +38,10 @@ go run cmd/main.go run pipeline gha:unit:test --verbose
 go run cmd/main.go run build:docs --verbose
 ```
 
+The pre-commit Go complexity check requires `eirctl` and a running Docker
+Engine or compatible container runtime. Run all configured hooks with
+`pre-commit run --all-files`.
+
 The test pipeline generates coverage and JUnit report files under `.coverage/`. The documentation build writes generated output under `.eirctl/outputs/docs/`; do not commit generated documentation output.
 
 ## Community standards

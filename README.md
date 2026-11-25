@@ -7,13 +7,6 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Ensono/eirctl/badge)](https://scorecard.dev/viewer/?uri=github.com/Ensono/eirctl)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13762/badge)](https://www.bestpractices.dev/projects/13762)
 
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=bugs)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Ensono_eirctl&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Ensono_eirctl)
-
 `eirctl` is a build tool alternative to GNU Make, like its inspiration [taskctl](https://github.com/taskctl/taskctl), taskfile and others it is cross-platform and cross-architecture, so it works on Windows, Linux and MacOS on either `amd64` or `arm64`, as the Go source code is provided it can be compiled for any architecture supported by the language and the project dependencies.
 
 > [!NOTE]
