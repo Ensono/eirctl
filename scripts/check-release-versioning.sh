@@ -15,6 +15,13 @@ require_text() {
 		fail "$file must contain: $pattern"
 }
 
+require_line() {
+	local line=$1
+	local file=$2
+	grep -Fxq -- "$line" "$file" ||
+		fail "$file must contain line: $line"
+}
+
 policy_only=false
 if [[ ${1:-} == --policy-only ]]; then
 	policy_only=true
@@ -22,11 +29,13 @@ if [[ ${1:-} == --policy-only ]]; then
 fi
 [[ $# -eq 0 ]] || fail 'usage: check-release-versioning.sh [--policy-only]'
 
-require_text 'workflow: GitHubFlow/v1' GitVersion.yml
-require_text 'mode: ContinuousDeployment' GitVersion.yml
-require_text 'label: null' GitVersion.yml
-require_text '  main:' GitVersion.yml
-require_text '    label: null' GitVersion.yml
+require_line 'workflow: GitHubFlow/v1' GitVersion.yml
+require_line 'calculation:' GitVersion.yml
+require_line '  mode: ContinuousDeployment' GitVersion.yml
+require_line '  label: null' GitVersion.yml
+require_line '  branches:' GitVersion.yml
+require_line '    main:' GitVersion.yml
+require_line '      label: null' GitVersion.yml
 
 workflows=(
 	.github/workflows/pr.yml

@@ -17,4 +17,9 @@ FROM docker.io/alpine:3@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d
 
 COPY --from=builder /app/bin/eirctl /usr/bin/eirctl
 
+RUN mkdir /workspace && chown 65532:65532 /workspace
+ENV HOME=/workspace
+WORKDIR /workspace
+USER 65532:65532
+
 ENTRYPOINT ["eirctl"]
