@@ -90,3 +90,9 @@ curl -L https://github.com/Ensono/eirctl/releases/latest/download/eirctl-darwin-
 
 * `eirctl run` opens the interactive task selector.
 * `eirctl --help` (or `eirctl -h`) lists available commands and options.
+
+The published container images run as UID and GID `65532` with
+`/workspace` as their working directory and home. Bind-mounted workspaces
+must be readable and writable by that user when tasks need to write files.
+Docker socket access also requires suitable socket permissions or an
+explicitly configured container user and group.

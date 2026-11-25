@@ -24,18 +24,22 @@ expect_failure() {
 	fi
 }
 
-# CI supplies this value from the pinned GitVersion 6.2.0 execution.
+# CI supplies this value from the pinned GitVersion 7.0.1 execution.
 run_check env SEMVER=0.11.5 "./$checker"
 expect_failure missing-semver "./$checker"
 expect_failure numeric-prerelease \
 	env SEMVER=0.11.5-13 "./$checker"
 
-for mutation in missing-main-label binary-prefix container-prefix; do
+for mutation in missing-global-label missing-main-label binary-prefix container-prefix; do
 	backup="$(mktemp -d)"
 	cp -R "$fixture/." "$backup/"
 	case "$mutation" in
+		missing-global-label)
+			sed -i 's/^  label: null$/  label: ""/' \
+				"$fixture/GitVersion.yml"
+			;;
 		missing-main-label)
-			sed -i 's/^    label: null$/    label: ""/' \
+			sed -i 's/^      label: null$/      label: ""/' \
 				"$fixture/GitVersion.yml"
 			;;
 		binary-prefix)

@@ -3,8 +3,9 @@
 workflow: GitHubFlow/v1
 # ContinuousDeployment omits the numeric commit-count suffix when the label is
 # null; this makes a validated main commit a stable release.
-mode: ContinuousDeployment
-label: null
-branches:
-  main:
-    label: null
+calculation:
+  mode: ContinuousDeployment
+  label: null
+  branches:
+    main:
+      label: null

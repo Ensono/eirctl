@@ -59,13 +59,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
-          versionSpec: '6.2.0'
+          dotnet-version: '10.0.404'
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@389fe43e6b0189b98c40c43553070ac029304635 # v5.0.0
+        with:
+          versionSpec: '7.0.1'
       - name: Set SemVer version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@7417b1089e2c7de93510f1901d656ddf60bb024f # v4.7.0
+        uses: gittools/actions/gitversion/execute@389fe43e6b0189b98c40c43553070ac029304635 # v5.0.0
         with:
           configFilePath: GitVersion.yml
 
