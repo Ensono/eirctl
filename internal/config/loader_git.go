@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rsa"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -10,13 +12,19 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/schema"
+	"github.com/Ensono/eirctl/internal/securehttp"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/kevinburke/ssh_config"
@@ -34,7 +42,14 @@ const (
 	remoteRef        string = "origin"
 	GitSshCommandVar string = "GIT_SSH_COMMAND"
 	GitSshPassphrase string = "GIT_SSH_PASSPHRASE"
+	sshLegacyCTRVar         = "EIRCTL_SSH_LEGACY_CTR"
+	sshStrictVar            = "EIRCTL_SSH_STRICT"
 )
+
+func init() {
+	// go-git v5 selects HTTPS transports through its process-wide registry.
+	gitclient.InstallProtocol("https", githttp.NewClient(securehttp.NewClient()))
+}
 
 var (
 	// GitRegExp must begin with git::
@@ -102,22 +117,33 @@ func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
 	switch gitConn.Scheme {
 	case "ssh":
 		// auth using ssh_config
-		auth, err := gs.getGitSSHAuth(gitConn.Host)
+		auth, err := gs.getGitSSHAuth(gitConn.url.Hostname(), gitConn.url.Port())
 		if err != nil {
 			return nil, err
 		}
 		if gitConn.User != "" {
 			gs.SshConfig.User = gitConn.User
+			auth.User = gitConn.User
 		}
 		gitConn.url.User = url.User(gs.SshConfig.User)
-		gitConn.url.Host = gs.SshConfig.Hostname + ":" + gs.SshConfig.Port
+		gitConn.url.Host = net.JoinHostPort(gs.SshConfig.Hostname, gs.SshConfig.Port)
 		gitConn.url.Path = gitConn.Repo
 		gs.gcOpts.URL = gitConn.url.String()
 		gs.gcOpts.Auth = auth
-	case "http", "https":
+	case "https":
+		if err := securehttp.RequireHTTPS(gitConn.url); err != nil {
+			return nil, err
+		}
 		gs.gcOpts.URL = gitConn.url.String()
+	case "http":
+		return nil, securehttp.ErrHTTPSRequired
 	case "file":
-		gs.gcOpts.URL = strings.Replace(gitConn.url.String(), "file://", "", 1)
+		path := strings.TrimPrefix(gitConn.url.String(), "file://")
+		endpoint, err := transport.NewEndpoint(path)
+		if err != nil || endpoint.Protocol != "file" {
+			return nil, fmt.Errorf("%w: file Git imports require a local path", ErrIncorrectlyFormattedGit)
+		}
+		gs.gcOpts.URL = path
 	default:
 		return nil, fmt.Errorf("must specify a protocol (ssh|https|file)\n%w", ErrIncorrectlyFormattedGit)
 	}
@@ -180,17 +206,17 @@ func (gs *GitSource) Config(writeImport func(entry schema.ImportEntry, content i
 	}
 	defer contents.Close()
 
-	// store in cache irrespective of entry type
-	// create an entry for both import and config files
-	contentBuffer := &bytes.Buffer{}
-	cacheBuffer := io.TeeReader(contents, contentBuffer)
-	if err := cacheStore(gs.entry.Src, cacheBuffer); err != nil {
+	content, err := readImportBytes(gs.entry, contents)
+	if err != nil {
+		return nil, err
+	}
+	if err := cacheStore(gs.entry.Src, bytes.NewReader(content)); err != nil {
 		logrus.Debugf("failed to store (%s) in cache", gs.entry.Src)
 	}
 
 	if gs.entry.IsFileImport() {
 
-		if err := writeImport(gs.entry, io.NopCloser(contentBuffer)); err != nil {
+		if err := writeImport(gs.entry, io.NopCloser(bytes.NewReader(content))); err != nil {
 			return nil, err
 		}
 		return &ConfigDefinition{}, nil
@@ -198,7 +224,7 @@ func (gs *GitSource) Config(writeImport func(entry schema.ImportEntry, content i
 
 	cm := &ConfigDefinition{}
 
-	if err := yaml.NewDecoder(contentBuffer).Decode(&cm); err != nil {
+	if err := yaml.NewDecoder(bytes.NewReader(content)).Decode(cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
@@ -250,19 +276,84 @@ func ParseGitUrl(input string) (urlParts GitConnection, err error) {
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
+	var signer ssh.Signer
+	var err error
 	if passphrase, found := os.LookupEnv(GitSshPassphrase); found {
-		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(passphrase))
-		if err != nil {
-			return nil, fmt.Errorf("%w\nfailed to parse identityFile with passprhase: %v", ErrGitOperation, err)
+		if err := checkEncryptedSSHKeyFormat(key); err != nil {
+			return nil, err
 		}
-		return signer, nil
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(key, []byte(passphrase))
+	} else {
+		signer, err = ssh.ParsePrivateKey(key)
 	}
-	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("%w\nfailed to parse identityFile: %v", ErrGitOperation, err)
+		return nil, fmt.Errorf("%w: failed to parse SSH identity: %v", ErrGitOperation, err)
 	}
-
+	if err := checkSSHKey(signer.PublicKey()); err != nil {
+		return nil, fmt.Errorf("SSH identity: %w", err)
+	}
+	if signer.PublicKey().Type() == ssh.KeyAlgoRSA {
+		algorithmSigner, ok := signer.(ssh.AlgorithmSigner)
+		if !ok {
+			return nil, fmt.Errorf("%w: SSH identity cannot sign with RSA-SHA2", ErrGitOperation)
+		}
+		return ssh.NewSignerWithAlgorithms(algorithmSigner, []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256})
+	}
 	return signer, nil
+}
+
+func checkEncryptedSSHKeyFormat(key []byte) error {
+	const magic = "openssh-key-v1\x00"
+	block, _ := pem.Decode(key)
+	if block == nil || block.Type != "OPENSSH PRIVATE KEY" || !bytes.HasPrefix(block.Bytes, []byte(magic)) {
+		return fmt.Errorf("%w: encrypted SSH identities must use the OpenSSH private-key format", ErrGitOperation)
+	}
+	var header struct {
+		Cipher string
+		Rest   []byte `ssh:"rest"`
+	}
+	if err := ssh.Unmarshal(block.Bytes[len(magic):], &header); err != nil || header.Cipher != "aes256-ctr" {
+		return fmt.Errorf("%w: encrypted OpenSSH identities must use aes256-ctr", ErrGitOperation)
+	}
+	return nil
+}
+
+func checkSSHKey(key ssh.PublicKey) error {
+	if cert, ok := key.(*ssh.Certificate); ok {
+		if cert.Signature == nil {
+			return fmt.Errorf("%w: SSH certificate lacks a signature", ErrGitOperation)
+		}
+		switch cert.Signature.Format {
+		case ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoED25519,
+			ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521:
+		default:
+			return fmt.Errorf("%w: unsupported SSH certificate signature algorithm %q", ErrGitOperation, cert.Signature.Format)
+		}
+		if err := checkPlainSSHKey(cert.SignatureKey); err != nil {
+			return fmt.Errorf("SSH certificate authority: %w", err)
+		}
+		key = cert.Key
+	}
+	return checkPlainSSHKey(key)
+}
+
+func checkPlainSSHKey(key ssh.PublicKey) error {
+	if key == nil {
+		return fmt.Errorf("%w: missing SSH key", ErrGitOperation)
+	}
+	switch key.Type() {
+	case ssh.KeyAlgoRSA:
+		if public, ok := key.(ssh.CryptoPublicKey); ok {
+			if rsaKey, ok := public.CryptoPublicKey().(*rsa.PublicKey); ok && rsaKey.N.BitLen() >= 2048 {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: SSH RSA keys must be at least 2048 bits; rotate to Ed25519 or RSA 2048+", ErrGitOperation)
+	case ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported SSH key type %q", ErrGitOperation, key.Type())
+	}
 }
 
 type getCommitFunc func(r *git.Repository, tag string) (*object.Commit, error)
@@ -327,7 +418,63 @@ func (gs *GitSource) tree() (*object.Tree, error) {
 	return tree, nil
 }
 
-func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
+type gitSSHAuth struct {
+	gitssh.PublicKeys
+	config ssh.Config
+}
+
+func (a *gitSSHAuth) ClientConfig() (*ssh.ClientConfig, error) {
+	cfg, err := a.PublicKeys.ClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	cfg.Config = a.config
+	return cfg, nil
+}
+
+func sshTransportConfig(address string, strict bool) (ssh.Config, error) {
+	cfg := ssh.Config{
+		KeyExchanges: []string{
+			ssh.KeyExchangeMLKEM768X25519, ssh.KeyExchangeCurve25519,
+			ssh.KeyExchangeECDHP256, ssh.KeyExchangeECDHP384, ssh.KeyExchangeECDHP521,
+			ssh.KeyExchangeDH14SHA256, ssh.KeyExchangeDH16SHA512,
+		},
+		Ciphers: []string{ssh.CipherAES128GCM, ssh.CipherAES256GCM, ssh.CipherChaCha20Poly1305},
+		MACs:    []string{ssh.HMACSHA256ETM, ssh.HMACSHA512ETM},
+	}
+	raw := os.Getenv(sshLegacyCTRVar)
+	if strict || raw == "" {
+		return cfg, nil
+	}
+	match := false
+	for endpoint := range strings.SplitSeq(raw, ",") {
+		endpoint = strings.TrimSpace(endpoint)
+		host, port, err := net.SplitHostPort(endpoint)
+		portNumber, portErr := strconv.ParseUint(port, 10, 16)
+		if err != nil || host == "" || strings.ContainsAny(host, "*? \t\r\n") || portErr != nil || portNumber == 0 {
+			return cfg, fmt.Errorf("%w: %s requires comma-separated host:port endpoints without wildcards", ErrGitOperation, sshLegacyCTRVar)
+		}
+		match = match || strings.EqualFold(address, net.JoinHostPort(host, strconv.FormatUint(portNumber, 10)))
+	}
+	if match {
+		cfg.Ciphers = append(cfg.Ciphers, ssh.CipherAES128CTR, ssh.CipherAES192CTR, ssh.CipherAES256CTR)
+	}
+	return cfg, nil
+}
+
+func sshStrict() (bool, error) {
+	value := os.Getenv(sshStrictVar)
+	if value == "" {
+		return false, nil
+	}
+	strict, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%w: %s must be a boolean", ErrGitOperation, sshStrictVar)
+	}
+	return strict, nil
+}
+
+func (gs *GitSource) getGitSSHAuth(host, port string) (*gitSSHAuth, error) {
 
 	sshDefaultConf := parseDefaultSshConfigFilePaths()
 	// values supplied via the GIT_SSH_COMMAND have global precedence
@@ -353,6 +500,9 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 	if err := processSSHConfig(sshCfgFile, sshConf, host); err != nil {
 		return nil, err
 	}
+	if port != "" {
+		sshConf.Port = port
+	}
 
 	if sshConf.IdentityFile == "" {
 		sshConf.IdentityFile = sshDefaultConf.IdentityFile
@@ -377,11 +527,35 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 		return nil, err
 	}
 
-	return &gitssh.PublicKeys{
-		User:   sshConf.User,
-		Signer: signer,
-		HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
-			HostKeyCallback: hostKeyCallback,
+	strict, err := sshStrict()
+	if err != nil {
+		return nil, err
+	}
+	address := net.JoinHostPort(sshConf.Hostname, sshConf.Port)
+	cfg, err := sshTransportConfig(address, strict)
+	if err != nil {
+		return nil, err
+	}
+	if slices.Contains(cfg.Ciphers, ssh.CipherAES128CTR) {
+		if strings.EqualFold(sshConf.StrictHostKeyChecking, "no") {
+			return nil, fmt.Errorf("%w: legacy SSH cipher compatibility requires host-key verification", ErrGitOperation)
+		}
+		logrus.Warnf("SSH AES-CTR compatibility enabled for %s", address)
+	}
+	return &gitSSHAuth{
+		config: cfg,
+		PublicKeys: gitssh.PublicKeys{
+			User:   sshConf.User,
+			Signer: signer,
+			HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+				HostKeyCallback: hostKeyCallback,
+				HostKeyAlgorithms: []string{
+					ssh.CertAlgoED25519v01, ssh.CertAlgoECDSA256v01, ssh.CertAlgoECDSA384v01, ssh.CertAlgoECDSA521v01,
+					ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSASHA256v01,
+					ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521,
+					ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256,
+				},
+			},
 		},
 	}, nil
 }
@@ -389,9 +563,16 @@ func (gs *GitSource) getGitSSHAuth(host string) (*gitssh.PublicKeys, error) {
 // hostKeyCallback verifies SSH server identity using configured OpenSSH known-host files.
 // StrictHostKeyChecking=no is the sole compatibility opt-out and is deliberately noisy.
 func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
+	strict, err := sshStrict()
+	if err != nil {
+		return nil, err
+	}
 	if strings.EqualFold(sshConf.StrictHostKeyChecking, "no") {
+		if strict {
+			return nil, fmt.Errorf("%w: %s forbids StrictHostKeyChecking=no", ErrGitOperation, sshStrictVar)
+		}
 		logrus.Warn("SSH host-key verification is disabled by StrictHostKeyChecking=no")
-		return ssh.InsecureIgnoreHostKey(), nil
+		return func(_ string, _ net.Addr, key ssh.PublicKey) error { return checkSSHKey(key) }, nil
 	}
 
 	if err := validateConfiguredKnownHostsFiles(sshConf); err != nil {
@@ -411,6 +592,9 @@ func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
 	}
 	effectiveAddress := net.JoinHostPort(sshConf.Hostname, effectivePort)
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		if err := checkSSHKey(key); err != nil {
+			return fmt.Errorf("SSH host key for %s: %w", effectiveAddress, err)
+		}
 		if err := callback(hostname, remote, key); err != nil {
 			return fmt.Errorf("%w: SSH host-key verification failed for %s; verify the effective host and port in the configured known-hosts file", err, effectiveAddress)
 		}

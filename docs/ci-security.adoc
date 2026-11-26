@@ -232,6 +232,15 @@ debug output.
 
 === SSH server trust
 
+Git-over-SSH uses ephemeral key exchange, SHA-2 or Ed25519 signatures, and
+authenticated encryption by default. Client and server RSA keys must be at
+least 2048 bits; Ed25519 and NIST P-256, P-384 and P-521 ECDSA keys are also
+supported. For SSH host certificates, the same minimum applies to the host
+and signing CA keys, and SHA-1 signatures are rejected. Rotate undersized keys
+on the server or in the client identity file; no compatibility option accepts
+them. Older servers using RSA client authentication must support RSA-SHA2
+negotiation.
+
 Git-over-SSH verifies server identity by default using ordered
 `UserKnownHostsFile` and `GlobalKnownHostsFile` selections from SSH
 configuration or supported `GIT_SSH_COMMAND -o ...` options. Quote or
@@ -253,17 +262,42 @@ the obsolete entry, and add the reviewed replacement key. Errors
 intentionally identify only the host and remediation, never private
 keys, passphrases, or tokens.
 
-`StrictHostKeyChecking=no` in the selected SSH configuration or
-supported `GIT_SSH_COMMAND -o` option is a temporary compatibility
-escape hatch. It disables server verification and emits a warning on
-every connection; use it only while provisioning a verified known-host
-entry, then remove it.
+If a server lacks authenticated encryption, upgrade it. As a temporary
+migration measure, set `EIRCTL_SSH_LEGACY_CTR=git.example.com:22` in the
+operator's environment. Use a comma-separated list of exact endpoints,
+with brackets around IPv6 addresses. Endpoints are matched after SSH
+alias and port resolution. The client logs a warning and appends AES-CTR
+behind its modern ciphers, with SHA-2 encrypt-then-MAC required for CTR.
+This exception does not enable SHA-1 or CBC and cannot be combined with
+`StrictHostKeyChecking=no`.
+
+The existing `StrictHostKeyChecking=no` opt-out disables server identity
+verification and warns; provision a verified host key instead.
+Set `EIRCTL_SSH_STRICT=true` in managed environments to disable cipher
+exceptions and reject that opt-out. Strict SSH imports do not read previously
+cached SSH imports. Old remote cache entries are not reused after this upgrade;
+fetch imports online once to populate the new cache.
 
 When updating maintained CI contexts or tools, update the readable tag
 and reviewed digest together, record the manifest evidence above, and
 run `scripts/check-immutable-ci-dependencies.sh`. The check rejects
 tag-only task-runner images, floating GitVersion selectors, and
 `govulncheck@latest`.
+
+=== HTTPS and remote Docker
+
+Direct HTTPS imports, Git-over-HTTPS, and self-update require TLS 1.3 or
+TLS 1.2 with ephemeral ECDHE and AEAD, a verified server certificate chain,
+and RSA keys of 2048 bits or more in the accepted chain. Plain HTTP and
+redirects to it are rejected. For private services, install the issuing CA
+in the system trust store rather than disabling verification.
+
+Local Docker socket behavior is unchanged. For remote Docker, the Docker
+SDK uses `DOCKER_HOST`, `DOCKER_CERT_PATH`, and `DOCKER_TLS_VERIFY`; the HTTPS
+policy above does not cover that SDK connection. Prefer a local socket. If a
+remote daemon is necessary, configure mutual TLS with `DOCKER_CERT_PATH`
+and `DOCKER_TLS_VERIFY=1`; setting only `DOCKER_HOST` or only the certificate
+path does not require authenticated TLS.
 
 === Validation baseline
 

@@ -16,6 +16,7 @@ import:
 === HTTPS
 
 For HTTPS imports, ensure that the URL returns the configuration contents directly. On GitHub, use a `raw.githubusercontent.com` URL.
+Remote HTTP imports and HTTPS redirects to HTTP are rejected. Use HTTPS with a trusted certificate or import a local file instead.
 
 [NOTE]
 ====
@@ -28,7 +29,7 @@ For Git imports, use SSH for private repositories. HTTPS is suitable for public 
 
 [IMPORTANT]
 ====
-The import value must match `^git::(ssh|https?|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`.
+The import value must match `^git::(ssh|https|file)://(.+?)//([^?]+)(?:\?ref=([^&]+))?$`.
 ====
 
 Supported Git protocols are:
@@ -45,7 +46,23 @@ An optional `ref` can identify a branch, tag, or commit SHA.
 [IMPORTANT]
 ====
 Set `GIT_SSH_PASSPHRASE` when the selected SSH key is encrypted with a passphrase. This setting is global: once set, it is used across all organizations and repositories.
+Encrypted identities must use the OpenSSH private-key format with AES-256-CTR. Replace weak keys and legacy PEM or CBC-encrypted identities before upgrading.
 ====
+
+See <<_ssh_server_trust,SSH server trust>> for key requirements and temporary compatibility settings.
+
+=== Integrity
+
+Use the object form with `hash: sha256:<hex-digest>` to pin either an imported
+configuration or a file with `dest`. Obtain the digest through a trusted channel
+independent of the import. `eirctl` verifies fetched and cached bytes before
+using them and rejects a mismatch. After a mismatch, investigate the source
+before removing the affected cache entry or updating the expected digest.
+
+A Git `ref` selects a revision but does not replace the SHA-256 pin. Git
+repositories using the conventional object format still use collision-detecting
+SHA-1 for object IDs; this mitigates known collision techniques but does not
+provide SHA-256 integrity.
 
 === Filesystem
 
