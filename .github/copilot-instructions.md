@@ -76,7 +76,7 @@ go build -o bin/eirctl cmd/main.go
 
 ```bash
 eirctl test:unit     # Runs tests with coverage in containers
-eirctl lints        # golangci-lint + vulnerability scanning
+eirctl lint:vuln:scan # golangci-lint + vulnerability scanning
 eirctl show:coverage # Opens HTML coverage report
 eirctl tidy # Runs go mod tidy 
 ```
@@ -117,4 +117,4 @@ When implementing container features, work with `runner/executor_container.go` a
 
 ### What to Avoid
 
-- Avoid disabling security controls, such as GPG signing, even if GPG signing fails, instead prompt the user to take the required action to fix the issue.
+- Keep security controls enabled; when GPG signing is unavailable, prepare and validate changes without committing, then ask the user to restore signing or make the required signed commit.

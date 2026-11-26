@@ -31,7 +31,7 @@ Run the checks relevant to the files you changed from the repository root. The p
 go test ./...
 
 # Run the CI-equivalent lint and test pipelines
-go run -race cmd/main.go run lints
+go run -race cmd/main.go run lint:vuln:scan
 go run cmd/main.go run pipeline gha:unit:test --verbose
 
 # Build and validate documentation when documentation changes

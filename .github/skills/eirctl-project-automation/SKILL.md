@@ -43,7 +43,7 @@ When working in the `eirctl` repo, prefer the existing automation in the root co
 3. Reuse the repo's current tasks and pipelines before adding new ones, especially:
     - `eirctl build:binary`
     - `eirctl test:unit`
-    - `eirctl lints`
+    - `eirctl lint:vuln:scan`
     - `eirctl tidy`
     - `eirctl show:coverage`
     - `eirctl generate_own_schema`
@@ -71,7 +71,7 @@ Repo-validated inspection commands in this repository:
 Repo task examples below are valid command shapes, but some require extra inputs or host capabilities to succeed:
 
 - `eirctl build:binary` and `eirctl build:container` depend on template values such as `.Version` and `.Revision` being available in the task context.
-- `eirctl tidy`, `eirctl test:unit`, `eirctl lints`, and `eirctl show:coverage` depend on working container execution in this environment.
+- `eirctl tidy`, `eirctl test:unit`, `eirctl lint:vuln:scan`, and `eirctl show:coverage` depend on working container execution in this environment.
 - `eirctl generate_own_schema` may require outbound network access and a trusted CA chain for Go module downloads.
 
 ## Installation Guidance
@@ -175,7 +175,7 @@ Before executing a command:
 
 When deciding whether an example is safe to run immediately, separate commands into these groups:
 
-- Inspection-only: `eirctl --version`, `eirctl validate`, `eirctl list`, `eirctl show <name>`, `eirctl graph <pipeline-name>`.
+- Definition inspection (loading imports may download or write files): `eirctl --version`, `eirctl validate`, `eirctl list`, `eirctl show <name>`, `eirctl graph <pipeline-name>`.
 - Repo-local but environment-dependent: tasks using container contexts, Docker socket access, network downloads, or required template variables.
 - Credential-dependent: tasks that require secrets or service auth.
 - Illustrative cross-project examples: examples such as Terraform workflows that show the intended pattern but are not guaranteed to exist in the current repo.
@@ -193,7 +193,7 @@ Be explicit about what those examples mean:
 For repo task execution examples, state prerequisites up front:
 
 - If a task uses a container context, mention that container runtime access and any required socket mounts must work first.
-- If a task interpolates build metadata such as `.Version` or `.Revision`, mention that these values must be provided by the config, environment, or invoking workflow.
+- If a task interpolates build metadata such as `.Version` or `.Revision`, mention that these must be supplied as task/pipeline variables or with `--set`, explicitly mapping environment values when used.
 - If a task downloads modules or images, mention that network access and certificate trust must be available.
 
 ## CI and Reproducibility
@@ -221,10 +221,10 @@ Before direct tool execution, confirm:
 - Is there an `eirctl.yaml`?
 - Has `eirctl validate` passed?
 - Does `eirctl list` or `eirctl show <name>` already expose the needed task, pipeline, or context?
-- In the `eirctl` repo, does an existing task such as `build:binary`, `test:unit`, `lints`, `tidy`, or `generate_own_schema` already cover the workflow?
+- In the `eirctl` repo, does an existing task such as `build:binary`, `test:unit`, `lint:vuln:scan`, `tidy`, or `generate_own_schema` already cover the workflow?
 - Is there an existing context that already pins the toolchain?
 - Should a new task or context be added instead of running the command directly?
-- Is this command inspection-only, environment-dependent, credential-dependent, or just illustrative for another project?
+- Is this command definition inspection, environment-dependent, credential-dependent, or just illustrative for another project?
 - If it is environment-dependent, have container runtime access, network access, certificate trust, and required template values been checked?
 - If it is credential-dependent, has the user explicitly supplied the required secret out of band?
 - If the change touches shared automation or schemas, have the relevant repo tasks been rerun?
