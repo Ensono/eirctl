@@ -105,6 +105,7 @@ func createFilesystemTestRepo(t *testing.T, files map[string]string, branch stri
 }
 
 func TestLoader_Load_Git(t *testing.T) {
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -800,6 +801,7 @@ tasks:
 }
 
 func Test_ImportFiles_Git(t *testing.T) {
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
 	scriptContent := "#!/bin/bash\necho from git\n"
 	_, dir := createFilesystemTestRepo(t, map[string]string{
 		"scripts/deploy.sh": scriptContent,
@@ -1356,6 +1358,43 @@ func TestImportsRejectPlainHTTPBeforeCache(t *testing.T) {
 		if _, err := cl.Load(local); !errors.Is(err, securehttp.ErrHTTPSRequired) {
 			t.Fatalf("%s: got %v, want HTTPS requirement", source, err)
 		}
+	}
+}
+
+func TestLegacyGitImportRequiresOptInBeforeCache(t *testing.T) {
+	isolateConfigTestHome(t)
+	local := filepath.Join(t.TempDir(), "eirctl.yaml")
+	cache := config.NewCache(os.Getenv("HOME"))
+	for _, source := range []string{
+		"git::file:///example/repo//config.yaml",
+		"git::https://example.test/repo//config.yaml",
+		"git::ssh://example.test/repo//config.yaml",
+	} {
+		t.Run(source, func(t *testing.T) {
+			if err := os.WriteFile(local, fmt.Appendf(nil, "import:\n  - %s\n", source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
+			load := func() (*config.Config, error) {
+				cl := config.NewConfigLoader(config.NewConfig())
+				return cl.Load(local)
+			}
+			if _, err := load(); !errors.Is(err, config.ErrLegacyGitImportDisabled) {
+				t.Fatalf("uncached import without opt-in got %v, want policy rejection", err)
+			}
+			if err := cache.Store(source, strings.NewReader("tasks:\n  cached:\n    command: echo cached\n")); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("EIRCTL_SSH_STRICT", "")
+			if _, err := load(); !errors.Is(err, config.ErrLegacyGitImportDisabled) {
+				t.Fatalf("cached import without opt-in got %v, want policy rejection", err)
+			}
+			t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
+			cfg, err := load()
+			if err != nil || cfg == nil || cfg.Tasks["cached"] == nil {
+				t.Fatalf("with opt-in, cached import not loaded: %v", err)
+			}
+		})
 	}
 }
 

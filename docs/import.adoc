@@ -8,7 +8,6 @@
 
 import:
   - https://raw.githubusercontent.com/Ensono/eirctl/v0.11.8/shared/terraform/eirctl.yaml
-  - git::ssh://private-repo.org/org123/shared-libs//eirctl/security/scanning.yaml?ref=v0.0.1
   - ./local/relative/to/cli/eirctl.yaml
   - /absolute/path/eirctl.yaml
 ----
@@ -23,9 +22,20 @@ Remote HTTP imports and HTTPS redirects to HTTP are rejected. Use HTTPS with a t
 Use the `.yaml` extension where possible.
 ====
 
-=== Git
+=== Legacy Git imports
 
-For Git imports, use SSH for private repositories. HTTPS is suitable for public repositories when the provider does not offer a raw-content URL, such as GitHub.
+Git imports are disabled by default because the bundled Git client uses
+collision-detecting SHA-1 object identifiers. Prefer a direct HTTPS import
+with a SHA-256 pin, or a local filesystem import from a trusted checkout.
+If you still need `git::` imports, set `EIRCTL_ALLOW_LEGACY_GIT=true` in the
+operator's environment. This applies to Git over SSH, HTTPS, and local Git
+repositories, including cached imports. Imported YAML cannot opt in.
+Unset the variable to disable the importer again.
+
+When using the legacy importer, use authenticated SSH or HTTPS for remote
+repositories and add a SHA-256 pin obtained independently of the import.
+Collision detection mitigates known attacks but does not make Git's SHA-1
+object identifiers a strong integrity guarantee.
 
 [IMPORTANT]
 ====

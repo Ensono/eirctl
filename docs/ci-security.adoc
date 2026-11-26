@@ -293,11 +293,12 @@ redirects to it are rejected. For private services, install the issuing CA
 in the system trust store rather than disabling verification.
 
 Local Docker socket behavior is unchanged. For remote Docker, the Docker
-SDK uses `DOCKER_HOST`, `DOCKER_CERT_PATH`, and `DOCKER_TLS_VERIFY`; the HTTPS
-policy above does not cover that SDK connection. Prefer a local socket. If a
-remote daemon is necessary, configure mutual TLS with `DOCKER_CERT_PATH`
-and `DOCKER_TLS_VERIFY=1`; setting only `DOCKER_HOST` or only the certificate
-path does not require authenticated TLS.
+client applies the same TLS version, cipher and server key-size policy to all
+TCP endpoints configured through `DOCKER_HOST`. It verifies hosts using system
+roots unless `DOCKER_CERT_PATH` supplies `ca.pem`, `cert.pem` and `key.pem` for
+mutual TLS. Configured client certificates must meet the same key-size floor.
+`DOCKER_TLS_VERIFY` is not needed and cannot turn verification off. Migrate
+plaintext remote daemons to verified TLS or use a local socket.
 
 === Validation baseline
 

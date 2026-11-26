@@ -1,4 +1,4 @@
-// Package securehttp provides the transport policy for imports and updates.
+// Package securehttp provides the TLS policy shared by network clients.
 package securehttp
 
 import (
@@ -36,7 +36,20 @@ func NewClient() *http.Client {
 
 func newClient(roots *x509.CertPool) *http.Client {
 	transport := defaultTransport.Clone()
-	transport.TLSClientConfig = &tls.Config{
+	transport.TLSClientConfig = ClientTLS(roots)
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return RequireHTTPS(req.URL)
+		},
+	}
+}
+
+func ClientTLS(roots *x509.CertPool) *tls.Config {
+	return &tls.Config{
 		RootCAs:    roots,
 		MinVersion: tls.VersionTLS12,
 		CipherSuites: []uint16{
@@ -49,29 +62,30 @@ func newClient(roots *x509.CertPool) *http.Client {
 		},
 		VerifyConnection: verifyChainKeys,
 	}
-	return &http.Client{
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return errors.New("stopped after 10 redirects")
+}
+
+func ValidateClientCertificates(certificates []tls.Certificate) error {
+	for _, certificate := range certificates {
+		for _, raw := range certificate.Certificate {
+			cert, err := x509.ParseCertificate(raw)
+			if err != nil {
+				return err
 			}
-			return RequireHTTPS(req.URL)
-		},
+			if !acceptableCertificateKey(cert) {
+				return errors.New("TLS client certificates require supported key types and RSA keys of at least 2048 bits")
+			}
+		}
 	}
+	return nil
 }
 
 func verifyChainKeys(state tls.ConnectionState) error {
 	for _, chain := range state.VerifiedChains {
 		acceptable := true
 		for _, cert := range chain {
-			switch key := cert.PublicKey.(type) {
-			case *rsa.PublicKey:
-				acceptable = acceptable && key.N.BitLen() >= 2048
-			case *ecdsa.PublicKey:
-				acceptable = acceptable && key.Curve.Params().BitSize >= 224
-			case ed25519.PublicKey, *mldsa.PublicKey:
-			default:
+			if !acceptableCertificateKey(cert) {
 				acceptable = false
+				break
 			}
 		}
 		if acceptable && len(chain) > 0 {
@@ -79,4 +93,17 @@ func verifyChainKeys(state tls.ConnectionState) error {
 		}
 	}
 	return errors.New("TLS requires a verified certificate chain with supported key types and RSA keys of at least 2048 bits")
+}
+
+func acceptableCertificateKey(cert *x509.Certificate) bool {
+	switch key := cert.PublicKey.(type) {
+	case *rsa.PublicKey:
+		return key.N.BitLen() >= 2048
+	case *ecdsa.PublicKey:
+		return key.Curve.Params().BitSize >= 224
+	case ed25519.PublicKey, *mldsa.PublicKey:
+		return true
+	default:
+		return false
+	}
 }
