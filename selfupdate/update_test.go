@@ -3,6 +3,9 @@ package selfupdate_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Ensono/eirctl/internal/securehttp"
 	"github.com/Ensono/eirctl/output"
 	"github.com/Ensono/eirctl/selfupdate"
 	"github.com/spf13/cobra"
@@ -44,11 +48,22 @@ func (m mockCloser) Close() error {
 	return nil
 }
 
+func updateTLSServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewTLSServer(handler)
+	t.Cleanup(server.Close)
+	pool := x509.NewCertPool()
+	pool.AddCert(server.Certificate())
+	previous := http.DefaultTransport
+	http.DefaultTransport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	return server
+}
+
 func Test_Update_GetVersion(t *testing.T) {
 
 	t.Run("download specific version", func(t *testing.T) {
-		ts := httptest.NewServer(specificVersionHandler(t))
-		defer ts.Close()
+		ts := updateTLSServer(t, specificVersionHandler(t))
 		su := selfupdate.New("my-binary", ts.URL)
 		binary := &bytes.Buffer{}
 		err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "0.11.23", BaseUrl: ts.URL}, mockCloser{binary})
@@ -61,8 +76,7 @@ func Test_Update_GetVersion(t *testing.T) {
 	})
 	t.Run("download latest version", func(t *testing.T) {
 
-		ts := httptest.NewServer(latestVersionHandler(t))
-		defer ts.Close()
+		ts := updateTLSServer(t, latestVersionHandler(t))
 		binary := &bytes.Buffer{}
 		su := selfupdate.New("my-binary", ts.URL)
 		err := su.GetVersion(context.TODO(), selfupdate.UpdateCmdFlags{Version: "latest", BaseUrl: ts.URL}, mockCloser{binary})
@@ -76,8 +90,7 @@ func Test_Update_GetVersion(t *testing.T) {
 
 	t.Run("with own suffix", func(t *testing.T) {
 
-		ts := httptest.NewServer(latestVersionHandler(t))
-		defer ts.Close()
+		ts := updateTLSServer(t, latestVersionHandler(t))
 		binary := &bytes.Buffer{}
 
 		su := selfupdate.New("my-binary", ts.URL, selfupdate.WithDownloadSuffix("linux-amr64-mybinary"))
@@ -91,6 +104,28 @@ func Test_Update_GetVersion(t *testing.T) {
 		}
 	})
 
+}
+
+func TestUpdateRestoresExecutableOnRejectedTransport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "eirctl")
+	original := []byte("original executable")
+	if err := os.WriteFile(path, original, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := cmdHelper(t, io.Discard, io.Discard)
+	uc := selfupdate.New("eirctl", "http://example.test", selfupdate.WithOsFsOps(mockOsFsOps{
+		exec:   func() (string, error) { return path, nil },
+		rename: os.Rename,
+		create: func(name string) (io.WriteCloser, error) { return os.Create(name) },
+	}))
+	uc.AddToRootCommand(cmd)
+	if err := cmd.ExecuteContext(context.Background()); !errors.Is(err, securehttp.ErrHTTPSRequired) {
+		t.Fatalf("got %v, want HTTPS requirement", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, original) {
+		t.Fatalf("original executable not restored: got %q, err %v", got, err)
+	}
 }
 
 type mockOsFsOps struct {

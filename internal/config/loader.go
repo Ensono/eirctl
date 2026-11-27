@@ -7,12 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Ensono/eirctl/internal/schema"
+	"github.com/Ensono/eirctl/internal/securehttp"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -38,7 +39,7 @@ const MaxImportFileSize = 10 * 1024 * 1024
 type Loader struct {
 	dst           *Config
 	cache         *Cache
-	imports       map[string]bool
+	imports       map[string]string
 	dir           string
 	homeDir       string
 	strictDecoder bool
@@ -50,7 +51,7 @@ func NewConfigLoader(dst *Config) Loader {
 
 	cl := Loader{
 		dst:           dst,
-		imports:       make(map[string]bool),
+		imports:       make(map[string]string),
 		homeDir:       homeDir,
 		dir:           utils.MustGetwd(),
 		strictDecoder: false,
@@ -210,21 +211,36 @@ func (cl *Loader) Validate() (*Config, error) {
 }
 
 func (cl *Loader) reset() {
-	cl.imports = make(map[string]bool)
+	cl.imports = make(map[string]string)
 }
 
 type ConfigFunc func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error)
+
+func (cl *Loader) cachedImport(file schema.ImportEntry) (*ConfigDefinition, error) {
+	cfg, err := cl.cache.Get(file)
+	if errors.Is(err, ErrFileNotInCache) {
+		return nil, nil
+	}
+	if file.Hash == "" && errors.Is(err, ErrFailedToParse) {
+		logrus.WithError(err).Warn("invalid cached configuration; fetching again")
+		return nil, nil
+	}
+	return cfg, err
+}
 
 // maintain the order of the slice as it's being loaded/validated
 var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
 		if utils.IsURL(file.Src) {
-			logrus.Debugf("import (%s) is a URL", file)
-
-			logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
-			if cfg, err := cl.cache.Get(file); cfg != nil && err == nil {
-				logrus.Debugf("retrieved from cache (%s)", file)
-				return true, cfg, nil
+			u, err := url.Parse(file.Src)
+			if err != nil {
+				return false, nil, err
+			}
+			if err := securehttp.RequireHTTPS(u); err != nil {
+				return false, nil, err
+			}
+			if cfg, err := cl.cachedImport(file); cfg != nil || err != nil {
+				return cfg != nil, cfg, err
 			}
 
 			cfg, err := cl.readURL(file)
@@ -236,17 +252,37 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 	},
 	func(cl *Loader, file schema.ImportEntry) (bool, *ConfigDefinition, error) {
 		if IsGit(file.Src) {
-			logrus.Debugf("import (%s) is a git path", file)
-
-			logrus.Debugf("trying from path from cache (%s) - this enables offline access", file)
-			if cfg, err := cl.cache.Get(file); cfg != nil && err == nil {
-				logrus.Debugf("retrieved from cache (%s)", file)
-				return true, cfg, nil
+			gitConn, err := ParseGitUrl(file.Src)
+			if err != nil {
+				return false, nil, err
+			}
+			switch gitConn.Scheme {
+			case "http", "https":
+				if err := securehttp.RequireHTTPS(gitConn.url); err != nil {
+					return false, nil, err
+				}
+			case "ssh", "file":
+			default:
+				return false, nil, ErrIncorrectlyFormattedGit
+			}
+			useCache := true
+			if gitConn.Scheme == "ssh" {
+				strict, err := sshStrict()
+				if err != nil {
+					return false, nil, err
+				}
+				// Strict SSH imports must not reuse entries fetched with an exception.
+				useCache = !strict
+			}
+			if useCache {
+				if cfg, err := cl.cachedImport(file); cfg != nil || err != nil {
+					return cfg != nil, cfg, err
+				}
 			}
 
 			gs, err := NewGitSource(file)
 			if err != nil {
-				return false, nil, fmt.Errorf("%w\nerror: %v", ErrIncorrectlyFormattedGit, err)
+				return false, nil, fmt.Errorf("%w: %w", ErrIncorrectlyFormattedGit, err)
 			}
 
 			if err := gs.Clone(); err != nil {
@@ -272,7 +308,10 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 // recursively called by other imports if they exist and their imports
 func (cl *Loader) load(file schema.ImportEntry) (*ConfigDefinition, error) {
 	// ensures a recursive forever loop does not occur and set file to visited
-	cl.imports[file.Src] = true
+	if _, err := cl.alreadyImported(file); err != nil {
+		return nil, err
+	}
+	cl.imports[file.Src] = file.Hash
 	config := &ConfigDefinition{}
 	for _, fn := range getGetConfigFunc {
 		ok, cfg, err := fn(cl, file)
@@ -293,37 +332,26 @@ func (cl *Loader) load(file schema.ImportEntry) (*ConfigDefinition, error) {
 	return config, nil
 }
 
+func (cl *Loader) alreadyImported(entry schema.ImportEntry) (bool, error) {
+	hash, visited := cl.imports[entry.Src]
+	if visited && hash != entry.Hash {
+		return false, fmt.Errorf("conflicting integrity hashes for import %q", entry.Src)
+	}
+	return visited, nil
+}
+
 // parseImports map[string]any is a pointer for all intents and purpose so we mutate it here with recursive merges
 //
 // NOTE: we also write any file imports to disk (their `Dest` location)
 func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) error {
 
 	for _, entry := range baseConfig.Import {
-		// Handle URI resources first
-		// continue to next when done or error
-		if utils.IsURL(entry.Src) {
-			if cl.imports[entry.Src] {
-				// already visited and parsed import file
-				// continuing to next
-				continue
-			}
-			importedConfig, err := cl.load(entry)
+		if utils.IsURL(entry.Src) || IsGit(entry.Src) {
+			visited, err := cl.alreadyImported(entry)
 			if err != nil {
-				return fmt.Errorf("load import (%+v) error: %w", entry, err)
-			}
-			if err := mergeExistingWithImported(baseConfig, importedConfig, entry.Src); err != nil {
 				return err
 			}
-			// iterate through next import
-			continue
-		}
-
-		// Handle Git resources second
-		// continue to next when done or error
-		if IsGit(entry.Src) {
-			if cl.imports[entry.Src] {
-				// already visited and parsed import file
-				// continuing to next
+			if visited {
 				continue
 			}
 			importedConfig, err := cl.load(entry)
@@ -353,7 +381,11 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 		// setting the Src to absolute path here
 		entry.Src = importFile
 
-		if cl.imports[importFile] {
+		visited, err := cl.alreadyImported(entry)
+		if err != nil {
+			return err
+		}
+		if visited {
 			continue
 		}
 
@@ -362,6 +394,9 @@ func (cl *Loader) parseImports(baseConfig *ConfigDefinition, importDir string) e
 			return fmt.Errorf("%w, %s: %v", ErrImportFileFailed, importFile, err)
 		}
 		if fi.IsDir() {
+			if entry.Hash != "" {
+				return fmt.Errorf("cannot verify an integrity hash for directory import %q", importFile)
+			}
 			importedConfig, err := cl.loadDir(importFile)
 			if err != nil {
 				return fmt.Errorf("load dir import error: %w", err)
@@ -444,11 +479,16 @@ func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
 
 	cm := &ConfigDefinition{}
 	for _, importFile := range q {
-		if cl.imports[importFile] {
+		entry := schema.ImportEntry{Src: importFile}
+		visited, err := cl.alreadyImported(entry)
+		if err != nil {
+			return nil, err
+		}
+		if visited {
 			continue
 		}
 
-		cml, err := cl.load(schema.ImportEntry{Src: importFile})
+		cml, err := cl.load(entry)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %v", importFile, err)
 		}
@@ -461,7 +501,9 @@ func (cl *Loader) loadDir(dir string) (*ConfigDefinition, error) {
 }
 
 func (cl *Loader) readURL(urlStr schema.ImportEntry) (*ConfigDefinition, error) {
-	resp, err := http.Get(urlStr.Src)
+	client := securehttp.NewClient()
+	defer client.CloseIdleConnections()
+	resp, err := client.Get(urlStr.Src)
 	if err != nil {
 		return nil, err
 	}
@@ -473,22 +515,22 @@ func (cl *Loader) readURL(urlStr schema.ImportEntry) (*ConfigDefinition, error) 
 
 	cm := &ConfigDefinition{}
 
-	// store in cache irrespective of entry type
-	// create an entry for both import and config files
-	contentBuffer := &bytes.Buffer{}
-	cacheBuffer := io.TeeReader(resp.Body, contentBuffer)
-	if err := cl.cache.Store(urlStr.Src, cacheBuffer); err != nil {
+	content, err := readImportBytes(urlStr, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := cl.cache.Store(urlStr.Src, bytes.NewReader(content)); err != nil {
 		logrus.Debugf("failed to store (%s) in cache", urlStr.Src)
 	}
 
 	if urlStr.IsFileImport() {
-		if err := cl.writeImportedFile(urlStr, io.NopCloser(contentBuffer)); err != nil {
+		if err := cl.writeImportedFile(urlStr, io.NopCloser(bytes.NewReader(content))); err != nil {
 			return nil, err
 		}
 		return cm, nil
 	}
 
-	if err := yaml.NewDecoder(contentBuffer).Decode(&cm); err != nil {
+	if err := yaml.NewDecoder(bytes.NewReader(content)).Decode(cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
@@ -510,7 +552,17 @@ func (cl *Loader) readFile(entry schema.ImportEntry) (*ConfigDefinition, error) 
 		return cm, nil
 	}
 
-	if err := yaml.NewDecoder(data).Decode(cm); err != nil {
+	if entry.Hash == "" {
+		if err := yaml.NewDecoder(data).Decode(cm); err != nil {
+			return nil, err
+		}
+		return cm, nil
+	}
+	content, err := readImportBytes(entry, data)
+	if err != nil {
+		return nil, err
+	}
+	if err := yaml.NewDecoder(bytes.NewReader(content)).Decode(cm); err != nil {
 		return nil, err
 	}
 	return cm, nil
@@ -547,24 +599,31 @@ var ErrHashMismatch = errors.New("integrity hash mismatch")
 func (cl *Loader) writeImportedFile(entry schema.ImportEntry, content io.ReadCloser) error {
 	defer content.Close()
 
-	checkHash, h, err := entry.HasHash()
+	if entry.Hash == "" {
+		return storeImportedFile(cl.Dir(), entry, content)
+	}
+	data, err := readImportBytes(entry, content)
 	if err != nil {
 		return err
 	}
+	return storeImportedFile(cl.Dir(), entry, bytes.NewReader(data))
+}
 
-	if checkHash {
-		// bytes for hash checking and content writing
-		hb, cb := &bytes.Buffer{}, &bytes.Buffer{}
-		// Copying the reader into multiple writers
-		if _, err := io.Copy(io.MultiWriter(hb, cb), content); err != nil {
-			return err
-		}
-		if err := VerifyHash(hb.Bytes(), h.Typ, h.Val); err != nil {
-			return err
-		}
-		return storeImportedFile(cl.Dir(), entry, cb)
+func readImportBytes(entry schema.ImportEntry, content io.Reader) ([]byte, error) {
+	checkHash, h, err := entry.HasHash()
+	if err != nil {
+		return nil, err
 	}
-	return storeImportedFile(cl.Dir(), entry, content)
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return nil, err
+	}
+	if checkHash {
+		if err := VerifyHash(data, h.Typ, h.Val); err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
 }
 
 // storeImportedFiles writes files to dest

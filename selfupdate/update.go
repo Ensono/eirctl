@@ -11,6 +11,7 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/Ensono/eirctl/internal/securehttp"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
@@ -111,26 +113,36 @@ func (uc *UpdateCmd) AddToRootCommand(rootCmd *cobra.Command) {
 		Aliases: []string{"self-update"},
 		Short:   `Updates the binary to the specified or latest version.`,
 		Long:    `Updates the binary to the specified or latest version.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			currentExecPath, err := uc.OsFsOps.Executable()
 			if err != nil {
 				return err
 			}
 
-			// perform the rename of the current file prior
-			// to writing the new version in to the current executable
-			if err := uc.prepSourceBinary(currentExecPath); err != nil {
+			backup := currentExecPath + ".old"
+			if err := uc.OsFsOps.Rename(currentExecPath, backup); err != nil {
 				return err
 			}
+			defer func() {
+				if err != nil {
+					if restoreErr := uc.OsFsOps.Rename(backup, currentExecPath); restoreErr != nil {
+						err = errors.Join(err, fmt.Errorf("restore previous executable: %w", restoreErr))
+					}
+				}
+			}()
 
 			f, err := uc.OsFsOps.Create(currentExecPath)
 			if err != nil {
 				// enrich error here
 				return err
 			}
-			if err := uc.getVersionFn(cmd.Context(), uc.flags, f); err != nil {
-				// enrich error here
-				return err
+			fetchErr := uc.getVersionFn(cmd.Context(), uc.flags, f)
+			closeErr := f.Close()
+			if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+				fetchErr = errors.Join(fetchErr, closeErr)
+			}
+			if fetchErr != nil {
+				return fetchErr
 			}
 			// we need to change mode back to an executable now to ensure it's in the same state as before
 			if err := uc.OsFsOps.Chmod(currentExecPath, 0755); err != nil {
@@ -151,10 +163,13 @@ func (uc *UpdateCmd) AddToRootCommand(rootCmd *cobra.Command) {
 // NOTE: exposed as public for testing purposes
 //
 // This can be overwritten completely to support any kind of fetcher
-func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) error {
-	defer w.Close()
+func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.WriteCloser) (err error) {
+	defer func() {
+		err = errors.Join(err, w.Close())
+	}()
 
-	c := &http.Client{}
+	c := securehttp.NewClient()
+	defer c.CloseIdleConnections()
 	// supplying a custom suffix will override the default suffix
 	suffix := fmt.Sprintf("%s-%s-%s", uc.name, runtime.GOOS, runtime.GOARCH)
 	if uc.suffix != "" {
@@ -174,10 +189,13 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	if err != nil {
 		return err
 	}
+	if err := securehttp.RequireHTTPS(link); err != nil {
+		return err
+	}
 
-	req := &http.Request{
-		URL:    link,
-		Method: http.MethodGet,
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, link.String(), nil)
+	if err != nil {
+		return err
 	}
 	resp, err := c.Do(req)
 	if err != nil {
@@ -185,6 +203,9 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download update: unexpected HTTP status %d", resp.StatusCode)
+	}
 
 	bar := progressbar.DefaultBytes(
 		resp.ContentLength,
@@ -196,13 +217,4 @@ func (uc *UpdateCmd) GetVersion(ctx context.Context, flags UpdateCmdFlags, w io.
 	}
 
 	return nil
-}
-
-// prepSourceBinary as a rule of thumb on all platforms
-// We move the current binary to a binaryName.old
-func (uc *UpdateCmd) prepSourceBinary(currentExecPath string) error {
-	oldName := filepath.Base(currentExecPath) + ".old"
-
-	// move current file to old
-	return uc.OsFsOps.Rename(currentExecPath, filepath.Join(filepath.Dir(currentExecPath), oldName))
 }

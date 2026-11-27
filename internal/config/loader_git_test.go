@@ -2,6 +2,11 @@ package config_test
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -564,7 +570,7 @@ func Test_LoaderGit_Integration(t *testing.T) {
 
 func Test_LoaderGit_SSHKeySigner(t *testing.T) {
 
-	keyWithPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
+	keyWithCBC := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jYmMAAAAGYmNyeXB0AAAAGAAAABDzGKF3uX
 G1gXALZKFd6Ir4AAAAEAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIDne4/teO42zTDdj
 NwxUMNpbfmp/dxgU4ZNkC3ydgcugAAAAoJ3J/oA7+iqVOz0CIUUk9ufdP1VP4jDf2um+0s
@@ -572,6 +578,15 @@ Sgs7x6Gpyjq67Ps7wLRdSmxr/G5b+Z8dRGFYS/wUCQEe3whwuImvLyPwWjXLzkAyMzc01f
 ywBGSrHnvP82ppenc2HuTI+E05Xc02i6JVyI1ShiekQL5twoqtR6pEBZnD17UonIx7cRzZ
 gbDGyT3bXMQtagvCwoW+/oMTKXiZP5jCJpEO8=
 -----END OPENSSH PRIVATE KEY-----`)
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := ssh.MarshalPrivateKeyWithPassphrase(key, "", []byte("password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyWithPassphrase := pem.EncodeToMemory(encrypted)
 	keyWithoutPassphrase := []byte(`-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 QyNTUxOQAAACCJBIEqsaMRDEzAD3jnx/aonMCQ3TNzJ9s9nE0Z9oAhYQAAAJA//SKQP/0i
@@ -583,10 +598,18 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 		t.Setenv(config.GitSshPassphrase, "password")
 		signer, err := config.SSHKeySigner(keyWithPassphrase)
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
 		if signer.PublicKey().Type() != "ssh-ed25519" {
 			t.Errorf("incorrectly deduced public key - got: %v, wanted 'ssh-ed25519'", signer.PublicKey().Type())
+		}
+	})
+
+	t.Run("rejects CBC-encrypted identity", func(t *testing.T) {
+		t.Setenv(config.GitSshPassphrase, "password")
+		if _, err := config.SSHKeySigner(keyWithCBC); !errors.Is(err, config.ErrGitOperation) ||
+			!strings.Contains(err.Error(), "must use aes256-ctr") {
+			t.Fatalf("got %v, want OpenSSH encryption policy error", err)
 		}
 	})
 
@@ -617,6 +640,61 @@ wJDdM3Mn2z2cTRn2gCFhAAAADXRlc3RAdGVzdC5jb20=
 			t.Fatalf("incorrect error type, got %v, wanted %v", err, config.ErrGitOperation)
 		}
 	})
+}
+
+func TestSSHIdentityRSAKeySizeAndSigningPolicy(t *testing.T) {
+	for _, size := range []int{1024, 2048} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			key, err := rsa.GenerateKey(rand.Reader, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+			signer, err := config.SSHKeySigner(pem.EncodeToMemory(block))
+			if size < 2048 {
+				if !errors.Is(err, config.ErrGitOperation) || !strings.Contains(err.Error(), "2048 bits") {
+					t.Fatalf("got %v, want RSA minimum size failure", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			restricted := signer.(ssh.MultiAlgorithmSigner)
+			if _, err := restricted.SignWithAlgorithm(rand.Reader, []byte("identity proof"), ssh.KeyAlgoRSA); err == nil {
+				t.Fatal("RSA signer accepted SHA-1")
+			}
+			if _, err := restricted.SignWithAlgorithm(rand.Reader, []byte("identity proof"), ssh.KeyAlgoRSASHA256); err != nil {
+				t.Fatalf("RSA signer rejected SHA-2: %v", err)
+			}
+		})
+	}
+}
+
+func TestGitConfigImportVerifiesHashBeforeCaching(t *testing.T) {
+	const contents = "tasks:\n  imported:\n    command: echo imported\n"
+	repo := createTestRepo(t, map[string]string{"config.yaml": contents}, "", "")
+	for _, hash := range []string{sha256Hex([]byte(contents)), sha256Hex([]byte("mismatch"))} {
+		entry := schema.ImportEntry{Src: "git::file:///dummy//config.yaml", Hash: "sha256:" + hash}
+		gs, err := config.NewGitSource(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gs.WithRepo(repo)
+		cached := false
+		cfg, err := gs.Config(nil, func(_ string, data io.Reader) error {
+			cached = true
+			_, err := io.Copy(io.Discard, data)
+			return err
+		})
+		if hash == sha256Hex([]byte(contents)) {
+			if err != nil || !cached || cfg == nil || cfg.Tasks["imported"] == nil {
+				t.Fatalf("valid pin: cached=%v, error=%v", cached, err)
+			}
+		} else if !errors.Is(err, config.ErrHashMismatch) || cached {
+			t.Fatalf("invalid pin: cached=%v, error=%v", cached, err)
+		}
+	}
 }
 
 func Test_GitSource_FileContent(t *testing.T) {

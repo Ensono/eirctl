@@ -159,7 +159,7 @@ func Test_Get_fromCache(t *testing.T) {
 		"encounters path error": {
 			cache: func() *config.Cache {
 				m := mockfo{o: func(n string) (io.Reader, error) {
-					perr := &fs.PathError{Op: "get", Path: "/foo/.eirctl/cache/3245gertg", Err: errors.New("file not found")}
+					perr := &fs.PathError{Op: "get", Path: "/foo/.eirctl/cache/3245gertg", Err: fs.ErrNotExist}
 					return nil, perr
 				}}
 				return config.NewCache("/foo").WithFsOps(m)

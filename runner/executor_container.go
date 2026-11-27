@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ensono/eirctl/internal/securehttp"
 	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/variables"
 	"github.com/containerd/errdefs"
@@ -70,13 +71,10 @@ type ContainerOpts func(*ContainerExecutor)
 
 // NewContainerExecutor initialises an OCI compliant client
 //
-// It implicitely creates it from `env` any missing vars required to initialise it,
-// will be flagged in the error response.
+// Docker endpoint and credentials are configured through the environment.
 func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) (*ContainerExecutor, error) {
-	// NOTE: potentially check env vars are set here
-	// also cover it in tests to ensure errors are handled correctly
-	// os.Setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
-	c, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	c, err := client.NewClientWithOpts(client.WithHostFromEnv(), client.WithVersionFromEnv(),
+		client.WithAPIVersionNegotiation(), withDockerTransportPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +92,43 @@ func NewContainerExecutor(execContext *ExecutionContext, opts ...ContainerOpts) 
 	}
 
 	return ce, nil
+}
+
+func withDockerTransportPolicy(c *client.Client) error {
+	endpoint, err := client.ParseHostURL(c.DaemonHost())
+	if err != nil {
+		return err
+	}
+	switch endpoint.Scheme {
+	case "unix", "npipe":
+		return nil
+	case "tcp":
+	default:
+		return fmt.Errorf("unsupported Docker endpoint protocol %q; use a local socket or tcp with TLS", endpoint.Scheme)
+	}
+
+	if certPath := os.Getenv(client.EnvOverrideCertPath); certPath != "" {
+		if err := client.WithTLSClientConfig(filepath.Join(certPath, "ca.pem"),
+			filepath.Join(certPath, "cert.pem"), filepath.Join(certPath, "key.pem"))(c); err != nil {
+			return fmt.Errorf("configure Docker TLS credentials: %w", err)
+		}
+	}
+
+	httpClient := c.HTTPClient()
+	transport, ok := httpClient.Transport.(*http.Transport)
+	if !ok {
+		return errors.New("unable to configure Docker TLS: unexpected HTTP transport")
+	}
+	configuredTLS := transport.TLSClientConfig
+	transport.TLSClientConfig = securehttp.ClientTLS(nil)
+	if configuredTLS != nil {
+		if err := securehttp.ValidateClientCertificates(configuredTLS.Certificates); err != nil {
+			return fmt.Errorf("validate Docker TLS credentials: %w", err)
+		}
+		transport.TLSClientConfig.RootCAs = configuredTLS.RootCAs
+		transport.TLSClientConfig.Certificates = configuredTLS.Certificates
+	}
+	return nil
 }
 
 func WithContainerClient(client ContainerExecutorIface) ContainerOpts {

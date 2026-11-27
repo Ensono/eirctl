@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,11 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/internal/schema"
+	"github.com/Ensono/eirctl/internal/securehttp"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
@@ -30,6 +35,18 @@ func isolateConfigTestHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+}
+
+func importTLSServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewTLSServer(handler)
+	t.Cleanup(server.Close)
+	pool := x509.NewCertPool()
+	pool.AddCert(server.Certificate())
+	previous := http.DefaultTransport
+	http.DefaultTransport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	return server
 }
 
 // createFilesystemTestRepo creates a real, filesystem-backed Git repo in a tmp dir.
@@ -89,6 +106,8 @@ func createFilesystemTestRepo(t *testing.T, files map[string]string, branch stri
 }
 
 func TestLoader_Load_Git(t *testing.T) {
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
+	isolateConfigTestHome(t)
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +237,7 @@ func Test_LoadImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpFile.Name())
-	testSrv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	testSrv := importTLSServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/x-yaml")
 		_, err := fmt.Fprintf(writer, `
 import:
@@ -233,7 +252,6 @@ tasks:
 			t.Errorf("failed to write bytes to response stream")
 		}
 	}))
-	defer testSrv.Close()
 	loaderTYaml := fmt.Sprintf(`import:
   - %s
   - %s
@@ -302,7 +320,7 @@ func TestLoader_ReadConfigFromURL(t *testing.T) {
 	isolateConfigTestHome(t)
 	// yaml needs to be run separately "¯\_(ツ)_/¯"
 	t.Run("yaml parsed correctly", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		srv := importTLSServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/x-yaml")
 			_, err := writer.Write([]byte(`
 tasks:
@@ -314,8 +332,6 @@ tasks:
 				t.Errorf("failed to write bytes to response stream")
 			}
 		}))
-		defer srv.Close()
-
 		cl := config.NewConfigLoader(config.NewConfig())
 		m, err := cl.Load(srv.URL)
 		if err != nil {
@@ -330,10 +346,9 @@ tasks:
 func TestLoader_errors(t *testing.T) {
 	isolateConfigTestHome(t)
 	t.Run("on failed status code", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		srv := importTLSServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			writer.WriteHeader(500)
 		}))
-		defer srv.Close()
 		cl := config.NewConfigLoader(config.NewConfig())
 		_, err := cl.Load(srv.URL)
 		if err == nil {
@@ -743,11 +758,10 @@ tasks:
 func Test_ImportFiles_URL(t *testing.T) {
 	isolateConfigTestHome(t)
 	scriptContent := "#!/bin/bash\necho from url\n"
-	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testSrv := importTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte(scriptContent))
 	}))
-	defer testSrv.Close()
 
 	projectDir, err := os.MkdirTemp("", "import-files-url-*")
 	if err != nil {
@@ -789,6 +803,7 @@ tasks:
 }
 
 func Test_ImportFiles_Git(t *testing.T) {
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
 	scriptContent := "#!/bin/bash\necho from git\n"
 	_, dir := createFilesystemTestRepo(t, map[string]string{
 		"scripts/deploy.sh": scriptContent,
@@ -1230,8 +1245,6 @@ tasks:
 }
 
 func Test_UnifiedImport_ObjectConfigImportWithHash(t *testing.T) {
-	// Object form in import without dest = config import, hash should be silently accepted
-	// (hash verification for config imports is a follow-up)
 	projectDir, err := os.MkdirTemp("", "unified-config-hash-*")
 	if err != nil {
 		t.Fatal(err)
@@ -1253,12 +1266,13 @@ tasks:
 	configContent := fmt.Sprintf(`
 import:
   - src: %s
+    hash: sha256:%s
 
 tasks:
   main_task:
     command:
       - echo main
-`, sharedFile)
+`, sharedFile, sha256Hex([]byte(sharedConfig)))
 
 	configFile := filepath.Join(projectDir, "eirctl.yaml")
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
@@ -1274,6 +1288,162 @@ tasks:
 
 	if _, ok := cfg.Tasks["hashed_task"]; !ok {
 		t.Error("expected hashed_task from config import via object form")
+	}
+	if err := os.WriteFile(sharedFile, []byte(sharedConfig+"\n# changed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cl = config.NewConfigLoader(config.NewConfig())
+	if _, err := cl.Load(configFile); !errors.Is(err, config.ErrHashMismatch) {
+		t.Fatalf("changed import: got %v, want integrity error", err)
+	}
+}
+
+func TestRemoteConfigImportIntegrity(t *testing.T) {
+	isolateConfigTestHome(t)
+	content := []byte("tasks:\n  remote:\n    command: echo remote\n")
+	remote := importTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(content)
+	}))
+	importer := filepath.Join(t.TempDir(), "eirctl.yaml")
+	writeConfig := func(imports string) {
+		t.Helper()
+		if err := os.WriteFile(importer, []byte("import:\n"+imports), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	load := func() error {
+		t.Helper()
+		cl := config.NewConfigLoader(config.NewConfig())
+		_, err := cl.Load(importer)
+		return err
+	}
+	cachePath := config.GetCachePath(os.Getenv("HOME"), remote.URL)
+	valid := fmt.Sprintf("  - src: %s\n    hash: sha256:%s\n", remote.URL, sha256Hex(content))
+	writeConfig(fmt.Sprintf("  - src: %s\n    hash: sha256:%s\n", remote.URL, sha256Hex([]byte("wrong"))))
+	if err := load(); !errors.Is(err, config.ErrHashMismatch) {
+		t.Fatalf("fresh mismatch: got %v", err)
+	}
+	if _, err := os.Stat(cachePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unverified content was cached: %v", err)
+	}
+	writeConfig(valid)
+	if err := load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, append(content, '#'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := load(); !errors.Is(err, config.ErrHashMismatch) {
+		t.Fatalf("cached mismatch must fail, not refetch: %v", err)
+	}
+	if err := os.WriteFile(cachePath, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(valid + fmt.Sprintf("  - %s\n", remote.URL))
+	if err := load(); err == nil || !strings.Contains(err.Error(), "conflicting integrity hashes") {
+		t.Fatalf("conflicting duplicate import: got %v", err)
+	}
+}
+
+func TestImportsRejectPlainHTTPBeforeCache(t *testing.T) {
+	isolateConfigTestHome(t)
+	local := filepath.Join(t.TempDir(), "eirctl.yaml")
+	for _, source := range []string{"http://example.test/config.yaml", "git::http://example.test/repo//config.yaml"} {
+		if err := os.WriteFile(local, fmt.Appendf(nil, "import:\n  - %s\n", source), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cache := config.NewCache(os.Getenv("HOME"))
+		if err := cache.Store(source, strings.NewReader("tasks:\n  test:\n    command: echo test\n")); err != nil {
+			t.Fatal(err)
+		}
+		cl := config.NewConfigLoader(config.NewConfig())
+		if _, err := cl.Load(local); !errors.Is(err, securehttp.ErrHTTPSRequired) {
+			t.Fatalf("%s: got %v, want HTTPS requirement", source, err)
+		}
+	}
+}
+
+func TestPreviouslyCachedRemoteImportsRemainAvailable(t *testing.T) {
+	isolateConfigTestHome(t)
+	t.Setenv("EIRCTL_SSH_STRICT", "")
+	content := []byte("tasks:\n  cached:\n    command: echo cached\n")
+	for _, source := range []string{
+		"https://example.test/config.yaml",
+		"git::https://example.test/repo//config.yaml",
+		"git::ssh://example.test/repo//config.yaml",
+	} {
+		for _, pinned := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/pinned=%t", source, pinned), func(t *testing.T) {
+				cachePath := filepath.Join(os.Getenv("HOME"), ".eirctl", "cache", utils.EncodeBase62(source))
+				if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(cachePath, content, 0600); err != nil {
+					t.Fatal(err)
+				}
+				importer := filepath.Join(t.TempDir(), "eirctl.yaml")
+				importConfig := fmt.Sprintf("import:\n  - src: %s\n", source)
+				if pinned {
+					importConfig += fmt.Sprintf("    hash: sha256:%s\n", sha256Hex(content))
+				}
+				if err := os.WriteFile(importer, []byte(importConfig), 0600); err != nil {
+					t.Fatal(err)
+				}
+				load := func() (*config.Config, error) {
+					cl := config.NewConfigLoader(config.NewConfig())
+					return cl.Load(importer)
+				}
+				cfg, err := load()
+				if err != nil || cfg == nil || cfg.Tasks["cached"] == nil {
+					t.Fatalf("previously cached import not loaded: %v", err)
+				}
+				if pinned {
+					if err := os.WriteFile(cachePath, append(content, '#'), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := load(); !errors.Is(err, config.ErrHashMismatch) {
+						t.Fatalf("modified cached import: got %v, want integrity error", err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestGitImportsUseCacheWithoutOptIn(t *testing.T) {
+	isolateConfigTestHome(t)
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
+	t.Setenv("EIRCTL_SSH_STRICT", "")
+	local := filepath.Join(t.TempDir(), "eirctl.yaml")
+	cache := config.NewCache(os.Getenv("HOME"))
+	content := "tasks:\n  cached:\n    command: echo cached\n"
+	for _, source := range []string{
+		"git::file:///example/repo//config.yaml",
+		"git::https://example.test/repo//config.yaml",
+		"git::ssh://example.test/repo//config.yaml",
+	} {
+		t.Run(source, func(t *testing.T) {
+			if err := os.WriteFile(local, fmt.Appendf(nil, "import:\n  - src: %s\n    hash: sha256:%s\n", source, sha256Hex([]byte(content))), 0600); err != nil {
+				t.Fatal(err)
+			}
+			load := func() (*config.Config, error) {
+				cl := config.NewConfigLoader(config.NewConfig())
+				return cl.Load(local)
+			}
+			if err := cache.Store(source, strings.NewReader(content)); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := load()
+			if err != nil || cfg == nil || cfg.Tasks["cached"] == nil {
+				t.Fatalf("cached import not loaded: %v", err)
+			}
+			if err := cache.Store(source, strings.NewReader(content+"# modified\n")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := load(); !errors.Is(err, config.ErrHashMismatch) {
+				t.Fatalf("modified cached import: got %v, want integrity error", err)
+			}
+		})
 	}
 }
 
@@ -1427,10 +1597,9 @@ tasks:
 
 func Test_ImportFiles_URL_Non200Status(t *testing.T) {
 	isolateConfigTestHome(t)
-	testSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testSrv := importTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer testSrv.Close()
 
 	projectDir, err := os.MkdirTemp("", "import-url-404-*")
 	if err != nil {

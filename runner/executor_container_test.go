@@ -3,16 +3,25 @@ package runner_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -105,6 +114,113 @@ func (mu mockUnauthorizedErr) Error() string {
 
 func (mu mockUnauthorizedErr) Unauthorized() {
 
+}
+
+func TestRemoteDockerTransportPolicy(t *testing.T) {
+	ctx := runner.NewExecutionContext(nil, "", nil, nil, nil, nil, nil, nil,
+		runner.WithContainerOpts(runner.NewContainerContext("example.test/test:1")))
+	t.Setenv("DOCKER_API_VERSION", "1.44")
+	t.Setenv("DOCKER_CONFIG", t.TempDir())
+	t.Setenv("DOCKER_TLS_VERIFY", "")
+
+	now := time.Now()
+	caKey, ca := newDockerTestCertificate(t, 2048, &x509.Certificate{
+		SerialNumber: big.NewInt(1), NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}, nil, nil)
+	clientRoots := x509.NewCertPool()
+	clientRoots.AddCert(ca)
+
+	for _, tc := range []struct {
+		name                 string
+		serverKey, clientKey int
+		configured           bool
+		wantErr              string
+	}{
+		{name: "verified mutual TLS", serverKey: 2048, clientKey: 2048, configured: true},
+		{name: "plaintext rejected", wantErr: "server gave HTTP response to HTTPS client"},
+		{name: "untrusted certificate rejected", serverKey: 2048, wantErr: "certificate signed by unknown authority"},
+		{name: "undersized server key rejected", serverKey: 1024, clientKey: 2048, configured: true, wantErr: "verified certificate chain"},
+		{name: "undersized client key rejected", serverKey: 2048, clientKey: 1024, configured: true, wantErr: "TLS client certificates require"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
+					t.Error("Docker request did not use verified mutual TLS")
+				}
+				_, _ = io.WriteString(w, "{}\n")
+			}))
+			defer server.Close()
+			if tc.serverKey == 0 {
+				server.Start()
+			} else {
+				key, cert := newDockerTestCertificate(t, tc.serverKey, &x509.Certificate{
+					SerialNumber: big.NewInt(2), NotBefore: ca.NotBefore, NotAfter: ca.NotAfter,
+					IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}, KeyUsage: x509.KeyUsageDigitalSignature,
+					ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+				}, ca, caKey)
+				server.TLS = &tls.Config{
+					Certificates: []tls.Certificate{{Certificate: [][]byte{cert.Raw}, PrivateKey: key}},
+					ClientAuth:   tls.RequireAndVerifyClientCert,
+					ClientCAs:    clientRoots,
+					MinVersion:   tls.VersionTLS12,
+				}
+				server.StartTLS()
+			}
+			t.Setenv("DOCKER_HOST", "tcp://"+server.Listener.Addr().String())
+			t.Setenv("DOCKER_CERT_PATH", "")
+			if tc.configured {
+				key, cert := newDockerTestCertificate(t, tc.clientKey, &x509.Certificate{
+					SerialNumber: big.NewInt(3), NotBefore: ca.NotBefore, NotAfter: ca.NotAfter,
+					KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+				}, ca, caKey)
+				dir := t.TempDir()
+				for name, block := range map[string]*pem.Block{
+					"ca.pem":   {Type: "CERTIFICATE", Bytes: ca.Raw},
+					"cert.pem": {Type: "CERTIFICATE", Bytes: cert.Raw},
+					"key.pem":  {Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)},
+				} {
+					if err := os.WriteFile(filepath.Join(dir, name), pem.EncodeToMemory(block), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Setenv("DOCKER_CERT_PATH", dir)
+			}
+			executor, err := runner.NewContainerExecutor(ctx)
+			if err == nil {
+				err = executor.PullImage(t.Context(), &container.Config{Image: "example.test/test:1"})
+			}
+			if tc.wantErr == "" {
+				if err != nil || requests.Load() != 1 {
+					t.Fatalf("mutual TLS: request count %d, error %v", requests.Load(), err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) || requests.Load() != 0 {
+				t.Fatalf("expected %q without a Docker request; count %d, error %v", tc.wantErr, requests.Load(), err)
+			}
+		})
+	}
+}
+
+func newDockerTestCertificate(t *testing.T, bits int, template, parent *x509.Certificate, signer *rsa.PrivateKey) (*rsa.PrivateKey, *x509.Certificate) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parent == nil {
+		parent, signer = template, key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key, cert
 }
 
 func Test_ImagePull(t *testing.T) {
