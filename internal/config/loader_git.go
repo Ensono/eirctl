@@ -37,14 +37,13 @@ import (
 )
 
 const (
-	gitPrefix          string = "git::"
-	gitPathSplitter    string = "//"
-	remoteRef          string = "origin"
-	GitSshCommandVar   string = "GIT_SSH_COMMAND"
-	GitSshPassphrase   string = "GIT_SSH_PASSPHRASE"
-	sshLegacyCTRVar           = "EIRCTL_SSH_LEGACY_CTR"
-	sshStrictVar              = "EIRCTL_SSH_STRICT"
-	legacyGitImportVar        = "EIRCTL_ALLOW_LEGACY_GIT"
+	gitPrefix        string = "git::"
+	gitPathSplitter  string = "//"
+	remoteRef        string = "origin"
+	GitSshCommandVar string = "GIT_SSH_COMMAND"
+	GitSshPassphrase string = "GIT_SSH_PASSPHRASE"
+	sshLegacyCTRVar         = "EIRCTL_SSH_LEGACY_CTR"
+	sshStrictVar            = "EIRCTL_SSH_STRICT"
 )
 
 func init() {
@@ -60,7 +59,6 @@ var (
 	ErrIncorrectlyFormattedGit   = errors.New("incorrectly formatted git import")
 	ErrGitTagBranchRevisionWrong = errors.New("tag or branch or revision was not found")
 	ErrGitOperation              = errors.New("git operation failed")
-	ErrLegacyGitImportDisabled   = errors.New("SHA-1 Git imports are disabled by default")
 )
 
 type GitSource struct {
@@ -91,13 +89,6 @@ type SSHConfigAuth struct {
 
 func IsGit(raw string) bool {
 	return strings.HasPrefix(raw, gitPrefix)
-}
-
-func requireLegacyGitOptIn() error {
-	if os.Getenv(legacyGitImportVar) != "true" {
-		return fmt.Errorf("%w; use a SHA-256-pinned HTTPS import or explicitly set %s=true", ErrLegacyGitImportDisabled, legacyGitImportVar)
-	}
-	return nil
 }
 
 // NewGitSource converts an import string of type git
@@ -165,9 +156,6 @@ func NewGitSource(entry schema.ImportEntry) (*GitSource, error) {
 
 // Clone calls the git clone operation
 func (gs *GitSource) Clone() (err error) {
-	if err := requireLegacyGitOptIn(); err != nil {
-		return err
-	}
 	if gs.repo, err = git.Clone(memory.NewStorage(), nil, gs.gcOpts); err != nil {
 		return err
 	}

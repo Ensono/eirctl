@@ -105,7 +105,8 @@ func createFilesystemTestRepo(t *testing.T, files map[string]string, branch stri
 }
 
 func TestLoader_Load_Git(t *testing.T) {
-	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
+	isolateConfigTestHome(t)
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -801,7 +802,7 @@ tasks:
 }
 
 func Test_ImportFiles_Git(t *testing.T) {
-	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
 	scriptContent := "#!/bin/bash\necho from git\n"
 	_, dir := createFilesystemTestRepo(t, map[string]string{
 		"scripts/deploy.sh": scriptContent,
@@ -1361,38 +1362,38 @@ func TestImportsRejectPlainHTTPBeforeCache(t *testing.T) {
 	}
 }
 
-func TestLegacyGitImportRequiresOptInBeforeCache(t *testing.T) {
+func TestGitImportsUseCacheWithoutOptIn(t *testing.T) {
 	isolateConfigTestHome(t)
+	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
+	t.Setenv("EIRCTL_SSH_STRICT", "")
 	local := filepath.Join(t.TempDir(), "eirctl.yaml")
 	cache := config.NewCache(os.Getenv("HOME"))
+	content := "tasks:\n  cached:\n    command: echo cached\n"
 	for _, source := range []string{
 		"git::file:///example/repo//config.yaml",
 		"git::https://example.test/repo//config.yaml",
 		"git::ssh://example.test/repo//config.yaml",
 	} {
 		t.Run(source, func(t *testing.T) {
-			if err := os.WriteFile(local, fmt.Appendf(nil, "import:\n  - %s\n", source), 0600); err != nil {
+			if err := os.WriteFile(local, fmt.Appendf(nil, "import:\n  - src: %s\n    hash: sha256:%s\n", source, sha256Hex([]byte(content))), 0600); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "")
 			load := func() (*config.Config, error) {
 				cl := config.NewConfigLoader(config.NewConfig())
 				return cl.Load(local)
 			}
-			if _, err := load(); !errors.Is(err, config.ErrLegacyGitImportDisabled) {
-				t.Fatalf("uncached import without opt-in got %v, want policy rejection", err)
-			}
-			if err := cache.Store(source, strings.NewReader("tasks:\n  cached:\n    command: echo cached\n")); err != nil {
+			if err := cache.Store(source, strings.NewReader(content)); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("EIRCTL_SSH_STRICT", "")
-			if _, err := load(); !errors.Is(err, config.ErrLegacyGitImportDisabled) {
-				t.Fatalf("cached import without opt-in got %v, want policy rejection", err)
-			}
-			t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
 			cfg, err := load()
 			if err != nil || cfg == nil || cfg.Tasks["cached"] == nil {
-				t.Fatalf("with opt-in, cached import not loaded: %v", err)
+				t.Fatalf("cached import not loaded: %v", err)
+			}
+			if err := cache.Store(source, strings.NewReader(content+"# modified\n")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := load(); !errors.Is(err, config.ErrHashMismatch) {
+				t.Fatalf("modified cached import: got %v, want integrity error", err)
 			}
 		})
 	}

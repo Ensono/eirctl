@@ -265,10 +265,6 @@ var getGetConfigFunc []ConfigFunc = []ConfigFunc{
 			default:
 				return false, nil, ErrIncorrectlyFormattedGit
 			}
-			if err := requireLegacyGitOptIn(); err != nil {
-				return false, nil, err
-			}
-			logrus.Warn("Git import uses legacy SHA-1 object identifiers; use an independently verified SHA-256 import pin")
 			useCache := true
 			if gitConn.Scheme == "ssh" {
 				strict, err := sshStrict()

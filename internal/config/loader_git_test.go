@@ -526,7 +526,6 @@ func TestGitSource_Config_FileNotFound(t *testing.T) {
 }
 
 func Test_LoaderGit_Integration(t *testing.T) {
-	t.Setenv("EIRCTL_ALLOW_LEGACY_GIT", "true")
 	ttests := map[string]struct {
 		rawStr string
 	}{
