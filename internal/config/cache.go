@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/utils"
@@ -143,9 +142,5 @@ func (c *Cache) createCacheWriter(fullPath string) (io.Writer, error) {
 
 // GetCachePath always returns to path to the file in the cache directory
 func GetCachePath(homedir, fullPath string) string {
-	// Older remote entries may have been fetched over an unverified transport.
-	if utils.IsURL(fullPath) || (IsGit(fullPath) && !strings.HasPrefix(fullPath, "git::file:")) {
-		return filepath.Join(homedir, ".eirctl", "cache", "secure-transport-v1", utils.EncodeBase62(fullPath))
-	}
 	return filepath.Join(homedir, ".eirctl", "cache", utils.EncodeBase62(fullPath))
 }

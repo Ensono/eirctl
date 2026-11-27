@@ -19,6 +19,7 @@ import (
 	"github.com/Ensono/eirctl/internal/config"
 	"github.com/Ensono/eirctl/internal/schema"
 	"github.com/Ensono/eirctl/internal/securehttp"
+	"github.com/Ensono/eirctl/internal/utils"
 	"github.com/Ensono/eirctl/runner"
 	"github.com/Ensono/eirctl/task"
 	"github.com/Ensono/eirctl/variables"
@@ -1358,6 +1359,53 @@ func TestImportsRejectPlainHTTPBeforeCache(t *testing.T) {
 		cl := config.NewConfigLoader(config.NewConfig())
 		if _, err := cl.Load(local); !errors.Is(err, securehttp.ErrHTTPSRequired) {
 			t.Fatalf("%s: got %v, want HTTPS requirement", source, err)
+		}
+	}
+}
+
+func TestPreviouslyCachedRemoteImportsRemainAvailable(t *testing.T) {
+	isolateConfigTestHome(t)
+	t.Setenv("EIRCTL_SSH_STRICT", "")
+	content := []byte("tasks:\n  cached:\n    command: echo cached\n")
+	for _, source := range []string{
+		"https://example.test/config.yaml",
+		"git::https://example.test/repo//config.yaml",
+		"git::ssh://example.test/repo//config.yaml",
+	} {
+		for _, pinned := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/pinned=%t", source, pinned), func(t *testing.T) {
+				cachePath := filepath.Join(os.Getenv("HOME"), ".eirctl", "cache", utils.EncodeBase62(source))
+				if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(cachePath, content, 0600); err != nil {
+					t.Fatal(err)
+				}
+				importer := filepath.Join(t.TempDir(), "eirctl.yaml")
+				importConfig := fmt.Sprintf("import:\n  - src: %s\n", source)
+				if pinned {
+					importConfig += fmt.Sprintf("    hash: sha256:%s\n", sha256Hex(content))
+				}
+				if err := os.WriteFile(importer, []byte(importConfig), 0600); err != nil {
+					t.Fatal(err)
+				}
+				load := func() (*config.Config, error) {
+					cl := config.NewConfigLoader(config.NewConfig())
+					return cl.Load(importer)
+				}
+				cfg, err := load()
+				if err != nil || cfg == nil || cfg.Tasks["cached"] == nil {
+					t.Fatalf("previously cached import not loaded: %v", err)
+				}
+				if pinned {
+					if err := os.WriteFile(cachePath, append(content, '#'), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := load(); !errors.Is(err, config.ErrHashMismatch) {
+						t.Fatalf("modified cached import: got %v, want integrity error", err)
+					}
+				}
+			})
 		}
 	}
 }

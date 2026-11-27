@@ -275,8 +275,8 @@ The existing `StrictHostKeyChecking=no` opt-out disables server identity
 verification and warns; provision a verified host key instead.
 Set `EIRCTL_SSH_STRICT=true` in managed environments to disable cipher
 exceptions and reject that opt-out. Strict SSH imports do not read previously
-cached SSH imports. Old remote cache entries are not reused after this upgrade;
-fetch imports online once to populate the new cache.
+cached SSH imports. Other remote imports can reuse existing cache entries;
+configured SHA-256 pins are verified when cached content is read.
 
 When updating maintained CI contexts or tools, update the readable tag
 and reviewed digest together, record the manifest evidence above, and
