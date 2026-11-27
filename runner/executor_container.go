@@ -123,7 +123,7 @@ func withDockerTransportPolicy(c *client.Client) error {
 	transport.TLSClientConfig = securehttp.ClientTLS(nil)
 	if configuredTLS != nil {
 		if err := securehttp.ValidateClientCertificates(configuredTLS.Certificates); err != nil {
-			return fmt.Errorf("Docker TLS credentials: %w", err)
+			return fmt.Errorf("validate Docker TLS credentials: %w", err)
 		}
 		transport.TLSClientConfig.RootCAs = configuredTLS.RootCAs
 		transport.TLSClientConfig.Certificates = configuredTLS.Certificates
