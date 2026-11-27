@@ -43,6 +43,7 @@ const (
 	GitSshCommandVar string = "GIT_SSH_COMMAND"
 	GitSshPassphrase string = "GIT_SSH_PASSPHRASE"
 	sshLegacyCTRVar         = "EIRCTL_SSH_LEGACY_CTR"
+	sshLegacyRSAVar         = "EIRCTL_SSH_LEGACY_RSA"
 	sshStrictVar            = "EIRCTL_SSH_STRICT"
 )
 
@@ -276,6 +277,10 @@ func ParseGitUrl(input string) (urlParts GitConnection, err error) {
 }
 
 func SSHKeySigner(key []byte) (ssh.Signer, error) {
+	return sshKeySigner(key, false)
+}
+
+func sshKeySigner(key []byte, allowLegacyRSA bool) (ssh.Signer, error) {
 	var signer ssh.Signer
 	var err error
 	if passphrase, found := os.LookupEnv(GitSshPassphrase); found {
@@ -289,7 +294,7 @@ func SSHKeySigner(key []byte) (ssh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to parse SSH identity: %v", ErrGitOperation, err)
 	}
-	if err := checkSSHKey(signer.PublicKey()); err != nil {
+	if err := checkSSHKey(signer.PublicKey(), allowLegacyRSA); err != nil {
 		return nil, fmt.Errorf("SSH identity: %w", err)
 	}
 	if signer.PublicKey().Type() == ssh.KeyAlgoRSA {
@@ -318,7 +323,7 @@ func checkEncryptedSSHKeyFormat(key []byte) error {
 	return nil
 }
 
-func checkSSHKey(key ssh.PublicKey) error {
+func checkSSHKey(key ssh.PublicKey, allowLegacyRSA bool) error {
 	if cert, ok := key.(*ssh.Certificate); ok {
 		if cert.Signature == nil {
 			return fmt.Errorf("%w: SSH certificate lacks a signature", ErrGitOperation)
@@ -329,22 +334,22 @@ func checkSSHKey(key ssh.PublicKey) error {
 		default:
 			return fmt.Errorf("%w: unsupported SSH certificate signature algorithm %q", ErrGitOperation, cert.Signature.Format)
 		}
-		if err := checkPlainSSHKey(cert.SignatureKey); err != nil {
+		if err := checkPlainSSHKey(cert.SignatureKey, allowLegacyRSA); err != nil {
 			return fmt.Errorf("SSH certificate authority: %w", err)
 		}
 		key = cert.Key
 	}
-	return checkPlainSSHKey(key)
+	return checkPlainSSHKey(key, allowLegacyRSA)
 }
 
-func checkPlainSSHKey(key ssh.PublicKey) error {
+func checkPlainSSHKey(key ssh.PublicKey, allowLegacyRSA bool) error {
 	if key == nil {
 		return fmt.Errorf("%w: missing SSH key", ErrGitOperation)
 	}
 	switch key.Type() {
 	case ssh.KeyAlgoRSA:
 		if public, ok := key.(ssh.CryptoPublicKey); ok {
-			if rsaKey, ok := public.CryptoPublicKey().(*rsa.PublicKey); ok && rsaKey.N.BitLen() >= 2048 {
+			if rsaKey, ok := public.CryptoPublicKey().(*rsa.PublicKey); ok && (rsaKey.N.BitLen() >= 2048 || allowLegacyRSA) {
 				return nil
 			}
 		}
@@ -442,9 +447,20 @@ func sshTransportConfig(address string, strict bool) (ssh.Config, error) {
 		Ciphers: []string{ssh.CipherAES128GCM, ssh.CipherAES256GCM, ssh.CipherChaCha20Poly1305},
 		MACs:    []string{ssh.HMACSHA256ETM, ssh.HMACSHA512ETM},
 	}
-	raw := os.Getenv(sshLegacyCTRVar)
+	match, err := sshLegacyEndpointAllowed(address, sshLegacyCTRVar, strict)
+	if err != nil {
+		return cfg, err
+	}
+	if match {
+		cfg.Ciphers = append(cfg.Ciphers, ssh.CipherAES128CTR, ssh.CipherAES192CTR, ssh.CipherAES256CTR)
+	}
+	return cfg, nil
+}
+
+func sshLegacyEndpointAllowed(address, variable string, strict bool) (bool, error) {
+	raw := os.Getenv(variable)
 	if strict || raw == "" {
-		return cfg, nil
+		return false, nil
 	}
 	match := false
 	for endpoint := range strings.SplitSeq(raw, ",") {
@@ -452,14 +468,26 @@ func sshTransportConfig(address string, strict bool) (ssh.Config, error) {
 		host, port, err := net.SplitHostPort(endpoint)
 		portNumber, portErr := strconv.ParseUint(port, 10, 16)
 		if err != nil || host == "" || strings.ContainsAny(host, "*? \t\r\n") || portErr != nil || portNumber == 0 {
-			return cfg, fmt.Errorf("%w: %s requires comma-separated host:port endpoints without wildcards", ErrGitOperation, sshLegacyCTRVar)
+			return false, fmt.Errorf("%w: %s requires comma-separated host:port endpoints without wildcards", ErrGitOperation, variable)
 		}
 		match = match || strings.EqualFold(address, net.JoinHostPort(host, strconv.FormatUint(portNumber, 10)))
 	}
-	if match {
-		cfg.Ciphers = append(cfg.Ciphers, ssh.CipherAES128CTR, ssh.CipherAES192CTR, ssh.CipherAES256CTR)
+	return match, nil
+}
+
+func sshLegacyRSAAllowed(sshConf *SSHConfigAuth, strict bool) (bool, error) {
+	port := sshConf.Port
+	if port == "" {
+		port = "22"
 	}
-	return cfg, nil
+	allowed, err := sshLegacyEndpointAllowed(net.JoinHostPort(sshConf.Hostname, port), sshLegacyRSAVar, strict)
+	if err != nil {
+		return false, err
+	}
+	if allowed && strings.EqualFold(sshConf.StrictHostKeyChecking, "no") {
+		return false, fmt.Errorf("%w: legacy SSH RSA compatibility requires host-key verification", ErrGitOperation)
+	}
+	return allowed, nil
 }
 
 func sshStrict() (bool, error) {
@@ -517,7 +545,15 @@ func (gs *GitSource) getGitSSHAuth(host, port string) (*gitSSHAuth, error) {
 		return nil, fmt.Errorf("%w\nfailed to read identityFile: %v", ErrGitOperation, err)
 	}
 
-	signer, err := SSHKeySigner(key)
+	strict, err := sshStrict()
+	if err != nil {
+		return nil, err
+	}
+	allowLegacyRSA, err := sshLegacyRSAAllowed(sshConf, strict)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := sshKeySigner(key, allowLegacyRSA)
 	if err != nil {
 		return nil, err
 	}
@@ -527,10 +563,6 @@ func (gs *GitSource) getGitSSHAuth(host, port string) (*gitSSHAuth, error) {
 		return nil, err
 	}
 
-	strict, err := sshStrict()
-	if err != nil {
-		return nil, err
-	}
 	address := net.JoinHostPort(sshConf.Hostname, sshConf.Port)
 	cfg, err := sshTransportConfig(address, strict)
 	if err != nil {
@@ -561,9 +593,13 @@ func (gs *GitSource) getGitSSHAuth(host, port string) (*gitSSHAuth, error) {
 }
 
 // hostKeyCallback verifies SSH server identity using configured OpenSSH known-host files.
-// StrictHostKeyChecking=no is the sole compatibility opt-out and is deliberately noisy.
+// StrictHostKeyChecking=no is the sole host-verification opt-out and is deliberately noisy.
 func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
 	strict, err := sshStrict()
+	if err != nil {
+		return nil, err
+	}
+	allowLegacyRSA, err := sshLegacyRSAAllowed(sshConf, strict)
 	if err != nil {
 		return nil, err
 	}
@@ -572,7 +608,7 @@ func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
 			return nil, fmt.Errorf("%w: %s forbids StrictHostKeyChecking=no", ErrGitOperation, sshStrictVar)
 		}
 		logrus.Warn("SSH host-key verification is disabled by StrictHostKeyChecking=no")
-		return func(_ string, _ net.Addr, key ssh.PublicKey) error { return checkSSHKey(key) }, nil
+		return func(_ string, _ net.Addr, key ssh.PublicKey) error { return checkSSHKey(key, false) }, nil
 	}
 
 	if err := validateConfiguredKnownHostsFiles(sshConf); err != nil {
@@ -591,8 +627,11 @@ func hostKeyCallback(sshConf *SSHConfigAuth) (ssh.HostKeyCallback, error) {
 		effectivePort = "22"
 	}
 	effectiveAddress := net.JoinHostPort(sshConf.Hostname, effectivePort)
+	if allowLegacyRSA {
+		logrus.Warnf("SSH RSA keys below 2048 bits are permitted for %s by %s; rotate undersized keys", effectiveAddress, sshLegacyRSAVar)
+	}
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		if err := checkSSHKey(key); err != nil {
+		if err := checkSSHKey(key, allowLegacyRSA); err != nil {
 			return fmt.Errorf("SSH host key for %s: %w", effectiveAddress, err)
 		}
 		if err := callback(hostname, remote, key); err != nil {

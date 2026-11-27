@@ -171,11 +171,30 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 	if err := os.WriteFile(identityPath, pem.EncodeToMemory(identity), 0600); err != nil {
 		t.Fatal(err)
 	}
+	weakKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakHost, err := ssh.NewSignerFromKey(weakKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakIdentity, err := ssh.MarshalPrivateKey(weakKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakIdentityPath := filepath.Join(t.TempDir(), "identity")
+	if err := os.WriteFile(weakIdentityPath, pem.EncodeToMemory(weakIdentity), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name, cipher, mac, kex   string
 		allow, strict, wrongPort bool
 		skipTrust, connect       bool
 		sha1Auth                 bool
+		weakHost, weakIdentity   bool
+		allowRSA, sourceReject   bool
+		hostReject               bool
 	}{
 		{name: "default ephemeral AEAD", cipher: ssh.CipherAES128GCM, connect: true},
 		{name: "CTR rejected by default", cipher: ssh.CipherAES128CTR, mac: ssh.HMACSHA256ETM},
@@ -187,6 +206,14 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 		{name: "CTR without EtM rejected", cipher: ssh.CipherAES128CTR, mac: ssh.HMACSHA256, allow: true},
 		{name: "SHA-1 key exchange rejected", cipher: ssh.CipherAES128GCM, kex: ssh.InsecureKeyExchangeDH14SHA1},
 		{name: "RSA identity does not fall back to SHA-1", cipher: ssh.CipherAES128GCM, sha1Auth: true},
+		{name: "weak host rejected by default", cipher: ssh.CipherAES128GCM, weakHost: true, hostReject: true},
+		{name: "weak identity rejected by default", weakIdentity: true, sourceReject: true},
+		{name: "allowlisted weak host and identity", cipher: ssh.CipherAES128GCM, weakHost: true, weakIdentity: true, allowRSA: true, connect: true},
+		{name: "RSA allowlist does not cover other ports", weakIdentity: true, allowRSA: true, wrongPort: true, sourceReject: true},
+		{name: "strict disables RSA allowlist", weakIdentity: true, allowRSA: true, strict: true, sourceReject: true},
+		{name: "RSA compatibility requires host verification", allowRSA: true, skipTrust: true},
+		{name: "RSA compatibility retains SHA-2", cipher: ssh.CipherAES128GCM, weakIdentity: true, allowRSA: true, sha1Auth: true},
+		{name: "RSA compatibility does not enable CTR", cipher: ssh.CipherAES128CTR, mac: ssh.HMACSHA256ETM, allowRSA: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -199,13 +226,21 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			knownHosts := writeKnownHosts(t, knownhosts.Normalize(address), host.PublicKey())
+			selectedHost := host
+			if tc.weakHost {
+				selectedHost = weakHost
+			}
+			selectedIdentityPath := identityPath
+			if tc.weakIdentity {
+				selectedIdentityPath = weakIdentityPath
+			}
+			knownHosts := writeKnownHosts(t, knownhosts.Normalize(address), selectedHost.PublicKey())
 			check := "yes"
 			if tc.skipTrust {
 				check = "no"
 			}
 			configPath := filepath.Join(t.TempDir(), "config")
-			text := fmt.Sprintf("Host test-alias\n  Hostname 127.0.0.1\n  Port %s\n  IdentityFile %q\n  UserKnownHostsFile %q\n  StrictHostKeyChecking %s\n", port, identityPath, knownHosts, check)
+			text := fmt.Sprintf("Host test-alias\n  Hostname 127.0.0.1\n  Port %s\n  IdentityFile %q\n  UserKnownHostsFile %q\n  StrictHostKeyChecking %s\n", port, selectedIdentityPath, knownHosts, check)
 			if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -216,6 +251,14 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 			}
 			t.Setenv(sshStrictVar, fmt.Sprint(tc.strict))
 			t.Setenv(sshLegacyCTRVar, "")
+			t.Setenv(sshLegacyRSAVar, "")
+			if tc.allowRSA {
+				allowed := address
+				if tc.wrongPort {
+					allowed = "127.0.0.1:1"
+				}
+				t.Setenv(sshLegacyRSAVar, allowed)
+			}
 			if tc.allow {
 				allowed := address
 				if tc.wrongPort {
@@ -224,6 +267,12 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 				t.Setenv(sshLegacyCTRVar, allowed)
 			}
 			source, err := NewGitSource(schema.ImportEntry{Src: "git::ssh://test-alias/repo//config.yaml"})
+			if tc.sourceReject {
+				if !errors.Is(err, ErrGitOperation) || !strings.Contains(err.Error(), "2048 bits") {
+					t.Fatalf("got %v, want RSA minimum size failure", err)
+				}
+				return
+			}
 			if tc.skipTrust {
 				if err == nil {
 					t.Fatal("allowed host verification bypass")
@@ -255,7 +304,7 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 					MACs:         []string{tc.mac},
 				},
 			}
-			serverConfig.AddHostKey(host)
+			serverConfig.AddHostKey(selectedHost)
 			done := make(chan error, 1)
 			go func() {
 				raw, err := listener.Accept()
@@ -279,6 +328,12 @@ func TestGitSSHTransportPolicy(t *testing.T) {
 			_ = raw.SetDeadline(time.Now().Add(5 * time.Second))
 			conn, _, _, err := ssh.NewClientConn(raw, address, clientConfig)
 			serverErr := <-done
+			if tc.hostReject {
+				if !errors.Is(err, ErrGitOperation) || !strings.Contains(err.Error(), "2048 bits") {
+					t.Fatalf("got %v, want RSA minimum size failure", err)
+				}
+				return
+			}
 			if tc.sha1Auth {
 				if err == nil || !strings.Contains(err.Error(), "no common public key signature algorithm") {
 					t.Fatalf("got %v, want RSA-SHA2 authentication failure", err)
@@ -316,6 +371,7 @@ func newEd25519Key(t *testing.T) ed25519.PrivateKey {
 
 func TestSSHRejectsWeakRSAHostKeyEvenIfTrusted(t *testing.T) {
 	t.Setenv(sshStrictVar, "")
+	t.Setenv(sshLegacyRSAVar, "")
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatal(err)
@@ -335,6 +391,106 @@ func TestSSHRejectsWeakRSAHostKeyEvenIfTrusted(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "2048 bits") {
 			t.Fatalf("StrictHostKeyChecking %s: got %v, want a minimum RSA key size error", checking, err)
 		}
+	}
+}
+
+func TestSSHLegacyRSAEndpointPolicy(t *testing.T) {
+	weakKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(weakKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherKey := testHostKey(t)
+	for _, tc := range []struct {
+		name, host, port, allowlist string
+		strict, allowed, invalid    bool
+	}{
+		{name: "unset", host: "git.example.test"},
+		{name: "exact default port", host: "git.example.test", allowlist: "git.example.test:22", allowed: true},
+		{name: "wrong host", host: "other.example.test", allowlist: "git.example.test:22"},
+		{name: "wrong port", host: "git.example.test", port: "2222", allowlist: "git.example.test:22"},
+		{name: "comma separated IPv6", host: "::1", port: "2222", allowlist: "git.example.test:22, [::1]:2222", allowed: true},
+		{name: "strict overrides", host: "git.example.test", allowlist: "git.example.test:22", strict: true},
+		{name: "wildcard rejected", host: "git.example.test", allowlist: "*.example.test:22", invalid: true},
+		{name: "boolean rejected", host: "git.example.test", allowlist: "true", invalid: true},
+		{name: "malformed trailing entry", host: "git.example.test", allowlist: "git.example.test:22,invalid", invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(sshStrictVar, fmt.Sprint(tc.strict))
+			t.Setenv(sshLegacyRSAVar, tc.allowlist)
+			port := tc.port
+			if port == "" {
+				port = "22"
+			}
+			address := net.JoinHostPort(tc.host, port)
+			knownHosts := writeKnownHosts(t, knownhosts.Normalize(address), signer.PublicKey())
+			var logs bytes.Buffer
+			previous := logrus.StandardLogger().Out
+			logrus.SetOutput(&logs)
+			t.Cleanup(func() { logrus.SetOutput(previous) })
+			callback, err := hostKeyCallback(&SSHConfigAuth{Hostname: tc.host, Port: tc.port, UserKnownHostsFile: knownHosts})
+			if tc.invalid {
+				if !errors.Is(err, ErrGitOperation) || !strings.Contains(err.Error(), sshLegacyRSAVar) {
+					t.Fatalf("got %v, want invalid RSA allowlist error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote := &net.TCPAddr{IP: net.IPv4(192, 0, 2, 1), Port: 22}
+			err = callback(address, remote, signer.PublicKey())
+			if tc.allowed {
+				if err != nil {
+					t.Fatalf("allowlisted key rejected: %v", err)
+				}
+				if !strings.Contains(logs.String(), "SSH RSA keys below 2048 bits are permitted for "+address) {
+					t.Fatalf("missing endpoint-specific warning: %s", logs.String())
+				}
+				if err := callback(address, remote, otherKey); err == nil {
+					t.Fatal("RSA exception bypassed known-host verification")
+				}
+			} else if !errors.Is(err, ErrGitOperation) || !strings.Contains(err.Error(), "2048 bits") {
+				t.Fatalf("got %v, want RSA minimum size failure", err)
+			}
+		})
+	}
+}
+
+func TestSSHLegacyRSACertificatePolicy(t *testing.T) {
+	weakKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weakSigner, err := ssh.NewSignerFromKey(weakKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		key, ca   ssh.PublicKey
+		signature string
+		allow, ok bool
+	}{
+		{name: "weak host default", key: weakSigner.PublicKey(), ca: testHostKey(t), signature: ssh.KeyAlgoED25519},
+		{name: "weak host accepted", key: weakSigner.PublicKey(), ca: testHostKey(t), signature: ssh.KeyAlgoED25519, allow: true, ok: true},
+		{name: "weak CA default", key: testHostKey(t), ca: weakSigner.PublicKey(), signature: ssh.KeyAlgoRSASHA256},
+		{name: "weak CA accepted", key: testHostKey(t), ca: weakSigner.PublicKey(), signature: ssh.KeyAlgoRSASHA256, allow: true, ok: true},
+		{name: "SHA-1 still rejected", key: testHostKey(t), ca: weakSigner.PublicKey(), signature: ssh.KeyAlgoRSA, allow: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cert := &ssh.Certificate{Key: tc.key, SignatureKey: tc.ca, Signature: &ssh.Signature{Format: tc.signature}}
+			err := checkSSHKey(cert, tc.allow)
+			if tc.ok && err != nil {
+				t.Fatalf("allowlisted certificate rejected: %v", err)
+			}
+			if !tc.ok && !errors.Is(err, ErrGitOperation) {
+				t.Fatalf("got %v, want certificate policy rejection", err)
+			}
+		})
 	}
 }
 

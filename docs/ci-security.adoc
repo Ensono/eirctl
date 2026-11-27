@@ -233,13 +233,12 @@ debug output.
 === SSH server trust
 
 Git-over-SSH uses ephemeral key exchange, SHA-2 or Ed25519 signatures, and
-authenticated encryption by default. Client and server RSA keys must be at
-least 2048 bits; Ed25519 and NIST P-256, P-384 and P-521 ECDSA keys are also
+authenticated encryption by default. By default, client and server RSA keys
+must be at least 2048 bits; Ed25519 and NIST P-256, P-384 and P-521 ECDSA keys are also
 supported. For SSH host certificates, the same minimum applies to the host
 and signing CA keys, and SHA-1 signatures are rejected. Rotate undersized keys
-on the server or in the client identity file; no compatibility option accepts
-them. Older servers using RSA client authentication must support RSA-SHA2
-negotiation.
+on the server or in the client identity file. Older servers using RSA client
+authentication must support RSA-SHA2 negotiation.
 
 Git-over-SSH verifies server identity by default using ordered
 `UserKnownHostsFile` and `GlobalKnownHostsFile` selections from SSH
@@ -271,11 +270,21 @@ behind its modern ciphers, with SHA-2 encrypt-then-MAC required for CTR.
 This exception does not enable SHA-1 or CBC and cannot be combined with
 `StrictHostKeyChecking=no`.
 
+For temporary risk acceptance of RSA keys below 2048 bits, set
+`EIRCTL_SSH_LEGACY_RSA=git.example.com:22` in the operator's environment.
+It uses the same exact, comma-separated endpoint matching after SSH alias
+and port resolution as the CTR exception, including bracketed IPv6 addresses.
+For allowlisted endpoints only, the client logs a warning and permits
+undersized client identity, server host, and host-certificate signing CA RSA
+keys. Host-key verification remains required; this exception cannot be
+combined with `StrictHostKeyChecking=no` and does not enable SHA-1 signatures,
+weak key exchange, or legacy ciphers. Leave it unset to enforce the minimum.
+
 The existing `StrictHostKeyChecking=no` opt-out disables server identity
 verification and warns; provision a verified host key instead.
-Set `EIRCTL_SSH_STRICT=true` in managed environments to disable cipher
-exceptions and reject that opt-out. Strict SSH imports do not read previously
-cached SSH imports. Other remote imports can reuse existing cache entries;
+Set `EIRCTL_SSH_STRICT=true` in managed environments to disable cipher and RSA
+key-size exceptions and reject that opt-out. Strict SSH imports do not read
+previously cached SSH imports. Other remote imports can reuse existing cache entries;
 configured SHA-256 pins are verified when cached content is read.
 
 When updating maintained CI contexts or tools, update the readable tag
